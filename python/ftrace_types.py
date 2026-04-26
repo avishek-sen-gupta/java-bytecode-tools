@@ -202,6 +202,60 @@ ExceptionEdge = TypedDict(
 )
 
 
+# Use functional syntax for base because "class" is a reserved keyword
+_TraceNodeRequired = TypedDict("_TraceNodeRequired", {"class": str}, total=False)
+
+
+class TraceNode(_TraceNodeRequired, total=False):
+    """Recursive trace node representing a method in the call tree.
+
+    Shape changes through pipeline stages. All fields optional because
+    leaf nodes (ref/cycle/filtered) carry only a subset.
+
+    Raw fields (from xtrace):
+    - class, method, methodSignature: method identity
+    - blocks, traps, sourceTrace: raw bytecode data
+    - children: recursive child method calls
+    - ref, cycle, filtered: leaf-node markers
+    - callSiteLine: line where this method was called
+
+    Enriched fields (added by pipeline passes):
+    - mergedSourceTrace, clusterAssignment, blockAliases: intermediate
+    - nodes, edges, clusters, exceptionEdges: semantic graph output
+    """
+
+    # Method identity
+    method: str
+    methodSignature: str
+
+    # Raw fields (from xtrace)
+    blocks: list[RawBlock]
+    traps: list[RawTrap]
+    sourceTrace: list[SourceTraceEntry]
+    children: list["TraceNode"]
+
+    # Leaf markers
+    ref: bool
+    cycle: bool
+    filtered: bool
+    callSiteLine: int
+
+    # Pass 1: merge_stmts
+    mergedSourceTrace: list[MergedStmt]
+
+    # Pass 2: assign_clusters
+    clusterAssignment: dict[str, ClusterAssignment]
+
+    # Pass 3: deduplicate_blocks
+    blockAliases: BlockAliases
+
+    # Pass 4: build_semantic_graph (replaces raw fields)
+    nodes: list[SemanticNode]
+    edges: list[SemanticEdge]
+    clusters: list[SemanticCluster]
+    exceptionEdges: list[ExceptionEdge]
+
+
 class SlicedTrace(TypedDict):
     """Output of ftrace-slice: a sliced subtree plus a ref index for expansion.
 
@@ -210,5 +264,5 @@ class SlicedTrace(TypedDict):
     - refIndex: methodSignature -> full node, scoped to refs in the slice
     """
 
-    slice: dict
-    refIndex: dict[str, dict]
+    slice: TraceNode
+    refIndex: dict[str, TraceNode]

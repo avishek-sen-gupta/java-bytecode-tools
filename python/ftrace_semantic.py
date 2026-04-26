@@ -17,11 +17,14 @@ from ftrace_types import (
     ExceptionEdge,
     MergedStmt,
     NodeKind,
+    RawBlock,
     RawStmt,
+    RawTrap,
     SemanticCluster,
     SemanticEdge,
     SemanticNode,
     SourceTraceEntry,
+    TraceNode,
 )
 
 
@@ -65,12 +68,12 @@ def merge_source_trace(source_trace: list[SourceTraceEntry]) -> list[MergedStmt]
     return [by_line[ln] for ln in sorted(by_line)]
 
 
-def _is_leaf_node(node: dict) -> bool:
+def _is_leaf_node(node: TraceNode) -> bool:
     """Check if a node is a leaf (ref, cycle, or filtered)."""
     return bool(node.get("ref") or node.get("cycle") or node.get("filtered"))
 
 
-def merge_stmts_pass(tree: dict) -> dict:
+def merge_stmts_pass(tree: TraceNode) -> TraceNode:
     """Pass 1: Add mergedStmts to each block, or mergedSourceTrace. Returns new tree."""
     if _is_leaf_node(tree):
         return dict(tree)
@@ -92,7 +95,7 @@ def merge_stmts_pass(tree: dict) -> dict:
 
 
 def assign_trap_clusters(
-    traps: list[dict],
+    traps: list[RawTrap],
 ) -> dict[str, ClusterAssignment]:
     """Assign each block to exactly one trap cluster.
 
@@ -105,7 +108,7 @@ def assign_trap_clusters(
     )
 
     def _fold_trap(
-        acc: dict[str, ClusterAssignment], indexed_trap: tuple[int, dict]
+        acc: dict[str, ClusterAssignment], indexed_trap: tuple[int, RawTrap]
     ) -> dict[str, ClusterAssignment]:
         i, trap = indexed_trap
         covered = {
@@ -134,7 +137,7 @@ def blocks_for_cluster(
     ]
 
 
-def assign_clusters_pass(tree: dict) -> dict:
+def assign_clusters_pass(tree: TraceNode) -> TraceNode:
     """Pass 2: Add clusterAssignment to each method node. Returns new tree."""
     if _is_leaf_node(tree):
         return dict(tree)
@@ -150,7 +153,7 @@ def assign_clusters_pass(tree: dict) -> dict:
     return result
 
 
-def block_content_signature(block: dict) -> str:
+def block_content_signature(block: RawBlock) -> str:
     """Compute a content signature for a block based on mergedStmts and branchCondition.
 
     Two blocks with the same signature are visually identical and can be aliased.
@@ -167,7 +170,7 @@ def block_content_signature(block: dict) -> str:
 
 
 def compute_block_aliases(
-    blocks: list[dict],
+    blocks: list[RawBlock],
     cluster_assignment: dict[str, ClusterAssignment],
 ) -> dict[str, str]:
     """Find duplicate blocks within the same cluster.
@@ -195,7 +198,7 @@ def compute_block_aliases(
     return aliases
 
 
-def deduplicate_blocks_pass(tree: dict) -> dict:
+def deduplicate_blocks_pass(tree: TraceNode) -> TraceNode:
     """Pass 3: Add blockAliases to each method node. Returns new tree."""
     if _is_leaf_node(tree):
         return dict(tree)
@@ -247,7 +250,7 @@ def classify_node_kind(entry: MergedStmt) -> NodeKind:
     return NodeKind.PLAIN
 
 
-def build_semantic_graph_pass(tree: dict, next_id: int = 0) -> dict:
+def build_semantic_graph_pass(tree: TraceNode, next_id: int = 0) -> TraceNode:
     """Pass 4: Build semantic graph from enriched tree. Returns new tree.
 
     Consumes blocks, traps, mergedStmts, clusterAssignment, blockAliases.
@@ -512,12 +515,12 @@ def build_semantic_graph_pass(tree: dict, next_id: int = 0) -> dict:
     return result
 
 
-def pipe(*fns: Callable[[dict], dict]) -> Callable[[dict], dict]:
+def pipe(*fns: Callable[[TraceNode], TraceNode]) -> Callable[[TraceNode], TraceNode]:
     """Compose functions left-to-right: pipe(f, g)(x) == g(f(x))."""
     return lambda x: reduce(lambda acc, fn: fn(acc), fns, x)
 
 
-def transform(tree: dict) -> dict:
+def transform(tree: TraceNode) -> TraceNode:
     """Run all four passes on a tree."""
     return pipe(
         merge_stmts_pass,

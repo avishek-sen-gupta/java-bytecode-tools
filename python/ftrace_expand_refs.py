@@ -9,10 +9,12 @@ import json
 import sys
 from pathlib import Path
 
+from ftrace_types import TraceNode
+
 
 def expand_refs(
-    node: dict, index: dict[str, dict], path: frozenset[str] = frozenset()
-) -> dict:
+    node: TraceNode, index: dict[str, TraceNode], path: frozenset[str] = frozenset()
+) -> TraceNode:
     """Return a copy of node with ref nodes replaced by their full expansion.
 
     Args:
@@ -35,7 +37,9 @@ def expand_refs(
     }
 
 
-def _expand_ref_node(node: dict, index: dict[str, dict], path: frozenset[str]) -> dict:
+def _expand_ref_node(
+    node: TraceNode, index: dict[str, TraceNode], path: frozenset[str]
+) -> TraceNode:
     """Expand a single ref node if its signature is in the index and not cyclic."""
     sig = node.get("methodSignature", "")
 

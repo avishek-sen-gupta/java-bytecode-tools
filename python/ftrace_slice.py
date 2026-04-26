@@ -13,8 +13,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from ftrace_types import TraceNode
 
-def collect_ref_signatures(node: dict) -> frozenset[str]:
+
+def collect_ref_signatures(node: TraceNode) -> frozenset[str]:
     """Walk a subtree and return all methodSignature values where ref is true."""
     sig = node.get("methodSignature", "")
     refs = frozenset({sig}) if node.get("ref", False) and sig else frozenset()
@@ -23,7 +25,9 @@ def collect_ref_signatures(node: dict) -> frozenset[str]:
     )
 
 
-def index_full_tree(node: dict, signatures: frozenset[str]) -> dict[str, dict]:
+def index_full_tree(
+    node: TraceNode, signatures: frozenset[str]
+) -> dict[str, TraceNode]:
     """Walk the full tree, return {sig -> node} for signatures in the given set.
 
     First non-ref, non-cycle, non-filtered occurrence wins.
@@ -35,7 +39,9 @@ def index_full_tree(node: dict, signatures: frozenset[str]) -> dict[str, dict]:
     return acc
 
 
-def _index_walk(node: dict, signatures: frozenset[str], acc: dict[str, dict]) -> None:
+def _index_walk(
+    node: TraceNode, signatures: frozenset[str], acc: dict[str, TraceNode]
+) -> None:
     """DFS walker for index_full_tree. Mutates acc (internal only)."""
     sig = node.get("methodSignature", "")
     if (

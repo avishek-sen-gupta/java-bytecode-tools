@@ -10,7 +10,15 @@ import json
 import sys
 from pathlib import Path
 
-from ftrace_types import NodeKind, BranchLabel
+from ftrace_types import (
+    ExceptionEdge,
+    NodeKind,
+    BranchLabel,
+    SemanticCluster,
+    SemanticEdge,
+    SemanticNode,
+    TraceNode,
+)
 
 # -- Visual constants --
 NODE_STYLE: dict[NodeKind, dict[str, str]] = {
@@ -56,7 +64,7 @@ def short_class(fqcn: str) -> str:
     return fqcn.rsplit(".", 1)[-1]
 
 
-def _render_node(nid: str, node: dict) -> str:
+def _render_node(nid: str, node: SemanticNode) -> str:
     """Render a single semantic node as a DOT node statement."""
     label = r"\n".join(escape(p) for p in node["label"])
     kind = NodeKind(node["kind"])
@@ -67,7 +75,7 @@ def _render_node(nid: str, node: dict) -> str:
     return f"    {nid} [" + attrs + "];"
 
 
-def _render_edge(edge: dict) -> str:
+def _render_edge(edge: SemanticEdge) -> str:
     """Render a single semantic edge as a DOT edge statement."""
     src, dst = edge["from"], edge["to"]
     branch = edge.get("branch", "")
@@ -80,7 +88,7 @@ def _render_edge(edge: dict) -> str:
     return f"    {src} -> {dst};"
 
 
-def _render_exception_edge(ee: dict, clusters: list[dict]) -> str:
+def _render_exception_edge(ee: ExceptionEdge, clusters: list[SemanticCluster]) -> str:
     """Render an exception edge with ltail/lhead cluster references."""
     src, dst = ee["from"], ee["to"]
     trap_type = escape(ee["trapType"])
@@ -96,7 +104,7 @@ def _render_exception_edge(ee: dict, clusters: list[dict]) -> str:
     return f"    {src} -> {dst} [{attrs}];"
 
 
-def build_dot(root: dict) -> str:
+def build_dot(root: TraceNode) -> str:
     lines = [
         "digraph ftrace {",
         "  rankdir=TB;",
@@ -114,7 +122,7 @@ def build_dot(root: dict) -> str:
         cluster_counter[0] += 1
         return cid
 
-    def add_method(node: dict) -> str:
+    def add_method(node: TraceNode) -> str:
         """Add a method node. Returns entry node ID."""
         cls = short_class(node.get("class", "?"))
         method = node.get("method", "?")

@@ -116,3 +116,69 @@ def assign_clusters_pass(tree: dict) -> dict:
         result["children"] = [assign_clusters_pass(child) for child in tree["children"]]
 
     return result
+
+
+def block_content_signature(block: dict) -> str:
+    """Compute a content signature for a block based on mergedStmts and branchCondition.
+
+    Two blocks with the same signature are visually identical and can be aliased.
+    """
+    entries = tuple(
+        (
+            entry["line"],
+            tuple(sorted(entry.get("calls", []))),
+            tuple(entry.get("branches", [])),
+        )
+        for entry in block.get("mergedStmts", [])
+    )
+    return str((entries, block.get("branchCondition", "")))
+
+
+def compute_block_aliases(
+    blocks: list[dict],
+    cluster_assignment: dict[str, ClusterAssignment],
+) -> dict[str, str]:
+    """Find duplicate blocks within the same cluster.
+
+    Returns a map of alias_block_id → canonical_block_id.
+    Only blocks assigned to the same (kind, trapIndex) cluster are compared.
+    """
+    cluster_sigs: dict[tuple[str, int], dict[str, str]] = {}
+    aliases: dict[str, str] = {}
+
+    for block in blocks:
+        bid = block["id"]
+        if bid not in cluster_assignment:
+            continue
+        assignment = cluster_assignment[bid]
+        cluster_key = (assignment["kind"], assignment["trapIndex"])
+        sig = block_content_signature(block)
+
+        sigs = cluster_sigs.setdefault(cluster_key, {})
+        if sig in sigs:
+            aliases[bid] = sigs[sig]
+        else:
+            sigs[sig] = bid
+
+    return aliases
+
+
+def deduplicate_blocks_pass(tree: dict) -> dict:
+    """Pass 3: Add blockAliases to each method node. Returns new tree."""
+    if _is_leaf_node(tree):
+        return dict(tree)
+
+    result = dict(tree)
+
+    if "blocks" in tree:
+        result["blockAliases"] = compute_block_aliases(
+            tree.get("blocks", []),
+            tree.get("clusterAssignment", {}),
+        )
+
+    if "children" in tree:
+        result["children"] = [
+            deduplicate_blocks_pass(child) for child in tree["children"]
+        ]
+
+    return result

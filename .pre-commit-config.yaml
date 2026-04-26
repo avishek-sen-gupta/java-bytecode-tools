@@ -1,0 +1,39 @@
+repos:
+  # Python formatting
+  - repo: local
+    hooks:
+      - id: black
+        name: black
+        entry: bash -c 'cd python && uv run black "${@#python/}"' --
+        language: system
+        files: ^python/.*\.py$
+        types: [python]
+
+  # Java formatting (google-java-format)
+  - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
+    rev: v2.14.0
+    hooks:
+      - id: pretty-format-java
+        args: [--autofix, --google-java-formatter-version=1.25.2]
+        files: ^java/src/
+
+  # Secret detection
+  - repo: local
+    hooks:
+      - id: talisman
+        name: talisman
+        entry: bash -c '/Users/asgupta/.talisman/bin/talisman_darwin_amd64 --githook pre-commit'
+        language: system
+        pass_filenames: false
+        types: [file]
+        stages: [pre-commit]
+
+  # Tests
+  - repo: local
+    hooks:
+      - id: e2e-tests
+        name: e2e tests
+        entry: bash test-fixtures/run-e2e.sh
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]

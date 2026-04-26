@@ -1,0 +1,124 @@
+package tools.bytecode;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.*;
+import sootup.core.jimple.common.expr.AbstractInvokeExpr;
+import sootup.core.jimple.common.expr.JSpecialInvokeExpr;
+import sootup.core.jimple.common.stmt.Stmt;
+import sootup.core.model.Body;
+import sootup.core.model.SootMethod;
+import sootup.core.signatures.MethodSignature;
+import sootup.core.types.ClassType;
+import sootup.java.core.JavaSootClass;
+
+/**
+ * Builds a whole-program call graph from compiled .class files. Scans all project classes, extracts
+ * invoke stmts, records caller→callee edges, and resolves polymorphic dispatch
+ * (interface→implementation).
+ */
+public class CallGraphBuilder {
+
+  private final BytecodeTracer tracer;
+
+  public CallGraphBuilder(BytecodeTracer tracer) {
+    this.tracer = tracer;
+  }
+
+  public void buildCallGraph(Path outputPath) throws IOException {
+    System.err.println("Building call graph...");
+    List<JavaSootClass> projectClasses = tracer.getProjectClasses();
+    System.err.println("Project classes: " + projectClasses.size());
+
+    // Index method sigs for resolution
+    Map<String, String> sigIndex = new LinkedHashMap<>();
+    Map<String, List<String>> nameIndex = new LinkedHashMap<>();
+
+    for (JavaSootClass cls : projectClasses) {
+      String clsName = cls.getType().getFullyQualifiedName();
+      for (SootMethod method : cls.getMethods()) {
+        if (!method.hasBody()) continue;
+        String sig = method.getSignature().toString();
+        sigIndex.put(sig, sig);
+        String key = clsName + "#" + method.getName() + "#" + method.getParameterCount();
+        nameIndex.computeIfAbsent(key, k -> new ArrayList<>()).add(sig);
+      }
+    }
+    System.err.println("Methods: " + sigIndex.size());
+
+    // Build interface → implementation map for polymorphic dispatch resolution
+    Map<String, List<String>> ifaceToImpls = new LinkedHashMap<>();
+    for (JavaSootClass cls : projectClasses) {
+      if (cls.isInterface()) continue;
+      String clsName = cls.getType().getFullyQualifiedName();
+      for (ClassType iface : cls.getInterfaces()) {
+        String ifaceName = iface.getFullyQualifiedName();
+        ifaceToImpls.computeIfAbsent(ifaceName, k -> new ArrayList<>()).add(clsName);
+      }
+      var superOpt = cls.getSuperclass();
+      if (superOpt.isPresent()) {
+        String superName = superOpt.get().getFullyQualifiedName();
+        if (!superName.equals("java.lang.Object")) {
+          ifaceToImpls.computeIfAbsent(superName, k -> new ArrayList<>()).add(clsName);
+        }
+      }
+    }
+    System.err.println("Interface→impl mappings: " + ifaceToImpls.size());
+
+    // Scan all method bodies for call edges
+    Map<String, Set<String>> callerToCallees = new LinkedHashMap<>();
+    int scanned = 0;
+    for (JavaSootClass cls : projectClasses) {
+      for (SootMethod method : cls.getMethods()) {
+        if (!method.hasBody()) continue;
+        String mSig = method.getSignature().toString();
+        Body body = method.getBody();
+        for (Stmt stmt : body.getStmtGraph().getNodes()) {
+          Optional<AbstractInvokeExpr> invokeOpt = BytecodeTracer.extractInvoke(stmt);
+          if (invokeOpt.isEmpty()) continue;
+          AbstractInvokeExpr invoke = invokeOpt.get();
+          if (invoke instanceof JSpecialInvokeExpr) continue;
+
+          MethodSignature callSig = invoke.getMethodSignature();
+          String declClass = callSig.getDeclClassType().getFullyQualifiedName();
+          String methodName = callSig.getName();
+          int paramCount = callSig.getParameterTypes().size();
+
+          Set<String> targetClasses = new LinkedHashSet<>();
+          targetClasses.add(declClass);
+          List<String> impls = ifaceToImpls.get(declClass);
+          if (impls != null) targetClasses.addAll(impls);
+
+          for (String targetClass : targetClasses) {
+            String key = targetClass + "#" + methodName + "#" + paramCount;
+            List<String> candidates = nameIndex.get(key);
+            if (candidates != null) {
+              for (String calleeSig : candidates) {
+                callerToCallees.computeIfAbsent(mSig, k -> new LinkedHashSet<>()).add(calleeSig);
+              }
+            }
+          }
+        }
+        scanned++;
+        if (scanned % 5000 == 0) System.err.println("  scanned " + scanned + " methods...");
+      }
+    }
+
+    // Convert sets to lists for JSON
+    Map<String, List<String>> output = new LinkedHashMap<>();
+    for (var entry : callerToCallees.entrySet()) {
+      output.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+    }
+
+    int edges = output.values().stream().mapToInt(List::size).sum();
+    System.err.println("Call edges: " + edges);
+
+    ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+    Files.createDirectories(outputPath.getParent());
+    mapper.writeValue(outputPath.toFile(), output);
+    System.err.println("Wrote call graph to " + outputPath);
+  }
+}

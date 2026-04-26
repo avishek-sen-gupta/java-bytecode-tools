@@ -1,0 +1,7 @@
+fileignoreconfig:
+  - filename: python/uv.lock
+    checksum: cabf8727ce33600710e3ed71f55d6087ad7db6154d3f0076114011bb1be410c7
+  - filename: test-fixtures/tests/test_dump.sh
+    checksum: 81f753579431efde73740067912475aa1c3450fce405dd341c3feb2036121390
+  - filename: test-fixtures/lib-test.sh
+    checksum: 8d5de922744e8570b00c82b810a0c4ebf70541820d3bf5f4d5146ee4f9795390

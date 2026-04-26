@@ -1,0 +1,4 @@
+{
+  "allow": ["com.example.app"],
+  "stop": ["com.example.app.JdbcOrderRepository"]
+}

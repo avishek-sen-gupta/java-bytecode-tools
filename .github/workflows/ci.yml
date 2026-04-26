@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Build Java
+        run: cd java && mvn -q compile
+
+      - name: Sync Python
+        run: cd python && uv sync -q
+
+      - name: Black (check)
+        run: cd python && uv run black --check .
+
+      - name: google-java-format (check)
+        run: |
+          curl -sL -o /tmp/gjf.jar https://github.com/google/google-java-format/releases/download/v1.25.2/google-java-format-1.25.2-all-deps.jar
+          java --add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
+               --add-exports jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED \
+               --add-exports jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED \
+               --add-exports jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED \
+               --add-exports jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED \
+               -jar /tmp/gjf.jar --set-exit-if-changed --dry-run $(find java/src -name '*.java')
+
+      - name: E2E tests
+        run: bash test-fixtures/run-e2e.sh

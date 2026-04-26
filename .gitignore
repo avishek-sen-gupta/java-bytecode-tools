@@ -1,0 +1,43 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+*.egg
+.mypy_cache/
+.coverage
+.pytest_cache/
+.idea/
+
+# Java / Maven
+java/target/
+java/dependency-reduced-pom.xml
+
+# Eclipse project files
+java/.classpath
+java/.project
+java/.settings/
+
+# macOS
+.DS_Store
+
+# Claude Code
+.claude/*
+!.claude/skills/
+!.claude/core/
+!.claude/conditional/
+!.claude/hooks/
+!.claude/settings.json
+
+# Git worktrees
+.worktrees/
+.superpowers/
+.serena/
+
+# Test fixtures — compiled classes and test output
+test-fixtures/classes/
+test-fixtures/target/
+
+# Output artifacts
+scripts/target/

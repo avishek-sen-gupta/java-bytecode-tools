@@ -340,7 +340,136 @@ public class ForwardTracer {
       trap.put("handlerBlocks", new ArrayList<>(handlerBlocks));
     }
 
+    // --- Gap-fill: add intermediate blocks missing from coveredBlocks ---
+    Map<String, Set<String>> predMap = buildPredecessorMap(succMap);
+    Set<String> allHandlerEntries = new HashSet<>();
+    for (Map<String, Object> trap : trapsMap.values()) {
+      allHandlerEntries.add((String) trap.get("handler"));
+    }
+    for (Map<String, Object> trap : trapsMap.values()) {
+      @SuppressWarnings("unchecked")
+      List<String> coveredList = (List<String>) trap.get("coveredBlocks");
+      Set<String> filled =
+          fillCoverageGaps(new LinkedHashSet<>(coveredList), succMap, predMap, allHandlerEntries);
+      trap.put("coveredBlocks", new ArrayList<>(filled));
+    }
+
+    // --- Detect inlined handler copies (e.g., normal-path finally blocks) ---
+    Map<String, Map<String, Object>> blockById = new LinkedHashMap<>();
+    for (Map<String, Object> b : blockList) {
+      blockById.put((String) b.get("id"), b);
+    }
+    Set<String> allAssigned = new HashSet<>();
+    for (Map<String, Object> trap : trapsMap.values()) {
+      @SuppressWarnings("unchecked")
+      List<String> hb = (List<String>) trap.get("handlerBlocks");
+      @SuppressWarnings("unchecked")
+      List<String> cb = (List<String>) trap.get("coveredBlocks");
+      allAssigned.addAll(hb);
+      allAssigned.addAll(cb);
+    }
+    for (Map<String, Object> trap : trapsMap.values()) {
+      String handlerId = (String) trap.get("handler");
+      Map<String, Object> handlerBlock = blockById.get(handlerId);
+      if (handlerBlock == null) continue;
+      Set<Integer> handlerLines = sourceLines(handlerBlock);
+      if (handlerLines.isEmpty()) continue;
+      @SuppressWarnings("unchecked")
+      List<String> hblocks = (List<String>) trap.get("handlerBlocks");
+      for (Map<String, Object> b : blockList) {
+        String bid = (String) b.get("id");
+        if (allAssigned.contains(bid)) continue;
+        Set<Integer> blines = sourceLines(b);
+        if (!blines.isEmpty() && handlerLines.containsAll(blines)) {
+          hblocks.add(bid);
+          allAssigned.add(bid);
+        }
+      }
+    }
+
     result.put("traps", new ArrayList<>(trapsMap.values()));
     return result;
+  }
+
+  /** Extract positive source line numbers from a block's stmts. */
+  @SuppressWarnings("unchecked")
+  static Set<Integer> sourceLines(Map<String, Object> blockMap) {
+    Set<Integer> lines = new LinkedHashSet<>();
+    for (Map<String, Object> stmt : (List<Map<String, Object>>) blockMap.get("stmts")) {
+      int line = ((Number) stmt.get("line")).intValue();
+      if (line > 0) lines.add(line);
+    }
+    return lines;
+  }
+
+  /** Invert a successor map to produce a predecessor map. */
+  static Map<String, Set<String>> buildPredecessorMap(Map<String, List<String>> succMap) {
+    Map<String, Set<String>> predMap = new LinkedHashMap<>();
+    for (Map.Entry<String, List<String>> entry : succMap.entrySet()) {
+      for (String succ : entry.getValue()) {
+        predMap.computeIfAbsent(succ, k -> new LinkedHashSet<>()).add(entry.getKey());
+      }
+    }
+    return predMap;
+  }
+
+  /**
+   * Fill gaps in trap coverage. A block is added if it can reach a covered block going forward AND
+   * can be reached from a covered block going backward, without crossing handler entries. Returns a
+   * new set; does not mutate the input.
+   */
+  static Set<String> fillCoverageGaps(
+      Set<String> coveredBlocks,
+      Map<String, List<String>> succMap,
+      Map<String, Set<String>> predMap,
+      Set<String> handlerEntries) {
+    // Forward reachable: blocks reachable from any covered block via successors
+    Set<String> forwardReachable = bfsReachable(coveredBlocks, succMap, handlerEntries);
+    // Backward reachable: blocks that can reach a covered block via predecessors
+    Map<String, List<String>> predListMap = new LinkedHashMap<>();
+    for (Map.Entry<String, Set<String>> e : predMap.entrySet()) {
+      predListMap.put(e.getKey(), new ArrayList<>(e.getValue()));
+    }
+    Set<String> backwardReachable = bfsReachable(coveredBlocks, predListMap, handlerEntries);
+
+    Set<String> result = new LinkedHashSet<>(coveredBlocks);
+    for (String block : forwardReachable) {
+      if (backwardReachable.contains(block) && !handlerEntries.contains(block)) {
+        result.add(block);
+      }
+    }
+
+    // Entry blocks (no predecessors) that flow directly into a covered block
+    for (Map.Entry<String, List<String>> entry : succMap.entrySet()) {
+      String block = entry.getKey();
+      if (result.contains(block) || handlerEntries.contains(block)) continue;
+      if (predMap.containsKey(block)) continue; // has predecessors — not an entry block
+      for (String succ : entry.getValue()) {
+        if (result.contains(succ)) {
+          result.add(block);
+          break;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /** BFS from seed blocks through adjacency map, not crossing blocked entries. */
+  private static Set<String> bfsReachable(
+      Set<String> seeds, Map<String, List<String>> adjMap, Set<String> blocked) {
+    Set<String> visited = new LinkedHashSet<>();
+    Queue<String> queue = new ArrayDeque<>(seeds);
+    while (!queue.isEmpty()) {
+      String current = queue.poll();
+      if (visited.add(current)) {
+        for (String next : adjMap.getOrDefault(current, List.of())) {
+          if (!visited.contains(next) && !blocked.contains(next)) {
+            queue.add(next);
+          }
+        }
+      }
+    }
+    return visited;
   }
 }

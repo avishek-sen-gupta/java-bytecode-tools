@@ -196,6 +196,14 @@ def build_dot(root: dict) -> str:
             line_to_nids: dict[int, list[str]] = {}
             entry_nid = None
 
+            # Pre-compute cluster assignment so we can merge duplicate
+            # blocks within the same cluster (e.g. inlined finally copies).
+            cluster_assignment = assign_trap_clusters(traps)
+
+            # Track content signatures per cluster to detect duplicates.
+            # Key: (kind, trap_index), Value: {content_sig -> canonical_bid}
+            _cluster_sigs: dict[tuple[str, int], dict[str, str]] = {}
+
             for block in blocks:
                 bid = block["id"]
                 merged = merge_block_stmts(block.get("stmts", []))
@@ -210,6 +218,30 @@ def build_dot(root: dict) -> str:
                     if entry_nid is None:
                         entry_nid = nid
                     continue
+
+                # Check if another block in the same cluster has identical content
+                cluster_key = cluster_assignment.get(bid)
+                if cluster_key and merged:
+                    sig = str(
+                        [
+                            (
+                                e["line"],
+                                tuple(sorted(e.get("calls", []))),
+                                e.get("branches", []),
+                                block.get("branchCondition", ""),
+                            )
+                            for e in merged
+                        ]
+                    )
+                    sigs = _cluster_sigs.setdefault(cluster_key, {})
+                    if sig in sigs:
+                        # Duplicate — alias to the canonical block's nodes
+                        canonical = sigs[sig]
+                        block_first[bid] = block_first[canonical]
+                        block_last[bid] = block_last[canonical]
+                        bid_to_nids[bid] = bid_to_nids[canonical]
+                        continue
+                    sigs[sig] = bid
 
                 # Emit one node per source line, connected sequentially
                 prev_nid = None
@@ -274,8 +306,6 @@ def build_dot(root: dict) -> str:
                             lines.append(f"    {tail_nid} -> {succ_nid};")
 
             # ---- Traps (Exception Handlers) as nested clusters ----
-            cluster_assignment = assign_trap_clusters(traps)
-
             for i, trap in enumerate(traps):
                 etype = short_class(trap["type"])
 
@@ -308,19 +338,32 @@ def build_dot(root: dict) -> str:
                         lines.append(f"      {nid};")
                 lines.append("    }")
 
-                # Edge from try-cluster to handler-entry.
+                # Edge from try-region to handler-entry.
                 handler_bid = trap["handler"]
                 handler_nid = block_first.get(handler_bid)
-                covered_bids = trap.get("coveredBlocks", [])
-                if handler_nid and covered_bids:
-                    last_bid = covered_bids[-1]
-                    last_nid = block_last.get(last_bid)
-                    if last_nid:
-                        lines.append(
-                            f"    {last_nid} -> {handler_nid} "
-                            f'[label="{escape(etype)}", color="#ffa500", style="dashed", '
-                            f'fontcolor="#ffa500", ltail="{t_cid}", lhead="{h_cid}"];'
+                try_bids = blocks_for_cluster(cluster_assignment, "try", i)
+                handler_bids = blocks_for_cluster(cluster_assignment, "handler", i)
+                if handler_nid:
+                    # Find a source node: prefer own try cluster, fall back
+                    # to any covered block (may be in another trap's cluster).
+                    src_nid = None
+                    if try_bids:
+                        src_nid = block_first.get(try_bids[0])
+                    else:
+                        for cb in trap.get("coveredBlocks", []):
+                            if cb in block_first:
+                                src_nid = block_first[cb]
+                                break
+                    if src_nid:
+                        attrs = (
+                            f'label="{escape(etype)}", color="#ffa500", style="dashed", '
+                            f'fontcolor="#ffa500"'
                         )
+                        if try_bids and handler_bids:
+                            attrs += f', ltail="{t_cid}", lhead="{h_cid}"'
+                        elif handler_bids:
+                            attrs += f', lhead="{h_cid}"'
+                        lines.append(f"    {src_nid} -> {handler_nid} [{attrs}];")
 
             lines.append("  }")
             lines.append("")

@@ -4,8 +4,6 @@ Verifies that handler blocks are never placed inside try (covered) clusters,
 even when a block is both a coveredBlock for one trap and a handlerBlock for another.
 """
 
-import re
-
 from ftrace_to_dot import assign_trap_clusters, blocks_for_cluster, build_dot
 
 
@@ -22,25 +20,81 @@ def _make_method_with_traps(blocks, traps):
     }
 
 
+def _quoted_value(line: str, key: str) -> str | None:
+    """Extract the value for key="value" from a DOT line."""
+    tag = f'{key}="'
+    start = line.find(tag)
+    if start == -1:
+        return None
+    start += len(tag)
+    end = line.index('"', start)
+    return line[start:end]
+
+
+def _parse_subgraphs(dot: str) -> dict[str, set[str]]:
+    """Parse DOT text into {subgraph_label: set of node IDs}."""
+    result: dict[str, set[str]] = {}
+    label = None
+    nodes: set[str] = set()
+    depth = 0
+
+    for line in dot.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("subgraph "):
+            depth = 1
+            label = None
+            nodes = set()
+        elif depth > 0:
+            if "label=" in stripped:
+                label = _quoted_value(stripped, "label")
+            # Node lines look like "n3;" — starts with n, has digits, ends with ;
+            if stripped.startswith("n") and stripped.endswith(";"):
+                token = stripped[:-1].strip()
+                if token[1:].isdigit():
+                    nodes.add(token)
+            if "}" in stripped:
+                depth -= 1
+                if depth == 0 and label is not None:
+                    result[label] = nodes
+    return result
+
+
 def _blocks_in_subgraph(dot: str, subgraph_label: str) -> set[str]:
-    """Extract node IDs declared inside a subgraph with the given label."""
-    # Find the subgraph block by label, then collect node IDs within it
-    pattern = (
-        rf'subgraph\s+\w+\s*\{{[^{{}}]*?label="{re.escape(subgraph_label)}"[^{{}}]*?\}}'
-    )
-    match = re.search(pattern, dot, re.DOTALL)
-    if not match:
-        return set()
-    block = match.group(0)
-    # Node IDs are lines like "    n3;"
-    return set(re.findall(r"\b(n\d+)\s*;", block))
+    """Return node IDs declared inside a subgraph with the given label."""
+    return _parse_subgraphs(dot).get(subgraph_label, set())
 
 
 def _node_id_for_label(dot: str, label_fragment: str) -> str | None:
     """Find the node ID whose label contains the given fragment."""
-    pattern = rf'(n\d+)\s+\[label="[^"]*{re.escape(label_fragment)}[^"]*"'
-    match = re.search(pattern, dot)
-    return match.group(1) if match else None
+    for line in dot.splitlines():
+        if label_fragment in line and "[label=" in line:
+            token = line.strip().split()[0]
+            if token.startswith("n") and token[1:].isdigit():
+                return token
+    return None
+
+
+def _exception_edges(dot: str) -> list[dict]:
+    """Extract exception edges (dashed, orange) with their ltail/lhead attributes."""
+    results = []
+    for line in dot.splitlines():
+        if 'style="dashed"' not in line or "#ffa500" not in line or "->" not in line:
+            continue
+        stripped = line.strip()
+        arrow = stripped.index("->")
+        src = stripped[:arrow].strip()
+        rest = stripped[arrow + 2 :].strip()
+        dst = rest.split()[0]
+        results.append(
+            {
+                "src": src,
+                "dst": dst,
+                "ltail": _quoted_value(line, "ltail"),
+                "lhead": _quoted_value(line, "lhead"),
+                "label": _quoted_value(line, "label"),
+            }
+        )
+    return results
 
 
 class TestTrapClusterAssignment:
@@ -222,3 +276,274 @@ class TestAssignTrapClusters:
         assert blocks_for_cluster(assignment, "handler", 0) == ["B1"]
         assert blocks_for_cluster(assignment, "handler", 1) == ["B2"]
         assert blocks_for_cluster(assignment, "try", 1) == []
+
+
+class TestDuplicateBlockMerging:
+    """Blocks with identical content in the same cluster should be merged."""
+
+    def _build_finally_duplicate_fixture(self):
+        """
+        Simulates the Java compiler's inlined finally pattern:
+        - B12: exception-path finally (L14, L15), no successors (re-throws)
+        - B13: normal-path finally (L14, L15), successor B14 (return)
+        Both are in Throwable's handlerBlocks → same cluster → should merge.
+        """
+        blocks = [
+            {"id": "B0", "stmts": [{"line": 6}], "successors": ["B1"]},
+            {
+                "id": "B1",
+                "stmts": [{"line": 7, "call": "println"}],
+                "successors": ["B13"],
+            },
+            {
+                "id": "B12",
+                "stmts": [{"line": 14, "call": "println"}, {"line": 15}],
+                "successors": [],
+            },
+            {
+                "id": "B13",
+                "stmts": [{"line": 14, "call": "println"}, {"line": 15}],
+                "successors": ["B14"],
+            },
+            {"id": "B14", "stmts": [{"line": 16}], "successors": []},
+        ]
+        traps = [
+            {
+                "type": "java.lang.Throwable",
+                "handler": "B12",
+                "coveredBlocks": ["B0", "B1"],
+                "handlerBlocks": ["B12", "B13"],
+            },
+        ]
+        return blocks, traps
+
+    def test_merged_blocks_produce_single_set_of_nodes(self):
+        """B12 and B13 have identical content — only one L14 and one L15 in finally."""
+        blocks, traps = self._build_finally_duplicate_fixture()
+        root = _make_method_with_traps(blocks, traps)
+        dot = build_dot(root)
+
+        finally_nodes = _blocks_in_subgraph(dot, "finally")
+        # Count L14 and L15 nodes within the finally cluster
+        l14_count = 0
+        l15_count = 0
+        for line in dot.splitlines():
+            stripped = line.strip()
+            for nid in finally_nodes:
+                if stripped.startswith(f"{nid} ") and "[label=" in stripped:
+                    if "L14" in stripped:
+                        l14_count += 1
+                    if "L15" in stripped:
+                        l15_count += 1
+        assert l14_count == 1, f"Expected 1 L14 node in finally, got {l14_count}"
+        assert l15_count == 1, f"Expected 1 L15 node in finally, got {l15_count}"
+
+    def test_merged_block_preserves_successor_edges(self):
+        """After merging B13 into B12, the edge B13→B14 should still render (via B12's nodes)."""
+        blocks, traps = self._build_finally_duplicate_fixture()
+        root = _make_method_with_traps(blocks, traps)
+        dot = build_dot(root)
+
+        # Find the L15 node (last in finally) and L16 node
+        n_l15 = _node_id_for_label(dot, "L15")
+        n_l16 = _node_id_for_label(dot, "L16")
+        assert n_l15 is not None, "L15 node should exist"
+        assert n_l16 is not None, "L16 node should exist"
+
+        # There should be an edge from L15 to L16 (B13's successor B14)
+        edge_found = any(f"{n_l15} -> {n_l16}" in line for line in dot.splitlines())
+        assert edge_found, f"Edge from {n_l15} (L15) to {n_l16} (L16) should exist"
+
+    def test_merged_block_preserves_incoming_edges(self):
+        """After merging, B1→B13 should render as B1→B12's first node."""
+        blocks, traps = self._build_finally_duplicate_fixture()
+        root = _make_method_with_traps(blocks, traps)
+        dot = build_dot(root)
+
+        # L7 (B1) should connect to L14 (merged finally entry)
+        n_l7 = _node_id_for_label(dot, "L7")
+        n_l14 = _node_id_for_label(dot, "L14")
+        assert n_l7 is not None
+        assert n_l14 is not None
+
+        edge_found = any(f"{n_l7} -> {n_l14}" in line for line in dot.splitlines())
+        assert edge_found, f"Edge from {n_l7} (L7) to {n_l14} (L14) should exist"
+
+    def test_no_merge_across_clusters(self):
+        """Blocks with identical content in different clusters should NOT merge."""
+        blocks = [
+            {"id": "B0", "stmts": [{"line": 5}], "successors": ["B1"]},
+            {
+                "id": "B1",
+                "stmts": [{"line": 14, "call": "println"}, {"line": 15}],
+                "successors": [],
+            },
+            {
+                "id": "B2",
+                "stmts": [{"line": 14, "call": "println"}, {"line": 15}],
+                "successors": [],
+            },
+        ]
+        traps = [
+            {
+                "type": "java.lang.RuntimeException",
+                "handler": "B1",
+                "coveredBlocks": ["B0"],
+                "handlerBlocks": ["B1"],
+            },
+            {
+                "type": "java.lang.Throwable",
+                "handler": "B2",
+                "coveredBlocks": ["B0"],
+                "handlerBlocks": ["B2"],
+            },
+        ]
+        root = _make_method_with_traps(blocks, traps)
+        dot = build_dot(root)
+
+        # Both clusters should have their own L14 node
+        catch_nodes = _blocks_in_subgraph(dot, "catch (RuntimeException)")
+        finally_nodes = _blocks_in_subgraph(dot, "finally")
+        assert len(catch_nodes) > 0, "catch cluster should have nodes"
+        assert len(finally_nodes) > 0, "finally cluster should have nodes"
+        assert catch_nodes.isdisjoint(finally_nodes), "clusters should not share nodes"
+
+    def test_no_merge_when_content_differs(self):
+        """Blocks with different content in the same cluster should not merge."""
+        blocks = [
+            {"id": "B0", "stmts": [{"line": 5}], "successors": []},
+            {
+                "id": "B1",
+                "stmts": [{"line": 14, "call": "println"}],
+                "successors": ["B2"],
+            },
+            {"id": "B2", "stmts": [{"line": 15, "call": "cleanup"}], "successors": []},
+        ]
+        traps = [
+            {
+                "type": "java.lang.Throwable",
+                "handler": "B1",
+                "coveredBlocks": ["B0"],
+                "handlerBlocks": ["B1", "B2"],
+            },
+        ]
+        root = _make_method_with_traps(blocks, traps)
+        dot = build_dot(root)
+
+        finally_nodes = _blocks_in_subgraph(dot, "finally")
+        assert (
+            len(finally_nodes) == 2
+        ), f"Expected 2 nodes (L14 + L15), got {len(finally_nodes)}"
+
+
+class TestExceptionEdgeRendering:
+    """Exception edges must source from blocks in the correct cluster."""
+
+    def _build_overlapping_trap_fixture(self):
+        """Two traps where all covered blocks are assigned to trap 0's try cluster."""
+        blocks = [
+            {"id": "B0", "stmts": [{"line": 5, "call": "foo"}], "successors": ["B1"]},
+            {"id": "B1", "stmts": [{"line": 6, "call": "bar"}], "successors": ["B2"]},
+            {
+                "id": "B2",
+                "stmts": [{"line": 11, "call": "errLog"}],
+                "successors": ["B3"],
+            },
+            {
+                "id": "B3",
+                "stmts": [{"line": 12, "call": "errMsg"}],
+                "successors": ["B4"],
+            },
+            {
+                "id": "B4",
+                "stmts": [{"line": 18, "call": "done"}],
+                "successors": ["B5"],
+            },
+            {
+                "id": "B5",
+                "stmts": [{"line": 19, "call": "cleanup"}],
+                "successors": [],
+            },
+        ]
+        traps = [
+            {
+                "type": "java.lang.RuntimeException",
+                "handler": "B2",
+                "coveredBlocks": ["B0", "B1"],
+                "handlerBlocks": ["B2", "B3"],
+            },
+            {
+                "type": "java.lang.Throwable",
+                "handler": "B4",
+                "coveredBlocks": ["B0", "B1", "B2", "B3"],
+                "handlerBlocks": ["B4", "B5"],
+            },
+        ]
+        return blocks, traps
+
+    def test_exception_edge_source_in_try_cluster(self):
+        """Exception edge source must be a node in the trap's own try cluster."""
+        blocks, traps = self._build_overlapping_trap_fixture()
+        root = _make_method_with_traps(blocks, traps)
+        dot = build_dot(root)
+        edges = _exception_edges(dot)
+
+        re_edge = next((e for e in edges if e["label"] == "RuntimeException"), None)
+        assert re_edge is not None, "RuntimeException exception edge should exist"
+
+        # Source node must be in try(RuntimeException) cluster
+        try_re_nodes = _blocks_in_subgraph(dot, "try (RuntimeException)")
+        assert (
+            re_edge["src"] in try_re_nodes
+        ), f"edge source {re_edge['src']} should be in try(RuntimeException)"
+
+    def test_exception_edge_exists_for_empty_try_cluster(self):
+        """When a trap's try cluster has no blocks, exception edge should still be drawn."""
+        blocks, traps = self._build_overlapping_trap_fixture()
+        root = _make_method_with_traps(blocks, traps)
+        dot = build_dot(root)
+        edges = _exception_edges(dot)
+
+        throwable_edge = next((e for e in edges if e["label"] == "Throwable"), None)
+        assert (
+            throwable_edge is not None
+        ), "Throwable exception edge should exist even when try cluster is empty"
+        # ltail must not reference the empty cluster
+        assert (
+            throwable_edge["ltail"] is None
+            or throwable_edge["ltail"] != "cluster_0_try_1"
+        ), "ltail should not reference empty try cluster"
+
+    def test_ltail_lhead_reference_nonempty_clusters(self):
+        """When ltail/lhead are present, the referenced clusters must have nodes."""
+        blocks, traps = self._build_overlapping_trap_fixture()
+        root = _make_method_with_traps(blocks, traps)
+        dot = build_dot(root)
+
+        # Build a map of cluster_id → set of node IDs from the DOT
+        cluster_nodes: dict[str, set[str]] = {}
+        current_cluster = None
+        nodes: set[str] = set()
+        for line in dot.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("subgraph "):
+                current_cluster = stripped.split()[1]
+                nodes = set()
+            elif current_cluster:
+                if stripped.startswith("n") and stripped.endswith(";"):
+                    token = stripped[:-1].strip()
+                    if token[1:].isdigit():
+                        nodes.add(token)
+                if "}" in stripped:
+                    cluster_nodes[current_cluster] = nodes
+                    current_cluster = None
+
+        for edge in _exception_edges(dot):
+            if edge["ltail"]:
+                cluster_name = edge["ltail"]
+                assert (
+                    cluster_name in cluster_nodes
+                ), f"ltail cluster {cluster_name} should exist in DOT"
+                assert (
+                    len(cluster_nodes[cluster_name]) > 0
+                ), f"ltail cluster {cluster_name} should have nodes"

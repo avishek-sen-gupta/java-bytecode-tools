@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""
-Slice and Expand: Use a jq query to find a node in an ftrace JSON,
-then expand all its 'ref' nodes using the full tree as an index.
+"""Slice a subtree from an ftrace JSON and bundle a ref index for downstream expansion.
+
+Output format (SlicedTrace):
+  { "slice": <subtree>, "refIndex": { methodSignature -> full node } }
+
+The refIndex is scoped: only signatures referenced by ref nodes in the slice are included.
 """
 
 import argparse
@@ -11,53 +14,46 @@ import sys
 from pathlib import Path
 
 
-def index_full_tree(node: dict, index: dict[str, dict]):
-    """Walk the full tree and index the first full expansion of each method signature."""
-    sig = node.get("methodSignature")
+def collect_ref_signatures(node: dict) -> frozenset[str]:
+    """Walk a subtree and return all methodSignature values where ref is true."""
+    sig = node.get("methodSignature", "")
+    refs = frozenset({sig}) if node.get("ref", False) and sig else frozenset()
+    return refs | frozenset(
+        s for child in node.get("children", []) for s in collect_ref_signatures(child)
+    )
+
+
+def index_full_tree(node: dict, signatures: frozenset[str]) -> dict[str, dict]:
+    """Walk the full tree, return {sig -> node} for signatures in the given set.
+
+    First non-ref, non-cycle, non-filtered occurrence wins.
+    Uses an internal accumulator for DFS first-occurrence semantics;
+    the public interface is pure (fresh dict returned).
+    """
+    acc: dict[str, dict] = {}
+    _index_walk(node, signatures, acc)
+    return acc
+
+
+def _index_walk(node: dict, signatures: frozenset[str], acc: dict[str, dict]) -> None:
+    """DFS walker for index_full_tree. Mutates acc (internal only)."""
+    sig = node.get("methodSignature", "")
     if (
         sig
-        and not node.get("ref")
-        and not node.get("cycle")
-        and not node.get("filtered")
+        and sig in signatures
+        and sig not in acc
+        and not node.get("ref", False)
+        and not node.get("cycle", False)
+        and not node.get("filtered", False)
     ):
-        if sig not in index:
-            index[sig] = node
+        acc[sig] = node
     for child in node.get("children", []):
-        index_full_tree(child, index)
-
-
-def expand_refs(node: dict, index: dict[str, dict], path: set[str]) -> dict:
-    """Return a copy of node with ref nodes replaced by their full expansion."""
-    if node.get("ref"):
-        sig = node.get("methodSignature")
-        if sig and sig in index and sig not in path:
-            full = index[sig]
-            expanded = dict(full)
-            expanded.pop("ref", None)
-            if node.get("callSiteLine") is not None:
-                expanded["callSiteLine"] = node["callSiteLine"]
-            path.add(sig)
-            expanded["children"] = [
-                expand_refs(c, index, path) for c in full.get("children", [])
-            ]
-            path.discard(sig)
-            return expanded
-        return dict(node)
-
-    result = dict(node)
-    if "children" in node:
-        sig = node.get("methodSignature", "")
-        if sig:
-            path.add(sig)
-        result["children"] = [expand_refs(c, index, path) for c in node["children"]]
-        if sig:
-            path.discard(sig)
-    return result
+        _index_walk(child, signatures, acc)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Slice a subtree using jq and expand all its refs in one go."
+        description="Slice a subtree using jq and bundle a ref index for expansion."
     )
     parser.add_argument(
         "--input", required=True, type=Path, help="Full ftrace JSON file"
@@ -92,26 +88,25 @@ def main():
 
     if not isinstance(target, dict):
         print(
-            "Error: jq query must return a single JSON object (node).", file=sys.stderr
+            "Error: jq query must return a single JSON object (node).",
+            file=sys.stderr,
         )
         sys.exit(1)
 
-    # 2. Load and index the full tree for ref lookups
+    # 2. Build scoped ref index from full tree
     with open(args.input) as f:
         full_tree = json.load(f)
 
-    index: dict[str, dict] = {}
-    index_full_tree(full_tree, index)
+    ref_sigs = collect_ref_signatures(target)
+    ref_index = index_full_tree(full_tree, ref_sigs)
 
-    # 3. Expand the sliced node
-    expanded = expand_refs(target, index, set())
-
-    # 4. Output
-    output = json.dumps(expanded, indent=2)
+    # 3. Output SlicedTrace
+    sliced_trace = {"slice": target, "refIndex": ref_index}
+    output = json.dumps(sliced_trace, indent=2)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(output)
-        print(f"Wrote sliced and expanded trace to {args.output}", file=sys.stderr)
+        print(f"Wrote sliced trace to {args.output}", file=sys.stderr)
     else:
         print(output)
 

@@ -1,38 +1,50 @@
 #!/usr/bin/env bash
-# Test: ftrace-slice (python) can slice and expand a trace.
+# Test: ftrace-slice + ftrace-expand-refs pipeline.
 source "$(cd "$(dirname "$0")/.." && pwd)/lib-test.sh"
 setup; load_line_numbers
 
-echo "ftrace-slice (python)"
+echo "ftrace-slice + ftrace-expand-refs pipeline"
 
 # Generate a trace that has refs
 $B xtrace --call-graph "$OUT/callgraph.json" \
   --from com.example.app.ComplexService --from-line "$COMPLEX_LINE" \
   --output "$OUT/complex.json" 2>/dev/null
 
-# Slice out handleException
+# Slice out handleException (now outputs SlicedTrace)
 cd "$REPO_ROOT/python"
 uv run ftrace-slice --input "$OUT/complex.json" \
   --query '.children[] | select(.method == "handleException")' \
   --output "$OUT/sliced.json" 2>/dev/null
 
-assert_json_field "$OUT/sliced.json" '.method' 'handleException' \
-    "sliced root method"
+assert_json_contains "$OUT/sliced.json" \
+    '.slice | .method == "handleException"' \
+    "sliced root method in .slice"
 
 assert_json_contains "$OUT/sliced.json" \
+    '.refIndex | length >= 0' \
+    "has refIndex field"
+
+# Expand refs (produces plain trace node)
+uv run ftrace-expand-refs --input "$OUT/sliced.json" \
+  --output "$OUT/expanded.json" 2>/dev/null
+
+assert_json_field "$OUT/expanded.json" '.method' 'handleException' \
+    "expanded root method"
+
+assert_json_contains "$OUT/expanded.json" \
     '.blocks | length > 0' \
     "has blocks after expansion"
 
-assert_json_contains "$OUT/sliced.json" \
+assert_json_contains "$OUT/expanded.json" \
     '.traps | length == 2' \
     "has traps after expansion"
 
-assert_json_contains "$OUT/sliced.json" \
+assert_json_contains "$OUT/expanded.json" \
     '.traps[] | select(.type | contains("RuntimeException")) | .handlerBlocks | length == 4' \
     "RuntimeException handler has 4 blocks (no normal-flow leakage)"
 
-# Pipeline: sliced raw → semantic → dot
-uv run ftrace-semantic --input "$OUT/sliced.json" --output "$OUT/sliced-semantic.json" 2>/dev/null
+# Full pipeline: expanded → semantic → dot
+uv run ftrace-semantic --input "$OUT/expanded.json" --output "$OUT/sliced-semantic.json" 2>/dev/null
 
 assert_json_contains "$OUT/sliced-semantic.json" \
     '.nodes | length > 0' \

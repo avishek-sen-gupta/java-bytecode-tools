@@ -5,6 +5,12 @@
 
 Interprocedural call tracing via [SootUp](https://soot-oss.github.io/SootUp/) bytecode analysis. Given any code path you want to understand — "what happens when this method fires?" or "what calls this DAO method?" — these tools build a structural call graph from compiled `.class` files and let you trace through it in both directions, producing JSON trees and SVG visualizations.
 
+**Forward trace of `OrderService.processOrder`** — branches, calls to repository and internal methods, resolved down to source lines:
+
+<p align="center">
+  <img src="docs/forward-trace-example.svg" alt="Forward trace visualization" width="700">
+</p>
+
 ## Setup
 
 ```bash

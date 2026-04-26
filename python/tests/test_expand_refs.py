@@ -1,6 +1,8 @@
-"""Tests for ftrace_slice expand_refs: ref expansion correctness."""
+"""Tests for ftrace_expand_refs: ref expansion correctness."""
 
-from ftrace_slice import expand_refs, index_full_tree
+import copy
+
+from ftrace_expand_refs import expand_refs
 
 
 def _make_full_node(sig):
@@ -31,6 +33,11 @@ def _make_ref_node(sig, call_site_line=5):
     }
 
 
+def _index_from_nodes(*nodes):
+    """Build a ref index from full nodes."""
+    return {n["methodSignature"]: n for n in nodes}
+
+
 class TestExpandRefs:
     def test_callsiteline_preserved_from_ref_node(self):
         """callSiteLine comes from the ref node, not the full expansion."""
@@ -39,10 +46,8 @@ class TestExpandRefs:
         full["callSiteLine"] = 99
         ref = _make_ref_node(sig, call_site_line=42)
 
-        index = {}
-        index_full_tree(full, index)
-
-        expanded = expand_refs(ref, index, set())
+        index = _index_from_nodes(full)
+        expanded = expand_refs(ref, index, frozenset())
         assert expanded["callSiteLine"] == 42
 
     def test_children_recursively_expanded(self):
@@ -58,11 +63,8 @@ class TestExpandRefs:
 
         parent_ref = _make_ref_node(parent_sig, call_site_line=1)
 
-        index = {}
-        index_full_tree(parent_full, index)
-        index_full_tree(child_full, index)
-
-        expanded = expand_refs(parent_ref, index, set())
+        index = _index_from_nodes(parent_full, child_full)
+        expanded = expand_refs(parent_ref, index, frozenset())
         assert len(expanded["children"]) == 1
         assert expanded["children"][0]["callSiteLine"] == 15
         assert expanded["children"][0]["blocks"] == child_full["blocks"]
@@ -73,20 +75,52 @@ class TestExpandRefs:
         full = _make_full_node(sig)
         ref = _make_ref_node(sig)
 
-        index = {}
-        index_full_tree(full, index)
+        index = _index_from_nodes(full)
+        expanded = expand_refs(ref, index, frozenset())
+        assert "ref" not in expanded
 
-        expanded = expand_refs(ref, index, set())
-        assert "ref" not in expanded or not expanded["ref"]
-
-    def test_cycle_detection_still_works(self):
+    def test_cycle_detection(self):
         """If the sig is already in the path, ref should not be expanded."""
+        sig = "<com.example.Svc: void doWork()>"
+        ref = _make_ref_node(sig)
+
+        index = _index_from_nodes(_make_full_node(sig))
+        expanded = expand_refs(ref, index, frozenset({sig}))
+        assert expanded.get("ref", False) is True
+
+    def test_ref_not_in_index_returned_as_is(self):
+        """A ref whose signature is not in the index is returned unchanged."""
+        ref = _make_ref_node("<com.example.Svc: void missing()>")
+        expanded = expand_refs(ref, {}, frozenset())
+        assert expanded.get("ref", False) is True
+
+    def test_non_ref_children_recursed(self):
+        """Non-ref nodes with children have their children expanded."""
+        child_sig = "<com.example.Svc: void child()>"
+        child_full = _make_full_node(child_sig)
+        child_ref = _make_ref_node(child_sig)
+
+        parent = {
+            "methodSignature": "<com.example.Svc: void parent()>",
+            "children": [child_ref],
+        }
+
+        index = _index_from_nodes(child_full)
+        expanded = expand_refs(parent, index, frozenset())
+        assert "ref" not in expanded["children"][0]
+        assert expanded["children"][0]["blocks"] == child_full["blocks"]
+
+    def test_does_not_mutate_input(self):
+        """expand_refs must not mutate the input node or index."""
         sig = "<com.example.Svc: void doWork()>"
         full = _make_full_node(sig)
         ref = _make_ref_node(sig)
+        index = _index_from_nodes(full)
 
-        index = {}
-        index_full_tree(full, index)
+        original_ref = copy.deepcopy(ref)
+        original_index = copy.deepcopy(index)
 
-        expanded = expand_refs(ref, index, {sig})
-        assert expanded.get("ref") is True, "should remain a ref when cycle detected"
+        expand_refs(ref, index, frozenset())
+
+        assert ref == original_ref
+        assert index == original_index

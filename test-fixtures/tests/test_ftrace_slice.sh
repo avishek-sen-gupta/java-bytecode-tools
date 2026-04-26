@@ -68,4 +68,18 @@ assert_file_contains "$OUT/piped.dot" "digraph" \
 assert_file_contains "$OUT/piped.dot" "handleException" \
     "piped pipeline DOT contains handleException"
 
+# End-to-end piped: xtrace | slice | expand-refs | semantic | to-dot (no intermediate files)
+$B xtrace --call-graph "$OUT/callgraph.json" \
+  --from com.example.app.ComplexService --from-line "$COMPLEX_LINE" \
+  | uv run ftrace-slice --query '.children[] | select(.method == "handleException")' \
+  | uv run ftrace-expand-refs \
+  | uv run ftrace-semantic \
+  | uv run ftrace-to-dot > "$OUT/e2e-piped.dot"
+
+assert_file_contains "$OUT/e2e-piped.dot" "digraph" \
+    "e2e piped from xtrace produces a digraph"
+
+assert_file_contains "$OUT/e2e-piped.dot" "handleException" \
+    "e2e piped from xtrace contains handleException"
+
 report

@@ -152,12 +152,13 @@ uv run ftrace-expand-refs \
   --output ../expanded.json
 ```
 
-Or pipe the whole thing — all tools support stdin/stdout:
+Or pipe the whole thing — all tools (including xtrace) support stdin/stdout:
 
 ```bash
-cd python
-cat ../trace.json \
-  | uv run ftrace-slice --query ".children[0].children[2]" \
+scripts/bytecode.sh --prefix com.example. /path/to/classes \
+  xtrace --call-graph callgraph.json \
+  --from com.example.service.OrderService --from-line 64 \
+  | cd python && uv run ftrace-slice --query ".children[0].children[2]" \
   | uv run ftrace-expand-refs \
   | uv run ftrace-semantic \
   | uv run ftrace-to-dot > ../sliced.svg
@@ -257,6 +258,9 @@ uv run ftrace-to-dot --input ../out-semantic.json --output ../out.svg
 uv run ftrace-slice --input ../trace.json --query "<jq-query>" --output ../sliced.json
 uv run ftrace-expand-refs --input ../sliced.json --output ../expanded.json
 
-# Or pipe the full pipeline:
-cat ../trace.json | uv run ftrace-slice --query "<jq-query>" | uv run ftrace-expand-refs | uv run ftrace-semantic | uv run ftrace-to-dot > ../out.svg
+# Or pipe the full pipeline end-to-end (xtrace writes JSON to stdout when --output is omitted):
+scripts/bytecode.sh --prefix com.example. /path/to/classes \
+  xtrace --call-graph callgraph.json --from <class> --from-line <N> \
+  | cd python && uv run ftrace-slice --query "<jq-query>" \
+  | uv run ftrace-expand-refs | uv run ftrace-semantic | uv run ftrace-to-dot > ../out.svg
 ```

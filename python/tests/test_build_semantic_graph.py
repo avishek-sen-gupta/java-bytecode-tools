@@ -425,3 +425,53 @@ class TestBuildSemanticGraphPass:
         original = copy.deepcopy(tree)
         build_semantic_graph_pass(tree)
         assert tree == original
+
+
+class TestPipeAndTransform:
+    def test_pipe_composes_functions(self):
+        from ftrace_semantic import pipe
+
+        add1 = lambda x: x + 1
+        double = lambda x: x * 2
+        assert pipe(add1, double)(3) == 8  # (3+1)*2
+
+    def test_transform_runs_all_passes(self):
+        from ftrace_semantic import transform
+
+        tree = {
+            "class": "Svc",
+            "method": "run",
+            "methodSignature": "<Svc: void run()>",
+            "lineStart": 1,
+            "lineEnd": 10,
+            "sourceLineCount": 10,
+            "blocks": [
+                {"id": "B0", "stmts": [{"line": 5}], "successors": ["B1"]},
+                {
+                    "id": "B1",
+                    "stmts": [{"line": 10, "call": "Foo.bar"}],
+                    "successors": [],
+                },
+            ],
+            "traps": [],
+            "children": [],
+        }
+        result = transform(tree)
+
+        # Should have semantic fields
+        assert "nodes" in result
+        assert "edges" in result
+        assert "clusters" in result
+        assert "exceptionEdges" in result
+
+        # Should not have raw fields
+        assert "blocks" not in result
+        assert "traps" not in result
+
+    def test_transform_leaf_node(self):
+        from ftrace_semantic import transform
+
+        tree = {"class": "Svc", "method": "run", "methodSignature": "sig", "ref": True}
+        result = transform(tree)
+        assert result.get("ref") is True
+        assert "nodes" not in result

@@ -8,6 +8,7 @@ Four composable passes, each a pure function tree → tree:
 """
 
 from functools import reduce
+from typing import Callable
 
 from ftrace_types import (
     ClusterAssignment,
@@ -450,3 +451,54 @@ def build_semantic_graph_pass(tree: dict, next_id: int = 0) -> dict:
         ]
 
     return result
+
+
+def pipe(*fns: Callable[[dict], dict]) -> Callable[[dict], dict]:
+    """Compose functions left-to-right: pipe(f, g)(x) == g(f(x))."""
+    return lambda x: reduce(lambda acc, fn: fn(acc), fns, x)
+
+
+def transform(tree: dict) -> dict:
+    """Run all four passes on a tree."""
+    return pipe(
+        merge_stmts_pass,
+        assign_clusters_pass,
+        deduplicate_blocks_pass,
+        build_semantic_graph_pass,
+    )(tree)
+
+
+def main():
+    import argparse
+    import json
+    import sys
+    from pathlib import Path
+
+    parser = argparse.ArgumentParser(
+        description="Transform raw xtrace JSON into semantic graph JSON."
+    )
+    parser.add_argument("--input", type=Path, help="Input JSON file (default: stdin)")
+    parser.add_argument(
+        "--output", type=Path, help="Output JSON file (default: stdout)"
+    )
+    args = parser.parse_args()
+
+    if args.input:
+        with open(args.input) as f:
+            tree = json.load(f)
+    else:
+        tree = json.load(sys.stdin)
+
+    result = transform(tree)
+    output = json.dumps(result, indent=2)
+
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(output)
+        print(f"Wrote semantic graph to {args.output}", file=sys.stderr)
+    else:
+        print(output)
+
+
+if __name__ == "__main__":
+    main()

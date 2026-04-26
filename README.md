@@ -41,7 +41,9 @@ java-bytecode-tools/
 │       └── cli/             # picocli CLI commands
 ├── python/                  # uv project — visualization tools
 │   ├── pyproject.toml
-│   ├── ftrace_to_dot.py     # Render forward trace as SVG
+│   ├── ftrace_types.py      # Shared type definitions (StrEnum, TypedDict)
+│   ├── ftrace_semantic.py   # Transform raw trace → semantic graph
+│   ├── ftrace_to_dot.py     # Render semantic graph as DOT/SVG
 │   └── ftrace_slice.py      # Slice and expand a specific method
 ├── scripts/
 │   └── bytecode.sh          # CLI launcher
@@ -145,8 +147,22 @@ This creates a standalone JSON for that method, including its full CFG, source t
 
 ### Step 5: Visualize as SVG
 
+The visualization pipeline has two stages: first transform the raw trace into a semantic graph (merging statements, assigning trap clusters, deduplicating blocks), then render it as DOT/SVG.
+
 ```bash
-cd python && uv run ftrace-to-dot --input ../sliced.json --output ../trace.svg
+cd python
+
+# Transform raw trace → semantic graph
+uv run ftrace-semantic --input ../trace.json --output ../trace-semantic.json
+
+# Render semantic graph → SVG
+uv run ftrace-to-dot --input ../trace-semantic.json --output ../trace.svg
+```
+
+Or pipe them together:
+
+```bash
+cd python && uv run ftrace-semantic --input ../trace.json | uv run ftrace-to-dot --output ../trace.svg
 ```
 
 The SVG shows:
@@ -185,19 +201,21 @@ Without `--filter`, the tracer recurses into everything reachable.
 
 ## Testing
 
-Run the full e2e suite:
+Run all tests (Java unit, Python unit, E2E):
 
 ```bash
-bash test-fixtures/run-e2e.sh
+bash run-all-tests.sh
 ```
 
-Or run a single test case:
+Or run individually:
 
 ```bash
-bash test-fixtures/tests/test_xtrace_forward.sh
+cd java && mvn test                    # Java unit tests
+python3 -m pytest python/tests/ -v     # Python unit tests
+bash test-fixtures/run-e2e.sh          # E2E tests
 ```
 
-Tests compile a small fixture project (`test-fixtures/src/`), exercise every CLI command and flag, and validate the JSON output with `jq`. Requires `jq` to be installed.
+E2E tests compile a small fixture project (`test-fixtures/src/`), exercise every CLI command and the full `xtrace → ftrace-semantic → ftrace-to-dot` pipeline, and validate output with `jq`. Requires `jq` to be installed.
 
 ## Quick reference
 
@@ -214,6 +232,7 @@ scripts/bytecode.sh --prefix com.example. /path/to/classes xtrace --call-graph c
 scripts/bytecode.sh --prefix com.example. /path/to/classes xtrace --call-graph callgraph.json --to <class> --to-line <N> --collapse --flat
 
 cd python
-uv run ftrace-to-dot --input ../out.json --output ../out.svg
+uv run ftrace-semantic --input ../out.json --output ../out-semantic.json
+uv run ftrace-to-dot --input ../out-semantic.json --output ../out.svg
 uv run ftrace-slice --input ../trace.json --query "<jq-query>" --output ../sliced.json
 ```

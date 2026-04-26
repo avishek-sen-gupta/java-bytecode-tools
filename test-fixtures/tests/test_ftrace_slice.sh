@@ -60,7 +60,7 @@ cat "$OUT/complex.json" \
   | uv run ftrace-slice --query '.children[] | select(.method == "handleException")' \
   | uv run ftrace-expand-refs \
   | uv run ftrace-semantic \
-  | uv run ftrace-to-dot --output "$OUT/piped.dot"
+  | uv run ftrace-to-dot > "$OUT/piped.dot"
 
 assert_file_contains "$OUT/piped.dot" "digraph" \
     "piped pipeline produces a digraph"

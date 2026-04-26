@@ -31,9 +31,9 @@ repos:
   # Tests
   - repo: local
     hooks:
-      - id: e2e-tests
-        name: e2e tests
-        entry: bash test-fixtures/run-e2e.sh
+      - id: all-tests
+        name: all tests
+        entry: bash run-all-tests.sh
         language: system
         pass_filenames: false
         stages: [pre-commit]

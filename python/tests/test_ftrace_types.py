@@ -11,6 +11,7 @@ from ftrace_types import (
     SemanticEdge,
     SemanticCluster,
     ExceptionEdge,
+    SlicedTrace,
     NodeKind,
     ClusterRole,
     BranchLabel,
@@ -99,6 +100,15 @@ class TestTypeConstructors:
 
     def test_branch_label_values(self):
         assert list(BranchLabel) == [BranchLabel.T, BranchLabel.F]
+
+    def test_sliced_trace_type(self):
+        """SlicedTrace has slice and refIndex fields."""
+        st: SlicedTrace = {
+            "slice": {"method": "foo", "children": []},
+            "refIndex": {"<Svc: void foo()>": {"method": "foo"}},
+        }
+        assert st["slice"]["method"] == "foo"
+        assert "<Svc: void foo()>" in st["refIndex"]
 
     def test_str_enum_equals_string(self):
         assert NodeKind.PLAIN == "plain"

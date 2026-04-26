@@ -200,3 +200,15 @@ ExceptionEdge = TypedDict(
         "toCluster": int,
     },
 )
+
+
+class SlicedTrace(TypedDict):
+    """Output of ftrace-slice: a sliced subtree plus a ref index for expansion.
+
+    Fields:
+    - slice: the sliced subtree (trace node)
+    - refIndex: methodSignature -> full node, scoped to refs in the slice
+    """
+
+    slice: dict
+    refIndex: dict[str, dict]

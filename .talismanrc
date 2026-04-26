@@ -5,3 +5,5 @@ fileignoreconfig:
     checksum: 81f753579431efde73740067912475aa1c3450fce405dd341c3feb2036121390
   - filename: test-fixtures/lib-test.sh
     checksum: 8d5de922744e8570b00c82b810a0c4ebf70541820d3bf5f4d5146ee4f9795390
+  - filename: docs/superpowers/plans/2026-04-27-semantic-graph-pipeline.md
+    checksum: 42641a14b160030b598e6f60c0a79decc15c255e41658364f9cd185040fa040d

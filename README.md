@@ -42,9 +42,10 @@ java-bytecode-tools/
 ├── python/                  # uv project — visualization tools
 │   ├── pyproject.toml
 │   ├── ftrace_types.py      # Shared type definitions (StrEnum, TypedDict)
+│   ├── ftrace_slice.py      # Slice subtree + bundle ref index
+│   ├── ftrace_expand_refs.py # Expand ref nodes using ref index
 │   ├── ftrace_semantic.py   # Transform raw trace → semantic graph
-│   ├── ftrace_to_dot.py     # Render semantic graph as DOT/SVG
-│   └── ftrace_slice.py      # Slice and expand a specific method
+│   └── ftrace_to_dot.py     # Render semantic graph as DOT/SVG
 ├── scripts/
 │   └── bytecode.sh          # CLI launcher
 ├── test-fixtures/           # E2e tests
@@ -134,16 +135,24 @@ scripts/bytecode.sh --prefix com.example. /path/to/classes \
 
 ### Step 4 (optional): Slice and expand
 
-Interprocedural traces can be huge and contain many `ref` nodes (deduplicated methods). You can "drill down" into a specific method by slicing the trace and expanding all its refs in one step:
+Interprocedural traces can be huge and contain many `ref` nodes (deduplicated methods). You can "drill down" into a specific method by slicing the trace and expanding all its refs:
 
 ```bash
-cd python && uv run ftrace-slice \
+cd python
+
+# Slice: extract subtree + bundle ref index
+uv run ftrace-slice \
   --input ../trace.json \
   --query ".children[0].children[2]" \
   --output ../sliced.json
+
+# Expand refs: replace ref nodes with full method bodies
+uv run ftrace-expand-refs \
+  --input ../sliced.json \
+  --output ../expanded.json
 ```
 
-This creates a standalone JSON for that method, including its full CFG, source trace, and exception clusters.
+This creates a standalone JSON for that method, including its full CFG, source trace, and exception clusters. The expanded output is ready for `ftrace-semantic`.
 
 ### Step 5: Visualize as SVG
 
@@ -235,4 +244,5 @@ cd python
 uv run ftrace-semantic --input ../out.json --output ../out-semantic.json
 uv run ftrace-to-dot --input ../out-semantic.json --output ../out.svg
 uv run ftrace-slice --input ../trace.json --query "<jq-query>" --output ../sliced.json
+uv run ftrace-expand-refs --input ../sliced.json --output ../expanded.json
 ```

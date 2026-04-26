@@ -15,16 +15,6 @@ def _make_semantic_method(nodes, edges, clusters=(), exception_edges=(), childre
     }
 
 
-def _quoted_value(line: str, key: str) -> str:
-    tag = f'{key}="'
-    start = line.find(tag)
-    if start == -1:
-        return ""
-    start += len(tag)
-    end = line.index('"', start)
-    return line[start:end]
-
-
 class TestNodeRendering:
     def test_plain_node(self):
         from ftrace_to_dot import build_dot

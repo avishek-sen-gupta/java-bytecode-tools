@@ -118,7 +118,7 @@ Output per method node:
 }
 ```
 
-Node `kind` values: `plain`, `call`, `branch`, `assign`, `cycle`, `ref`, `filtered`.
+Node `kind` values: `NodeKind.PLAIN`, `NodeKind.CALL`, `NodeKind.BRANCH`, `NodeKind.ASSIGN`, `NodeKind.CYCLE`, `NodeKind.REF`, `NodeKind.FILTERED` (StrEnum, serializes as lowercase string in JSON).
 
 Edge dedup, self-loop suppression, and reverse-edge suppression (shared-node logic) are handled here.
 
@@ -187,9 +187,24 @@ Every function is written test-first:
 ### Functional programming
 
 - **No mutation**: Every pass returns a new dict. Input arguments are never modified.
-- **Comprehensions over loops**: Use list/dict/set comprehensions, `map`, `filter`, `reduce` where readable.
+- **Comprehensions over loops**: Use list/dict/set comprehensions, `map`, `filter`, `reduce` where readable. **No nested for...if loops** — flatten with comprehensions or functional combinators.
 - **Small pure functions**: Each function does one thing, takes explicit arguments, returns a value. No side effects.
 - **Dependency injection**: Node ID generation is an injected counter/factory, not a closure over mutable state. No module-level mutable state.
+
+### Strong typing
+
+- All functions have full type annotations — parameters and return types.
+- Use `TypedDict` for structured data (nodes, edges, clusters, blocks, etc.) rather than bare `dict`.
+- Use `enum.StrEnum` for constrained string fields (e.g., `NodeKind(StrEnum)` with members `PLAIN`, `CALL`, `BRANCH`, `ASSIGN`, `CYCLE`, `REF`, `FILTERED`). Enums over raw `Literal` types for readability and discoverability.
+- Use `dataclass(frozen=True)` where appropriate for immutable value objects.
+- All collections typed explicitly: `list[SemanticNode]`, not `list[dict]`.
+
+### No defensive programming
+
+- **No `None` checks**: Do not check for `None`. Use the null object pattern — empty dicts, empty lists, empty strings — instead of `None` sentinels.
+- **No `Optional` in type hints**: Type hints must not use `Optional[X]` or `X | None`. If a value might be absent, use a sensible default (empty collection, empty string, zero).
+- **No defensive `get()` with `None` fallback**: Use `dict.get(key, default)` with a concrete default, not `dict.get(key)` which returns `None`.
+- **Immutable data**: Prefer `tuple` over `list` for fixed-size collections, `frozenset` over `set` where applicable. Use `types.MappingProxyType` or return new dicts rather than mutating. All pass functions already return new trees — extend this to all intermediate data.
 
 ## Semantic JSON schema summary
 

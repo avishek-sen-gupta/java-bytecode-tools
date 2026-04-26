@@ -428,6 +428,27 @@ class TestBuildSemanticGraphPass:
 
 
 class TestSourceTraceFallback:
+    def test_empty_source_trace_produces_empty_graph(self):
+        from ftrace_semantic import build_semantic_graph_pass
+
+        tree = {
+            "class": "com.example.Svc",
+            "method": "run",
+            "methodSignature": "sig",
+            "lineStart": 5,
+            "lineEnd": 10,
+            "sourceLineCount": 6,
+            "mergedSourceTrace": [],
+            "children": [],
+        }
+        result = build_semantic_graph_pass(tree)
+
+        assert result["nodes"] == []
+        assert result["edges"] == []
+        assert result["clusters"] == []
+        assert result["exceptionEdges"] == []
+        assert "entryNodeId" not in result
+
     def test_source_trace_produces_linear_nodes(self):
         from ftrace_semantic import build_semantic_graph_pass
 
@@ -451,6 +472,17 @@ class TestSourceTraceFallback:
         assert result["nodes"][1]["kind"] == NodeKind.CALL
         assert len(result["edges"]) == 1
         assert result["edges"][0]["from"] == result["nodes"][0]["id"]
+        # Edge "to" field connects to next node
+        assert result["edges"][0]["to"] == result["nodes"][1]["id"]
+        # entryNodeId equals first node's id
+        assert result["entryNodeId"] == result["nodes"][0]["id"]
+        # clusters is empty list
+        assert result["clusters"] == []
+        # exceptionEdges is empty list
+        assert result["exceptionEdges"] == []
+        # sourceTrace and mergedSourceTrace are NOT in result
+        assert "sourceTrace" not in result
+        assert "mergedSourceTrace" not in result
 
 
 class TestPipeAndTransform:

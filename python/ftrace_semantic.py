@@ -21,6 +21,7 @@ from ftrace_types import (
     SemanticCluster,
     SemanticEdge,
     SemanticNode,
+    SourceTraceEntry,
 )
 
 
@@ -47,7 +48,7 @@ def merge_block_stmts(stmts: list[RawStmt]) -> list[MergedStmt]:
     return [by_line[ln] for ln in sorted(by_line)]
 
 
-def merge_source_trace(source_trace: list[dict]) -> list[MergedStmt]:
+def merge_source_trace(source_trace: list[SourceTraceEntry]) -> list[MergedStmt]:
     """Deduplicate sourceTrace by line number, merging calls and branches."""
     by_line: dict[int, MergedStmt] = {}
     for entry in source_trace:
@@ -276,8 +277,10 @@ def build_semantic_graph_pass(tree: dict, next_id: int = 0) -> dict:
                     "label": make_node_label(entry),
                 }
             )
-        for i in range(len(all_nodes) - 1):
-            all_edges.append({"from": all_nodes[i]["id"], "to": all_nodes[i + 1]["id"]})
+        all_edges = [
+            {"from": all_nodes[i]["id"], "to": all_nodes[i + 1]["id"]}
+            for i in range(len(all_nodes) - 1)
+        ]
 
         drop_fields = {"sourceTrace", "mergedSourceTrace"}
         result = {

@@ -82,6 +82,32 @@ class TestMergeSourceTrace:
         result = merge_source_trace(trace)
         assert len(result) == 1
 
+    def test_branch_entries_collected(self):
+        from ftrace_semantic import merge_source_trace
+
+        trace = [
+            {"line": 6, "branch": "i <= 0"},
+            {"line": 6, "branch": "x > 5"},
+        ]
+        result = merge_source_trace(trace)
+        assert len(result) == 1
+        assert result[0]["line"] == 6
+        assert result[0]["branches"] == ["i <= 0", "x > 5"]
+
+    def test_mixed_entry_types(self):
+        from ftrace_semantic import merge_source_trace
+
+        trace = [
+            {"line": 5, "calls": ["Foo.bar"]},
+            {"line": 5, "branch": "x > 0"},
+            {"line": 5, "calls": ["Baz.qux"]},
+        ]
+        result = merge_source_trace(trace)
+        assert len(result) == 1
+        assert result[0]["line"] == 5
+        assert sorted(result[0]["calls"]) == ["Baz.qux", "Foo.bar"]
+        assert result[0]["branches"] == ["x > 0"]
+
 
 class TestMergeStmtsPass:
     """Tests for the full tree-walking pass."""

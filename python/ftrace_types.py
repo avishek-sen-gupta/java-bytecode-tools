@@ -66,6 +66,24 @@ class MergedStmt(TypedDict):
     assigns: list[str]
 
 
+# SourceTraceEntry: line required, calls/branch optional
+class _SourceTraceEntryRequired(TypedDict):
+    line: int
+
+
+class SourceTraceEntry(_SourceTraceEntryRequired, total=False):
+    """Entry in a source trace.
+
+    Fields:
+    - line: source line number (required)
+    - calls: methods called on this line (optional)
+    - branch: branch condition, if any (optional)
+    """
+
+    calls: list[str]
+    branch: str
+
+
 # RawBlock: id, stmts, successors are required
 class _RawBlockRequired(TypedDict):
     id: str

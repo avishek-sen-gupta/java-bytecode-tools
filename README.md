@@ -152,6 +152,17 @@ uv run ftrace-expand-refs \
   --output ../expanded.json
 ```
 
+Or pipe the whole thing — all tools support stdin/stdout:
+
+```bash
+cd python
+cat ../trace.json \
+  | uv run ftrace-slice --query ".children[0].children[2]" \
+  | uv run ftrace-expand-refs \
+  | uv run ftrace-semantic \
+  | uv run ftrace-to-dot > ../sliced.svg
+```
+
 This creates a standalone JSON for that method, including its full CFG, source trace, and exception clusters. The expanded output is ready for `ftrace-semantic`.
 
 ### Step 5: Visualize as SVG
@@ -224,7 +235,7 @@ python3 -m pytest python/tests/ -v     # Python unit tests
 bash test-fixtures/run-e2e.sh          # E2E tests
 ```
 
-E2E tests compile a small fixture project (`test-fixtures/src/`), exercise every CLI command and the full `xtrace → ftrace-semantic → ftrace-to-dot` pipeline, and validate output with `jq`. Requires `jq` to be installed.
+E2E tests compile a small fixture project (`test-fixtures/src/`), exercise every CLI command and the full `xtrace → ftrace-slice → ftrace-expand-refs → ftrace-semantic → ftrace-to-dot` pipeline (both file-based and piped via stdin/stdout), and validate output with `jq`. Requires `jq` to be installed.
 
 ## Quick reference
 
@@ -245,4 +256,7 @@ uv run ftrace-semantic --input ../out.json --output ../out-semantic.json
 uv run ftrace-to-dot --input ../out-semantic.json --output ../out.svg
 uv run ftrace-slice --input ../trace.json --query "<jq-query>" --output ../sliced.json
 uv run ftrace-expand-refs --input ../sliced.json --output ../expanded.json
+
+# Or pipe the full pipeline:
+cat ../trace.json | uv run ftrace-slice --query "<jq-query>" | uv run ftrace-expand-refs | uv run ftrace-semantic | uv run ftrace-to-dot > ../out.svg
 ```

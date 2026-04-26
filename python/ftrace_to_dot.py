@@ -49,6 +49,40 @@ def merge_block_stmts(stmts: list[dict]) -> list[dict]:
     return [by_line[ln] for ln in sorted(by_line)]
 
 
+def assign_trap_clusters(
+    traps: list[dict],
+) -> dict[str, tuple[str, int]]:
+    """Assign each block to exactly one trap cluster.
+
+    Returns a map of block_id -> ("try"|"handler", trap_index).
+
+    Heuristic: handler membership takes priority over coverage.
+    A block can be both a coveredBlock (for a finally/outer trap) and a
+    handlerBlock (for a catch/inner trap).  In Graphviz each node must
+    belong to exactly one subgraph cluster for deterministic placement,
+    so handler wins.  No entry is ever overwritten — the handler set is
+    pre-computed and used to exclude handler blocks from coverage.
+    """
+    all_handler_bids = {bid for t in traps for bid in t.get("handlerBlocks", [])}
+
+    assignment: dict[str, tuple[str, int]] = {}
+    for i, trap in enumerate(traps):
+        for bid in trap.get("coveredBlocks", []):
+            if bid not in all_handler_bids and bid not in assignment:
+                assignment[bid] = ("try", i)
+        for bid in trap.get("handlerBlocks", []):
+            if bid not in assignment:
+                assignment[bid] = ("handler", i)
+    return assignment
+
+
+def blocks_for_cluster(
+    assignment: dict[str, tuple[str, int]], kind: str, trap_index: int
+) -> list[str]:
+    """Return block IDs assigned to a specific cluster, in insertion order."""
+    return [bid for bid, (k, i) in assignment.items() if k == kind and i == trap_index]
+
+
 def build_dot(root: dict) -> str:
     lines = [
         "digraph ftrace {",
@@ -240,6 +274,8 @@ def build_dot(root: dict) -> str:
                             lines.append(f"    {tail_nid} -> {succ_nid};")
 
             # ---- Traps (Exception Handlers) as nested clusters ----
+            cluster_assignment = assign_trap_clusters(traps)
+
             for i, trap in enumerate(traps):
                 etype = short_class(trap["type"])
 
@@ -250,7 +286,7 @@ def build_dot(root: dict) -> str:
                 lines.append(
                     '      style="dashed,rounded"; color="#ffa500"; fontcolor="#ffa500";'
                 )
-                for bid in trap.get("coveredBlocks", []):
+                for bid in blocks_for_cluster(cluster_assignment, "try", i):
                     for nid in bid_to_nids.get(bid, []):
                         lines.append(f"      {nid};")
                 lines.append("    }")
@@ -267,7 +303,7 @@ def build_dot(root: dict) -> str:
                 lines.append(
                     '      style="dashed,rounded"; color="#007bff"; fontcolor="#007bff";'
                 )
-                for bid in trap.get("handlerBlocks", []):
+                for bid in blocks_for_cluster(cluster_assignment, "handler", i):
                     for nid in bid_to_nids.get(bid, []):
                         lines.append(f"      {nid};")
                 lines.append("    }")

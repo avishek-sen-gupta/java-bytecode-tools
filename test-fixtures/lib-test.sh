@@ -82,15 +82,23 @@ setup() {
     $B dump com.example.app.OrderService > "$OUT/dump-svc.json" 2>/dev/null
     $B dump com.example.app.JdbcOrderRepository > "$OUT/dump-repo.json" 2>/dev/null
     $B dump com.example.app.OrderController > "$OUT/dump-ctrl.json" 2>/dev/null
+    $B dump com.example.app.ExceptionService > "$OUT/dump-exc.json" 2>/dev/null
+    $B dump com.example.app.ComplexService > "$OUT/dump-complex.json" 2>/dev/null
+    $B dump com.example.app.RecursionService > "$OUT/dump-rec.json" 2>/dev/null
+    $B dump com.example.app.NestedExceptionService > "$OUT/dump-nested.json" 2>/dev/null
 }
 
 # Extract line numbers from dumps (call after setup)
 load_line_numbers() {
     PROCESS_LINE=$(jq -r '.methods[] | select(.method == "processOrder") | .lineStart' "$OUT/dump-svc.json")
-    PROCESS_END=$(jq -r '.methods[] | select(.method == "processOrder") | .lineEnd' "$OUT/dump-svc.json")
+    PROCESS_END=$(jq -r '.methods[] | select(.method == "processOrder") | .lineStart' "$OUT/dump-svc.json")
     ORDER_EXISTS_LINE=$(jq -r '.methods[] | select(.method == "orderExists") | .lineStart' "$OUT/dump-svc.json")
     FIND_BY_ID_LINE=$(jq -r '.methods[] | select(.method == "findById") | .lineStart' "$OUT/dump-repo.json")
     HANDLE_GET_LINE=$(jq -r '.methods[] | select(.method == "handleGet") | .lineStart' "$OUT/dump-ctrl.json")
+    EXCEPTION_LINE=$(jq -r '.methods[] | select(.method == "handleException") | .lineStart' "$OUT/dump-exc.json")
+    COMPLEX_LINE=$(jq -r '.methods[] | select(.method == "entryMethod") | .lineStart' "$OUT/dump-complex.json")
+    RECURSE_LINE=$(jq -r '.methods[] | select(.method == "recurse") | .lineStart' "$OUT/dump-rec.json")
+    NESTED_LINE=$(jq -r '.methods[] | select(.method == "nestedHandle") | .lineStart' "$OUT/dump-nested.json")
 }
 
 report() {

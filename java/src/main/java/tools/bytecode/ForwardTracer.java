@@ -140,7 +140,10 @@ public class ForwardTracer {
     node.put("lineEnd", frame.exitLine());
     node.put("sourceLineCount", frame.exitLine() - frame.entryLine() + 1);
     node.put("sourceTrace", frame.sourceTrace());
-    node.put("blocks", buildBlockTrace(method));
+
+    Map<String, Object> blockInfo = buildBlockTrace(method);
+    node.put("blocks", blockInfo.get("blocks"));
+    node.put("traps", blockInfo.get("traps"));
 
     // Recurse into callees
     List<String> callees = callerToCallees.get(sig);
@@ -174,22 +177,25 @@ public class ForwardTracer {
   }
 
   /** Build block-level CFG trace from a method body. */
-  List<Map<String, Object>> buildBlockTrace(SootMethod method) {
+  Map<String, Object> buildBlockTrace(SootMethod method) {
     Body body = method.getBody();
     StmtGraph<?> stmtGraph = body.getStmtGraph();
     List<? extends BasicBlock<?>> blocks = stmtGraph.getBlocksSorted();
-    if (blocks.isEmpty()) return List.of();
+    if (blocks.isEmpty()) return Map.of("blocks", List.of(), "traps", List.of());
 
     Map<Stmt, String> stmtToBlockId = new LinkedHashMap<>();
     for (int i = 0; i < blocks.size(); i++) {
       stmtToBlockId.put(blocks.get(i).getHead(), "B" + i);
     }
 
+    Map<String, Map<String, Object>> trapsMap = new LinkedHashMap<>();
     List<Map<String, Object>> blockList = new ArrayList<>();
+
     for (int i = 0; i < blocks.size(); i++) {
       BasicBlock<?> block = blocks.get(i);
+      String blockId = "B" + i;
       Map<String, Object> blockMap = new LinkedHashMap<>();
-      blockMap.put("id", "B" + i);
+      blockMap.put("id", blockId);
 
       List<Map<String, Object>> stmtList = new ArrayList<>();
       for (Stmt stmt : block.getStmts()) {
@@ -226,6 +232,33 @@ public class ForwardTracer {
       }
       blockMap.put("successors", successorIds);
 
+      // Collect exceptional successors into centralized traps list
+      stmtGraph
+          .exceptionalSuccessors(block.getTail())
+          .forEach(
+              (type, succStmt) -> {
+                BasicBlock<?> succBlock = stmtGraph.getBlockOf(succStmt);
+                if (succBlock != null) {
+                  String succId = stmtToBlockId.get(succBlock.getHead());
+                  if (succId != null) {
+                    String trapKey = succId + ":" + type;
+                    Map<String, Object> trap =
+                        trapsMap.computeIfAbsent(
+                            trapKey,
+                            k -> {
+                              Map<String, Object> m = new LinkedHashMap<>();
+                              m.put("handler", succId);
+                              m.put("type", type.toString());
+                              m.put("coveredBlocks", new ArrayList<String>());
+                              return m;
+                            });
+                    @SuppressWarnings("unchecked")
+                    List<String> covered = (List<String>) trap.get("coveredBlocks");
+                    covered.add(blockId);
+                  }
+                }
+              });
+
       // Branch condition from tail statement
       Stmt tail = block.getTail();
       if (tail instanceof JIfStmt) {
@@ -260,6 +293,54 @@ public class ForwardTracer {
 
       blockList.add(blockMap);
     }
-    return blockList;
+
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("blocks", blockList);
+
+    // Build successor lookup for BFS
+    Map<String, List<String>> succMap = new LinkedHashMap<>();
+    for (Map<String, Object> b : blockList) {
+      @SuppressWarnings("unchecked")
+      List<String> succs = (List<String>) b.get("successors");
+      succMap.put((String) b.get("id"), succs);
+    }
+
+    // Compute normal flow: blocks reachable from method entry via normal successors.
+    // Handler entries are only reachable via exceptional edges, so they won't appear here.
+    Set<String> normalFlow = new LinkedHashSet<>();
+    Queue<String> nfQueue = new ArrayDeque<>();
+    nfQueue.add("B0");
+    while (!nfQueue.isEmpty()) {
+      String current = nfQueue.poll();
+      if (normalFlow.add(current)) {
+        for (String s : succMap.getOrDefault(current, List.of())) {
+          if (!normalFlow.contains(s)) nfQueue.add(s);
+        }
+      }
+    }
+
+    // Identify handler blocks for each trap (reachability from handler start,
+    // stopping at normal-flow blocks to avoid including post-handler merge points)
+    for (Map<String, Object> trap : trapsMap.values()) {
+      String handlerId = (String) trap.get("handler");
+      Set<String> handlerBlocks = new LinkedHashSet<>();
+      Queue<String> queue = new ArrayDeque<>();
+      queue.add(handlerId);
+
+      while (!queue.isEmpty()) {
+        String current = queue.poll();
+        if (handlerBlocks.add(current)) {
+          for (String s : succMap.getOrDefault(current, List.of())) {
+            if (!normalFlow.contains(s) && !handlerBlocks.contains(s)) {
+              queue.add(s);
+            }
+          }
+        }
+      }
+      trap.put("handlerBlocks", new ArrayList<>(handlerBlocks));
+    }
+
+    result.put("traps", new ArrayList<>(trapsMap.values()));
+    return result;
   }
 }

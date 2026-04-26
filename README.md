@@ -42,7 +42,7 @@ java-bytecode-tools/
 ├── python/                  # uv project — visualization tools
 │   ├── pyproject.toml
 │   ├── ftrace_to_dot.py     # Render forward trace as SVG
-│   └── ftrace_expand_refs.py # Expand deduplicated ref nodes
+│   └── ftrace_slice.py      # Slice and expand a specific method
 ├── scripts/
 │   └── bytecode.sh          # CLI launcher
 ├── test-fixtures/           # E2e tests
@@ -130,19 +130,23 @@ scripts/bytecode.sh --prefix com.example. /path/to/classes \
   --to com.example.dao.OrderDao --to-line 39
 ```
 
-### Step 4 (optional): Expand ref nodes
+### Step 4 (optional): Slice and expand
 
-Large traces deduplicate repeated methods as `ref` nodes. Expand before visualizing:
+Interprocedural traces can be huge and contain many `ref` nodes (deduplicated methods). You can "drill down" into a specific method by slicing the trace and expanding all its refs in one step:
 
 ```bash
-cd python && uv run ftrace-expand-refs \
-  --subtree ../trace.json --full-tree ../trace.json --output ../expanded.json
+cd python && uv run ftrace-slice \
+  --input ../trace.json \
+  --query ".children[0].children[2]" \
+  --output ../sliced.json
 ```
+
+This creates a standalone JSON for that method, including its full CFG, source trace, and exception clusters.
 
 ### Step 5: Visualize as SVG
 
 ```bash
-cd python && uv run ftrace-to-dot --input ../trace.json --output ../trace.svg
+cd python && uv run ftrace-to-dot --input ../sliced.json --output ../trace.svg
 ```
 
 The SVG shows:
@@ -211,5 +215,5 @@ scripts/bytecode.sh --prefix com.example. /path/to/classes xtrace --call-graph c
 
 cd python
 uv run ftrace-to-dot --input ../out.json --output ../out.svg
-uv run ftrace-expand-refs --subtree ../sub.json --full-tree ../full.json --output ../expanded.json
+uv run ftrace-slice --input ../trace.json --query "<jq-query>" --output ../sliced.json
 ```

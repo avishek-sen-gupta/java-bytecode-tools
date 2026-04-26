@@ -15,6 +15,7 @@ import sootup.java.core.JavaSootClass;
 public class BackwardTracer {
 
   private final BytecodeTracer tracer;
+  private Map<String, SootMethod> sigToMethod;
 
   public BackwardTracer(BytecodeTracer tracer) {
     this.tracer = tracer;
@@ -27,13 +28,14 @@ public class BackwardTracer {
       int toLine,
       int maxDepth,
       boolean collapse,
-      boolean flat)
+      boolean flat,
+      BytecodeTracer.FilterConfig filter)
       throws IOException {
     SootMethod targetMethod = tracer.resolveMethod(toClass, toLine);
     String targetSig = targetMethod.getSignature().toString();
 
     // Index all project methods
-    Map<String, SootMethod> sigToMethod = new LinkedHashMap<>();
+    this.sigToMethod = new LinkedHashMap<>();
     for (JavaSootClass cls : tracer.getProjectClasses()) {
       for (SootMethod method : cls.getMethods()) {
         if (!method.hasBody()) continue;
@@ -132,7 +134,8 @@ public class BackwardTracer {
       }
     }
 
-    return buildResult(fromClass, fromLine, toClass, toLine, collapse, flat, completedChains);
+    return buildResult(
+        fromClass, fromLine, toClass, toLine, collapse, flat, filter, completedChains);
   }
 
   private Map<String, List<String>> loadReverseCallGraph() throws IOException {
@@ -163,6 +166,7 @@ public class BackwardTracer {
       int toLine,
       boolean collapse,
       boolean flat,
+      BytecodeTracer.FilterConfig filter,
       List<List<BytecodeTracer.CallFrame>> completedChains) {
     Map<String, Object> result = new LinkedHashMap<>();
     if (fromClass != null) {
@@ -172,22 +176,27 @@ public class BackwardTracer {
     result.put("toClass", toClass);
     result.put("toLine", toLine);
 
+    Set<String> globalVisited = new HashSet<>();
+
     if (completedChains.isEmpty()) {
       result.put("found", false);
       result.put("chains", Collections.emptyList());
     } else if (collapse) {
       result.put("found", true);
       result.put("collapsed", true);
-      result.put("groups", buildCollapsedGroups(completedChains, flat));
+      result.put("groups", buildCollapsedGroups(completedChains, flat, filter, globalVisited));
     } else {
       result.put("found", true);
-      result.put("chains", buildChainMaps(completedChains, flat));
+      result.put("chains", buildChainMaps(completedChains, flat, filter, globalVisited));
     }
     return result;
   }
 
   private List<Map<String, Object>> buildCollapsedGroups(
-      List<List<BytecodeTracer.CallFrame>> completedChains, boolean flat) {
+      List<List<BytecodeTracer.CallFrame>> completedChains,
+      boolean flat,
+      BytecodeTracer.FilterConfig filter,
+      Set<String> globalVisited) {
     Map<String, List<BytecodeTracer.CallFrame>> suffixToChain = new LinkedHashMap<>();
     Map<String, List<String>> suffixToEntries = new LinkedHashMap<>();
 
@@ -214,30 +223,47 @@ public class BackwardTracer {
       List<String> entries = suffixToEntries.get(entry.getKey());
       group.put("entryPoints", entries);
       group.put("entryCount", entries.size());
-      group.put("chain", buildFrameMaps(entry.getValue(), flat));
+      group.put("chain", buildFrameMaps(entry.getValue(), flat, filter, globalVisited));
       groups.add(group);
     }
     return groups;
   }
 
   private List<List<Map<String, Object>>> buildChainMaps(
-      List<List<BytecodeTracer.CallFrame>> completedChains, boolean flat) {
+      List<List<BytecodeTracer.CallFrame>> completedChains,
+      boolean flat,
+      BytecodeTracer.FilterConfig filter,
+      Set<String> globalVisited) {
     List<List<Map<String, Object>>> chainMaps = new ArrayList<>();
     for (List<BytecodeTracer.CallFrame> chain : completedChains) {
-      chainMaps.add(buildFrameMaps(chain, flat));
+      chainMaps.add(buildFrameMaps(chain, flat, filter, globalVisited));
     }
     return chainMaps;
   }
 
   private List<Map<String, Object>> buildFrameMaps(
-      List<BytecodeTracer.CallFrame> chain, boolean flat) {
+      List<BytecodeTracer.CallFrame> chain,
+      boolean flat,
+      BytecodeTracer.FilterConfig filter,
+      Set<String> globalVisited) {
     List<Map<String, Object>> frameMaps = new ArrayList<>();
     for (int fi = 0; fi < chain.size(); fi++) {
       BytecodeTracer.CallFrame f = chain.get(fi);
+      String sig = f.methodSignature();
+
       Map<String, Object> fm = new LinkedHashMap<>();
       fm.put("class", f.className());
       fm.put("method", f.methodName());
-      fm.put("methodSignature", f.methodSignature());
+      fm.put("methodSignature", sig);
+
+      // Check for global ref (deduplication)
+      if (!flat && globalVisited.contains(sig)) {
+        fm.put("ref", true);
+        frameMaps.add(fm);
+        continue;
+      }
+      globalVisited.add(sig);
+
       fm.put("lineStart", f.entryLine());
       fm.put("lineEnd", f.exitLine());
       if (!flat) {
@@ -249,6 +275,18 @@ public class BackwardTracer {
       }
       if (!flat) {
         fm.put("sourceTrace", f.sourceTrace());
+
+        // Respect filter: only add blocks and traps if allowed
+        if (filter == null || filter.shouldRecurse(f.className())) {
+          SootMethod method = sigToMethod.get(sig);
+          if (method != null) {
+            Map<String, Object> blockInfo = new ForwardTracer(tracer).buildBlockTrace(method);
+            fm.put("blocks", blockInfo.get("blocks"));
+            fm.put("traps", blockInfo.get("traps"));
+          }
+        } else {
+          fm.put("filtered", true);
+        }
       }
       frameMaps.add(fm);
     }

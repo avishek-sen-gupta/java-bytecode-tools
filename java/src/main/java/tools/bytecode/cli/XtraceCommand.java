@@ -78,9 +78,11 @@ class XtraceCommand extends BaseCommand {
     String from = fromClass;
     int fLine = fromLine != null ? fromLine : -1;
 
+    BytecodeTracer.FilterConfig filter = BytecodeTracer.FilterConfig.load(filterFile);
+
     Map<String, Object> result =
         new BackwardTracer(tracer)
-            .traceInterprocedural(from, fLine, toClass, toLine, maxDepth, collapse, flat);
+            .traceInterprocedural(from, fLine, toClass, toLine, maxDepth, collapse, flat, filter);
     writeOutput(result);
 
     boolean found = (boolean) result.get("found");

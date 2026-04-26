@@ -6,11 +6,11 @@ requires-python = ">=3.13"
 dependencies = []
 
 [dependency-groups]
-dev = ["black>=25.1"]
+dev = ["black>=25.1", "pytest>=8.0"]
 
 [project.scripts]
 ftrace-to-dot = "ftrace_to_dot:main"
-ftrace-expand-refs = "ftrace_expand_refs:main"
+ftrace-slice = "ftrace_slice:main"
 
 [build-system]
 requires = ["hatchling"]

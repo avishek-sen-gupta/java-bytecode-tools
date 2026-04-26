@@ -14,4 +14,16 @@ $B xtrace --call-graph "$OUT/callgraph.json" \
 assert_json_field "$OUT/bidirectional.json" '.found' 'true' \
     "found path"
 
+assert_json_contains "$OUT/bidirectional.json" \
+    '.groups[0].entryPoints[] | select(. == "com.example.app.OrderController.handleGet")' \
+    "entry point is OrderController.handleGet"
+
+assert_json_contains "$OUT/bidirectional.json" \
+    '.groups[0].chain | length == 2' \
+    "chain has 2 hops (processOrder → findById)"
+
+assert_json_field "$OUT/bidirectional.json" \
+    '.groups[0].chain[-1].method' 'findById' \
+    "chain ends at findById"
+
 report

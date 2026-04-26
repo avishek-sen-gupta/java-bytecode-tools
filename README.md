@@ -1,5 +1,6 @@
 # Java Bytecode Tools
 
+[![CI](https://github.com/avishek-sen-gupta/java-bytecode-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/avishek-sen-gupta/java-bytecode-tools/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE.md)
 
 Interprocedural call tracing via [SootUp](https://soot-oss.github.io/SootUp/) bytecode analysis. Given any code path you want to understand — "what happens when this method fires?" or "what calls this DAO method?" — these tools build a structural call graph from compiled `.class` files and let you trace through it in both directions, producing JSON trees and SVG visualizations.
@@ -11,6 +12,14 @@ Interprocedural call tracing via [SootUp](https://soot-oss.github.io/SootUp/) by
 ```
 
 Requires Java 21+, Maven, Python 3.13+, and [uv](https://github.com/astral-sh/uv). The build script checks prerequisites, compiles the Java project, and sets up the Python environment.
+
+### Pre-commit hooks
+
+```bash
+pre-commit install
+```
+
+Hooks run automatically on commit: [Black](https://github.com/psf/black) (Python), [google-java-format](https://github.com/google/google-java-format) (Java), [Talisman](https://github.com/thoughtworks/talisman) (secret detection), and the e2e test suite.
 
 ## Project Structure
 
@@ -30,6 +39,11 @@ java-bytecode-tools/
 │   └── ftrace_expand_refs.py # Expand deduplicated ref nodes
 ├── scripts/
 │   └── bytecode.sh          # CLI launcher
+├── test-fixtures/           # E2e tests
+│   ├── src/                 # Small fixture Java project
+│   ├── tests/               # One test script per CLI feature
+│   ├── lib-test.sh          # Shared helpers and setup
+│   └── run-e2e.sh           # Test runner
 ├── build.sh                 # Install deps + build
 └── README.md
 ```
@@ -154,6 +168,22 @@ The `--filter` flag accepts a JSON file controlling forward trace recursion:
 - **`stop`**: stop recursion at classes matching these prefixes (appear as filtered leaf nodes)
 
 Without `--filter`, the tracer recurses into everything reachable.
+
+## Testing
+
+Run the full e2e suite:
+
+```bash
+bash test-fixtures/run-e2e.sh
+```
+
+Or run a single test case:
+
+```bash
+bash test-fixtures/tests/test_xtrace_forward.sh
+```
+
+Tests compile a small fixture project (`test-fixtures/src/`), exercise every CLI command and flag, and validate the JSON output with `jq`. Requires `jq` to be installed.
 
 ## Quick reference
 

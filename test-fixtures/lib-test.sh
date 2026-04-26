@@ -46,6 +46,15 @@ assert_json_contains() {
     fi
 }
 
+assert_file_contains() {
+    local file="$1" pattern="$2" label="$3"
+    if grep -q "$pattern" "$file" 2>/dev/null; then
+        pass "$label"
+    else
+        fail "$label" "pattern '$pattern' not found in $file"
+    fi
+}
+
 assert_file_smaller() {
     local file_a="$1" file_b="$2" label="$3"
     local size_a size_b

@@ -31,4 +31,16 @@ assert_json_contains "$OUT/sliced.json" \
     '.traps[] | select(.type | contains("RuntimeException")) | .handlerBlocks | length == 4' \
     "RuntimeException handler has 4 blocks (no normal-flow leakage)"
 
+# Pipeline: sliced raw → semantic → dot
+uv run ftrace-semantic --input "$OUT/sliced.json" --output "$OUT/sliced-semantic.json" 2>/dev/null
+
+assert_json_contains "$OUT/sliced-semantic.json" \
+    '.nodes | length > 0' \
+    "sliced semantic graph has nodes"
+
+uv run ftrace-to-dot --input "$OUT/sliced-semantic.json" --output "$OUT/sliced-pipeline.dot" 2>/dev/null
+
+assert_file_contains "$OUT/sliced-pipeline.dot" "digraph" \
+    "sliced DOT output is a digraph"
+
 report

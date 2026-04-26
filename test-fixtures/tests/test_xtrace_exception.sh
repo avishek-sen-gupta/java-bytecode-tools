@@ -52,4 +52,21 @@ assert_json_contains "$OUT/exception.json" \
     '[.traps[].coveredBlocks[] | select(. == "B0")] | length > 0' \
     "B0 (entry block) in coveredBlocks via gap-fill"
 
+# Pipeline: raw → semantic → dot
+cd "$REPO_ROOT/python"
+uv run ftrace-semantic --input "$OUT/exception.json" --output "$OUT/exception-semantic.json" 2>/dev/null
+
+assert_json_contains "$OUT/exception-semantic.json" \
+    '.nodes | length > 0' \
+    "semantic graph has nodes"
+
+assert_json_contains "$OUT/exception-semantic.json" \
+    '.clusters | length == 4' \
+    "semantic graph has 4 clusters (2 traps x try+handler)"
+
+uv run ftrace-to-dot --input "$OUT/exception-semantic.json" --output "$OUT/exception.dot" 2>/dev/null
+
+assert_file_contains "$OUT/exception.dot" "digraph" \
+    "DOT output is a digraph"
+
 report

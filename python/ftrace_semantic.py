@@ -9,7 +9,18 @@ Four composable passes, each a pure function tree → tree:
 
 from functools import reduce
 
-from ftrace_types import ClusterAssignment, ClusterRole, MergedStmt, RawStmt
+from ftrace_types import (
+    ClusterAssignment,
+    ClusterRole,
+    BranchLabel,
+    ExceptionEdge,
+    MergedStmt,
+    NodeKind,
+    RawStmt,
+    SemanticCluster,
+    SemanticEdge,
+    SemanticNode,
+)
 
 
 def _accumulate_stmt(acc: dict[int, MergedStmt], s: RawStmt) -> dict[int, MergedStmt]:
@@ -179,6 +190,263 @@ def deduplicate_blocks_pass(tree: dict) -> dict:
     if "children" in tree:
         result["children"] = [
             deduplicate_blocks_pass(child) for child in tree["children"]
+        ]
+
+    return result
+
+
+def short_class(fqcn: str) -> str:
+    """Extract short class name from fully qualified name."""
+    return fqcn.rsplit(".", 1)[-1]
+
+
+def make_node_label(entry: MergedStmt) -> list[str]:
+    """Build a label list for a merged stmt entry."""
+    parts = [f"L{entry['line']}"]
+    for c in sorted(entry.get("calls", [])):
+        parts.append(
+            short_class(c.rsplit(".", 1)[0]) + "." + c.rsplit(".", 1)[-1]
+            if "." in c
+            else c
+        )
+    if not entry.get("calls"):
+        for a in entry.get("assigns", []):
+            parts.append(a)
+    return parts
+
+
+def classify_node_kind(entry: MergedStmt) -> NodeKind:
+    """Determine the node kind from a merged stmt entry."""
+    if entry.get("branches"):
+        return NodeKind.BRANCH
+    if entry.get("calls"):
+        return NodeKind.CALL
+    if entry.get("assigns"):
+        return NodeKind.ASSIGN
+    return NodeKind.PLAIN
+
+
+def build_semantic_graph_pass(tree: dict, next_id: int = 0) -> dict:
+    """Pass 4: Build semantic graph from enriched tree. Returns new tree.
+
+    Consumes blocks, traps, mergedStmts, clusterAssignment, blockAliases.
+    Emits nodes, edges, clusters, exceptionEdges. Drops raw fields.
+
+    next_id: starting node ID counter (for unique IDs across the tree).
+    Returns the transformed tree. The caller can read the highest node ID
+    from the nodes to continue numbering for children.
+    """
+    if _is_leaf_node(tree):
+        return dict(tree)
+
+    blocks = tree.get("blocks", [])
+    traps = tree.get("traps", [])
+    cluster_assignment = tree.get("clusterAssignment", {})
+    block_aliases = tree.get("blockAliases", {})
+
+    # --- Build nodes ---
+    node_counter = next_id
+    block_first: dict[str, str] = {}  # block_id → first node_id
+    block_last: dict[str, str] = {}  # block_id → last node_id
+    bid_to_nids: dict[str, list[str]] = {}  # block_id → list of node_ids
+    all_nodes: list[SemanticNode] = []
+
+    for block in blocks:
+        bid = block["id"]
+
+        # Aliased blocks share the canonical block's nodes
+        if bid in block_aliases:
+            canonical = block_aliases[bid]
+            block_first[bid] = block_first[canonical]
+            block_last[bid] = block_last[canonical]
+            bid_to_nids[bid] = bid_to_nids[canonical]
+            continue
+
+        merged = block.get("mergedStmts", [])
+        if not merged:
+            nid = f"n{node_counter}"
+            node_counter += 1
+            all_nodes.append(
+                {
+                    "id": nid,
+                    "lines": [],
+                    "kind": NodeKind.PLAIN,
+                    "label": [bid],
+                }
+            )
+            block_first[bid] = nid
+            block_last[bid] = nid
+            bid_to_nids[bid] = [nid]
+            continue
+
+        nids_for_block: list[str] = []
+        is_branch_block = bool(block.get("branchCondition"))
+
+        for idx, entry in enumerate(merged):
+            nid = f"n{node_counter}"
+            node_counter += 1
+            is_last = idx == len(merged) - 1
+
+            kind = classify_node_kind(entry)
+            label = make_node_label(entry)
+
+            # Last node in a branch block includes the condition
+            if is_branch_block and is_last:
+                kind = NodeKind.BRANCH
+                cond = block.get("branchCondition", "")
+                if cond:
+                    label.append(cond)
+
+            all_nodes.append(
+                {
+                    "id": nid,
+                    "lines": [entry["line"]],
+                    "kind": kind,
+                    "label": label,
+                }
+            )
+            nids_for_block.append(nid)
+
+            if bid not in block_first:
+                block_first[bid] = nid
+
+        block_last[bid] = nids_for_block[-1]
+        bid_to_nids[bid] = nids_for_block
+
+    # --- Build intra-block edges (sequential within a block) ---
+    canonical_bids = [b["id"] for b in blocks if b["id"] not in block_aliases]
+    all_edges: list[SemanticEdge] = [
+        {"from": nids[i], "to": nids[i + 1]}
+        for bid in canonical_bids
+        for nids in [bid_to_nids.get(bid, [])]
+        for i in range(len(nids) - 1)
+    ]
+
+    # --- Build inter-block edges (CFG edges) ---
+    # Track shared nodes for reverse-edge artifact detection
+    from collections import Counter
+
+    nid_block_count = Counter(block_first[bid] for bid in block_first)
+    shared_nids = frozenset(nid for nid, c in nid_block_count.items() if c > 1)
+
+    emitted: set[tuple[str, str, str]] = set()
+
+    for block in blocks:
+        bid = block["id"]
+        tail_nid = block_last.get(bid, "")
+        if not tail_nid:
+            continue
+        successors = block.get("successors", [])
+        branch_cond = block.get("branchCondition", "")
+
+        if len(successors) == 2 and branch_cond:
+            true_nid = block_first.get(successors[0], "")
+            false_nid = block_first.get(successors[1], "")
+            for succ_nid, label in [
+                (true_nid, BranchLabel.T),
+                (false_nid, BranchLabel.F),
+            ]:
+                if succ_nid and tail_nid != succ_nid:
+                    key = (tail_nid, succ_nid, label)
+                    if key not in emitted:
+                        emitted.add(key)
+                        all_edges.append(
+                            {"from": tail_nid, "to": succ_nid, "branch": label}
+                        )
+        else:
+            for succ_id in successors:
+                succ_nid = block_first.get(succ_id, "")
+                if succ_nid and tail_nid != succ_nid:
+                    key = (tail_nid, succ_nid, "")
+                    reverse = (succ_nid, tail_nid, "")
+                    if reverse in emitted and (
+                        tail_nid in shared_nids or succ_nid in shared_nids
+                    ):
+                        continue
+                    if key not in emitted:
+                        emitted.add(key)
+                        all_edges.append({"from": tail_nid, "to": succ_nid})
+
+    # --- Build clusters ---
+    all_clusters: list[SemanticCluster] = []
+    exception_edges: list[ExceptionEdge] = []
+
+    for i, trap in enumerate(traps):
+        etype = short_class(trap["type"])
+
+        try_bids = blocks_for_cluster(cluster_assignment, ClusterRole.TRY, i)
+        handler_bids = blocks_for_cluster(cluster_assignment, ClusterRole.HANDLER, i)
+
+        try_nids = [nid for bid in try_bids for nid in bid_to_nids.get(bid, [])]
+        handler_nids = [nid for bid in handler_bids for nid in bid_to_nids.get(bid, [])]
+
+        all_clusters.append(
+            {
+                "trapType": etype,
+                "role": ClusterRole.TRY,
+                "nodeIds": try_nids,
+            }
+        )
+
+        handler_cluster: SemanticCluster = {
+            "trapType": etype,
+            "role": ClusterRole.HANDLER,
+            "nodeIds": handler_nids,
+        }
+        handler_entry_nid = block_first.get(trap["handler"], "")
+        if handler_entry_nid:
+            handler_cluster["entryNodeId"] = handler_entry_nid
+        all_clusters.append(handler_cluster)
+
+        # Exception edge
+        if handler_entry_nid:
+            src_nid = (
+                block_first.get(try_bids[0], "")
+                if try_bids
+                else next(
+                    (
+                        block_first[cb]
+                        for cb in trap.get("coveredBlocks", [])
+                        if cb in block_first
+                    ),
+                    "",
+                )
+            )
+            if src_nid:
+                exception_edges.append(
+                    {
+                        "from": src_nid,
+                        "to": handler_entry_nid,
+                        "trapType": etype,
+                        "fromCluster": len(all_clusters) - 2,  # try cluster index
+                        "toCluster": len(all_clusters) - 1,  # handler cluster index
+                    }
+                )
+
+    # --- Assemble result ---
+    # Drop raw/intermediate fields, keep tree metadata
+    drop_fields = {
+        "blocks",
+        "traps",
+        "clusterAssignment",
+        "blockAliases",
+        "sourceTrace",
+    }
+    result = {k: v for k, v in tree.items() if k not in drop_fields and k != "children"}
+    result["nodes"] = all_nodes
+    result["edges"] = all_edges
+    result["clusters"] = all_clusters
+    result["exceptionEdges"] = exception_edges
+
+    # Set entryNodeId for cross-cluster call edges from parent
+    if all_nodes:
+        result["entryNodeId"] = all_nodes[0]["id"]
+
+    # Recurse into children
+    if "children" in tree:
+        result["children"] = [
+            build_semantic_graph_pass(child, node_counter + i * 100)
+            for i, child in enumerate(tree["children"])
         ]
 
     return result

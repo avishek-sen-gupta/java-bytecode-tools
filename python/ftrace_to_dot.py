@@ -278,7 +278,20 @@ def build_dot(root: dict) -> str:
 
                 block_last[bid] = prev_nid
 
-            # CFG edges between blocks: last node of block -> first node of successor
+            # CFG edges between blocks: last node of block -> first node of successor.
+            # After block merging, multiple blocks may map to the same DOT node.
+            # Track emitted edges to suppress self-loops, duplicates, and
+            # reverse-direction artifacts from merged blocks.
+            _emitted_edges: set[tuple[str, str, str]] = set()
+
+            # Nodes shared by multiple blocks (from merging) — used to detect
+            # reverse-edge artifacts like n2→n3 + n3→n2 from a linear chain.
+            _nid_block_count: dict[str, int] = {}
+            for bid in block_first:
+                nid = block_first[bid]
+                _nid_block_count[nid] = _nid_block_count.get(nid, 0) + 1
+            _shared_nids = {nid for nid, c in _nid_block_count.items() if c > 1}
+
             for block in blocks:
                 bid = block["id"]
                 tail_nid = block_last.get(bid)
@@ -289,21 +302,38 @@ def build_dot(root: dict) -> str:
                 if len(successors) == 2 and branch_cond:
                     true_nid = block_first.get(successors[0])
                     false_nid = block_first.get(successors[1])
-                    if true_nid:
-                        lines.append(
-                            f"    {tail_nid} -> {true_nid} "
-                            f'[label="T", color="#28a745", fontcolor="#28a745"];'
-                        )
-                    if false_nid:
-                        lines.append(
-                            f"    {tail_nid} -> {false_nid} "
-                            f'[label="F", color="#dc3545", fontcolor="#dc3545"];'
-                        )
+                    if true_nid and tail_nid != true_nid:
+                        key = (tail_nid, true_nid, "T")
+                        if key not in _emitted_edges:
+                            _emitted_edges.add(key)
+                            lines.append(
+                                f"    {tail_nid} -> {true_nid} "
+                                f'[label="T", color="#28a745", fontcolor="#28a745"];'
+                            )
+                    if false_nid and tail_nid != false_nid:
+                        key = (tail_nid, false_nid, "F")
+                        if key not in _emitted_edges:
+                            _emitted_edges.add(key)
+                            lines.append(
+                                f"    {tail_nid} -> {false_nid} "
+                                f'[label="F", color="#dc3545", fontcolor="#dc3545"];'
+                            )
                 else:
                     for succ_id in successors:
                         succ_nid = block_first.get(succ_id)
-                        if succ_nid:
-                            lines.append(f"    {tail_nid} -> {succ_nid};")
+                        if succ_nid and tail_nid != succ_nid:
+                            key = (tail_nid, succ_nid, "")
+                            # Suppress reverse-direction artifacts from merged blocks:
+                            # if A→B already emitted and B→A arises because multiple
+                            # blocks share a node, it's a merge artifact, not a real loop.
+                            reverse = (succ_nid, tail_nid, "")
+                            if reverse in _emitted_edges and (
+                                tail_nid in _shared_nids or succ_nid in _shared_nids
+                            ):
+                                continue
+                            if key not in _emitted_edges:
+                                _emitted_edges.add(key)
+                                lines.append(f"    {tail_nid} -> {succ_nid};")
 
             # ---- Traps (Exception Handlers) as nested clusters ----
             for i, trap in enumerate(traps):

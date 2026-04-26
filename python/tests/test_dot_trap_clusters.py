@@ -547,3 +547,134 @@ class TestExceptionEdgeRendering:
                 assert (
                     len(cluster_nodes[cluster_name]) > 0
                 ), f"ltail cluster {cluster_name} should have nodes"
+
+
+def _cfg_edges(dot: str) -> list[tuple[str, str, str]]:
+    """Extract CFG edges as (src, dst, label) tuples.
+
+    Only includes normal CFG edges (not exception/dashed edges).
+    """
+    edges = []
+    for line in dot.splitlines():
+        stripped = line.strip()
+        if "->" not in stripped or "dashed" in stripped:
+            continue
+        arrow = stripped.index("->")
+        src = stripped[:arrow].strip()
+        rest = stripped[arrow + 2 :].strip()
+        dst = rest.split()[0].rstrip(";")
+        label = _quoted_value(stripped, "label") or ""
+        edges.append((src, dst, label))
+    return edges
+
+
+class TestMergedBlockEdgeDedup:
+    """When multiple blocks merge to the same DOT node, suppress self-loops and duplicates."""
+
+    def _build_chain_same_line(self):
+        """
+        Simulates `throw new RuntimeException(msg)` — 5 blocks on L9:
+        B2→B3→B4→B5→B6 (new, dup, ldc, invokespecial, athrow).
+        B5 has a call, the rest don't, so merge_block_stmts produces
+        two groups: {B2,B3,B4,B6}→plain L9 node, {B5}→L9+call node.
+        Without dedup: self-loops on plain L9 and a back-edge from call→plain.
+        """
+        blocks = [
+            {"id": "B0", "stmts": [{"line": 6}], "successors": ["B1"]},
+            {
+                "id": "B1",
+                "stmts": [{"line": 6}],
+                "branchCondition": "i <= 0",
+                "successors": ["B7", "B2"],
+            },
+            {"id": "B2", "stmts": [{"line": 9}], "successors": ["B3"]},
+            {"id": "B3", "stmts": [{"line": 9}], "successors": ["B4"]},
+            {"id": "B4", "stmts": [{"line": 9}], "successors": ["B5"]},
+            {
+                "id": "B5",
+                "stmts": [{"line": 9, "call": "RuntimeException.<init>"}],
+                "successors": ["B6"],
+            },
+            {"id": "B6", "stmts": [{"line": 9}], "successors": []},
+            {"id": "B7", "stmts": [{"line": 7}], "successors": []},
+        ]
+        traps = [
+            {
+                "type": "java.lang.RuntimeException",
+                "handler": "B7",
+                "coveredBlocks": ["B0", "B1", "B2", "B3", "B4", "B5", "B6"],
+                "handlerBlocks": ["B7"],
+            },
+        ]
+        return blocks, traps
+
+    def test_no_self_loops(self):
+        """Merged blocks must not produce self-loop edges."""
+        blocks, traps = self._build_chain_same_line()
+        root = _make_method_with_traps(blocks, traps)
+        dot = build_dot(root)
+        edges = _cfg_edges(dot)
+
+        self_loops = [(s, d, l) for s, d, l in edges if s == d]
+        assert self_loops == [], f"Self-loops found: {self_loops}"
+
+    def test_no_duplicate_edges(self):
+        """Each (src, dst, label) triple should appear at most once."""
+        blocks, traps = self._build_chain_same_line()
+        root = _make_method_with_traps(blocks, traps)
+        dot = build_dot(root)
+        edges = _cfg_edges(dot)
+
+        seen = set()
+        dupes = []
+        for e in edges:
+            if e in seen:
+                dupes.append(e)
+            seen.add(e)
+        assert dupes == [], f"Duplicate edges found: {dupes}"
+
+    def test_forward_edge_preserved(self):
+        """The edge from plain L9 to L9+call should exist."""
+        blocks, traps = self._build_chain_same_line()
+        root = _make_method_with_traps(blocks, traps)
+        dot = build_dot(root)
+
+        n_l9_plain = _node_id_for_label(dot, "L9")
+        n_l9_call = _node_id_for_label(dot, "RuntimeException.<init>")
+        assert n_l9_plain is not None
+        assert n_l9_call is not None
+
+        edges = _cfg_edges(dot)
+        assert (
+            n_l9_plain,
+            n_l9_call,
+            "",
+        ) in edges, f"Expected edge {n_l9_plain} -> {n_l9_call}"
+
+    def test_no_reverse_edge_from_merged_blocks(self):
+        """Back-edge from L9+call to plain L9 is a merge artifact and must not appear."""
+        blocks, traps = self._build_chain_same_line()
+        root = _make_method_with_traps(blocks, traps)
+        dot = build_dot(root)
+
+        n_l9_plain = _node_id_for_label(dot, "L9")
+        n_l9_call = _node_id_for_label(dot, "RuntimeException.<init>")
+
+        edges = _cfg_edges(dot)
+        assert (
+            n_l9_call,
+            n_l9_plain,
+            "",
+        ) not in edges, f"Reverse edge {n_l9_call} -> {n_l9_plain} should not exist"
+
+    def test_branch_edges_not_suppressed(self):
+        """T/F branch edges should still render even after dedup logic."""
+        blocks, traps = self._build_chain_same_line()
+        root = _make_method_with_traps(blocks, traps)
+        dot = build_dot(root)
+        edges = _cfg_edges(dot)
+
+        t_edges = [(s, d) for s, d, l in edges if l == "T"]
+        f_edges = [(s, d) for s, d, l in edges if l == "F"]
+        assert len(t_edges) == 1, f"Expected 1 T edge, got {t_edges}"
+        assert len(f_edges) == 1, f"Expected 1 F edge, got {f_edges}"

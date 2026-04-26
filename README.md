@@ -50,24 +50,22 @@ java-bytecode-tools/
 
 ## Usage
 
-All commands go through `scripts/bytecode.sh`, which requires a `--prefix` flag to scope analysis to your project's package namespace, followed by the classpath to your compiled classes:
-
-```bash
-B="scripts/bytecode.sh --prefix com.example. /path/to/target/classes"
-```
+All commands go through `scripts/bytecode.sh`. It takes two required arguments: `--prefix` (scopes analysis to your project's package namespace) and the classpath to your compiled `.class` files.
 
 ### Step 1: Build the call graph
 
 Scans all project classes matching the prefix, extracts invoke statements, and records caller-to-callee edges. Resolves polymorphic dispatch by mapping interfaces to implementations.
 
 ```bash
-$B buildcg --output callgraph.json
+scripts/bytecode.sh --prefix com.example. /path/to/classes \
+  buildcg --output callgraph.json
 ```
 
 ### Step 2: Find the method you care about
 
 ```bash
-$B dump com.example.service.OrderService
+scripts/bytecode.sh --prefix com.example. /path/to/classes \
+  dump com.example.service.OrderService
 ```
 
 Output lists every method with its source line range. Pick the method and note its `lineStart`.
@@ -79,7 +77,8 @@ Output lists every method with its source line range. Pick the method and note i
 Traces downward through all callees, building a recursive tree with per-method block-level CFG, branch conditions, and call sites.
 
 ```bash
-$B xtrace --call-graph callgraph.json \
+scripts/bytecode.sh --prefix com.example. /path/to/classes \
+  xtrace --call-graph callgraph.json \
   --from com.example.service.OrderService --from-line 64 \
   --output trace.json
 ```
@@ -87,7 +86,8 @@ $B xtrace --call-graph callgraph.json \
 Use `--filter` to control recursion depth:
 
 ```bash
-$B xtrace --call-graph callgraph.json \
+scripts/bytecode.sh --prefix com.example. /path/to/classes \
+  xtrace --call-graph callgraph.json \
   --from com.example.service.OrderService --from-line 64 \
   --filter config/my-filter.json \
   --output trace.json
@@ -98,7 +98,8 @@ $B xtrace --call-graph callgraph.json \
 BFS backward through the call graph to find every entry point that reaches a target.
 
 ```bash
-$B xtrace --call-graph callgraph.json \
+scripts/bytecode.sh --prefix com.example. /path/to/classes \
+  xtrace --call-graph callgraph.json \
   --to com.example.dao.OrderDao --to-line 39 \
   --collapse \
   --output backward-trace.json
@@ -107,7 +108,8 @@ $B xtrace --call-graph callgraph.json \
 Use `--flat` for lightweight stack-trace output (no sourceTrace/blocks, faster):
 
 ```bash
-$B xtrace --call-graph callgraph.json \
+scripts/bytecode.sh --prefix com.example. /path/to/classes \
+  xtrace --call-graph callgraph.json \
   --to com.example.dao.OrderDao --to-line 39 \
   --collapse --flat \
   --output backward-trace-flat.json
@@ -116,7 +118,8 @@ $B xtrace --call-graph callgraph.json \
 #### Bidirectional — constrain to a specific path
 
 ```bash
-$B xtrace --call-graph callgraph.json \
+scripts/bytecode.sh --prefix com.example. /path/to/classes \
+  xtrace --call-graph callgraph.json \
   --from com.example.service.OrderService --from-line 64 \
   --to com.example.dao.OrderDao --to-line 39
 ```
@@ -150,7 +153,8 @@ The SVG shows:
 Trace between two lines within a single method:
 
 ```bash
-$B trace com.example.service.OrderService 64 120
+scripts/bytecode.sh --prefix com.example. /path/to/classes \
+  trace com.example.service.OrderService 64 120
 ```
 
 ## Filters
@@ -188,15 +192,16 @@ Tests compile a small fixture project (`test-fixtures/src/`), exercise every CLI
 ## Quick reference
 
 ```bash
-# Full workflow
 ./build.sh
-B="scripts/bytecode.sh --prefix com.example. /path/to/classes"
 
-$B buildcg --output callgraph.json
-$B dump <class>
-$B xtrace --call-graph callgraph.json --from <class> --from-line <N> --output out.json
-$B xtrace --call-graph callgraph.json --to <class> --to-line <N> --collapse
-$B xtrace --call-graph callgraph.json --to <class> --to-line <N> --collapse --flat
+# Every command starts with:
+#   scripts/bytecode.sh --prefix <pkg.prefix.> /path/to/classes <subcommand>
+
+scripts/bytecode.sh --prefix com.example. /path/to/classes buildcg --output callgraph.json
+scripts/bytecode.sh --prefix com.example. /path/to/classes dump <class>
+scripts/bytecode.sh --prefix com.example. /path/to/classes xtrace --call-graph callgraph.json --from <class> --from-line <N> --output out.json
+scripts/bytecode.sh --prefix com.example. /path/to/classes xtrace --call-graph callgraph.json --to <class> --to-line <N> --collapse
+scripts/bytecode.sh --prefix com.example. /path/to/classes xtrace --call-graph callgraph.json --to <class> --to-line <N> --collapse --flat
 
 cd python
 uv run ftrace-to-dot --input ../out.json --output ../out.svg

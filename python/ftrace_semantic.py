@@ -47,13 +47,30 @@ def merge_block_stmts(stmts: list[RawStmt]) -> list[MergedStmt]:
     return [by_line[ln] for ln in sorted(by_line)]
 
 
+def merge_source_trace(source_trace: list[dict]) -> list[MergedStmt]:
+    """Deduplicate sourceTrace by line number, merging calls and branches."""
+    by_line: dict[int, MergedStmt] = {}
+    for entry in source_trace:
+        line = entry["line"]
+        if line < 0:
+            continue
+        if line not in by_line:
+            by_line[line] = {"line": line, "calls": [], "branches": [], "assigns": []}
+        for c in entry.get("calls", []):
+            if c not in by_line[line]["calls"]:
+                by_line[line]["calls"].append(c)
+        if "branch" in entry:
+            by_line[line]["branches"].append(entry["branch"])
+    return [by_line[ln] for ln in sorted(by_line)]
+
+
 def _is_leaf_node(node: dict) -> bool:
     """Check if a node is a leaf (ref, cycle, or filtered)."""
     return bool(node.get("ref") or node.get("cycle") or node.get("filtered"))
 
 
 def merge_stmts_pass(tree: dict) -> dict:
-    """Pass 1: Add mergedStmts to each block in the tree. Returns new tree."""
+    """Pass 1: Add mergedStmts to each block, or mergedSourceTrace. Returns new tree."""
     if _is_leaf_node(tree):
         return dict(tree)
 
@@ -64,6 +81,8 @@ def merge_stmts_pass(tree: dict) -> dict:
             {**block, "mergedStmts": merge_block_stmts(block.get("stmts", []))}
             for block in tree["blocks"]
         ]
+    elif "sourceTrace" in tree:
+        result["mergedSourceTrace"] = merge_source_trace(tree["sourceTrace"])
 
     if "children" in tree:
         result["children"] = [merge_stmts_pass(child) for child in tree["children"]]
@@ -239,6 +258,43 @@ def build_semantic_graph_pass(tree: dict, next_id: int = 0) -> dict:
     """
     if _is_leaf_node(tree):
         return dict(tree)
+
+    # sourceTrace fallback — no blocks, just a linear list of lines
+    if "mergedSourceTrace" in tree and "blocks" not in tree:
+        merged = tree["mergedSourceTrace"]
+        node_counter = next_id
+        all_nodes: list[SemanticNode] = []
+        all_edges: list[SemanticEdge] = []
+        for entry in merged:
+            nid = f"n{node_counter}"
+            node_counter += 1
+            all_nodes.append(
+                {
+                    "id": nid,
+                    "lines": [entry["line"]],
+                    "kind": classify_node_kind(entry),
+                    "label": make_node_label(entry),
+                }
+            )
+        for i in range(len(all_nodes) - 1):
+            all_edges.append({"from": all_nodes[i]["id"], "to": all_nodes[i + 1]["id"]})
+
+        drop_fields = {"sourceTrace", "mergedSourceTrace"}
+        result = {
+            k: v for k, v in tree.items() if k not in drop_fields and k != "children"
+        }
+        result["nodes"] = all_nodes
+        result["edges"] = all_edges
+        result["clusters"] = []
+        result["exceptionEdges"] = []
+        if all_nodes:
+            result["entryNodeId"] = all_nodes[0]["id"]
+        if "children" in tree:
+            result["children"] = [
+                build_semantic_graph_pass(child, node_counter + i * 100)
+                for i, child in enumerate(tree["children"])
+            ]
+        return result
 
     blocks = tree.get("blocks", [])
     traps = tree.get("traps", [])

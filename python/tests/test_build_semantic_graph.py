@@ -427,6 +427,32 @@ class TestBuildSemanticGraphPass:
         assert tree == original
 
 
+class TestSourceTraceFallback:
+    def test_source_trace_produces_linear_nodes(self):
+        from ftrace_semantic import build_semantic_graph_pass
+
+        tree = {
+            "class": "com.example.Svc",
+            "method": "run",
+            "methodSignature": "sig",
+            "lineStart": 5,
+            "lineEnd": 10,
+            "sourceLineCount": 6,
+            "mergedSourceTrace": [
+                {"line": 5, "calls": [], "branches": [], "assigns": []},
+                {"line": 10, "calls": ["Foo.bar"], "branches": [], "assigns": []},
+            ],
+            "children": [],
+        }
+        result = build_semantic_graph_pass(tree)
+
+        assert len(result["nodes"]) == 2
+        assert result["nodes"][0]["kind"] == NodeKind.PLAIN
+        assert result["nodes"][1]["kind"] == NodeKind.CALL
+        assert len(result["edges"]) == 1
+        assert result["edges"][0]["from"] == result["nodes"][0]["id"]
+
+
 class TestPipeAndTransform:
     def test_pipe_composes_functions(self):
         from ftrace_semantic import pipe

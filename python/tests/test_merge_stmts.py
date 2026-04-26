@@ -61,6 +61,28 @@ class TestMergeBlockStmts:
         assert merge_block_stmts([]) == []
 
 
+class TestMergeSourceTrace:
+    def test_merges_source_trace(self):
+        from ftrace_semantic import merge_source_trace
+
+        trace = [
+            {"line": 5, "calls": ["Foo.bar"]},
+            {"line": 5, "calls": ["Baz.qux"]},
+            {"line": 10},
+        ]
+        result = merge_source_trace(trace)
+        assert len(result) == 2
+        assert result[0]["line"] == 5
+        assert sorted(result[0]["calls"]) == ["Baz.qux", "Foo.bar"]
+
+    def test_negative_lines_excluded(self):
+        from ftrace_semantic import merge_source_trace
+
+        trace = [{"line": -1}, {"line": 5}]
+        result = merge_source_trace(trace)
+        assert len(result) == 1
+
+
 class TestMergeStmtsPass:
     """Tests for the full tree-walking pass."""
 
@@ -143,3 +165,21 @@ class TestMergeStmtsPass:
         original = copy.deepcopy(tree)
         merge_stmts_pass(tree)
         assert tree == original
+
+
+class TestMergeStmtsPassSourceTrace:
+    def test_source_trace_fallback(self):
+        from ftrace_semantic import merge_stmts_pass
+
+        tree = {
+            "class": "Svc",
+            "method": "run",
+            "sourceTrace": [
+                {"line": 5, "calls": ["Foo.bar"]},
+                {"line": 10},
+            ],
+            "children": [],
+        }
+        result = merge_stmts_pass(tree)
+        assert "mergedSourceTrace" in result
+        assert len(result["mergedSourceTrace"]) == 2

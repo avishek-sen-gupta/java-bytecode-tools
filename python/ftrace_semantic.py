@@ -9,7 +9,7 @@ Four composable passes, each a pure function tree → tree:
 
 from functools import reduce
 
-from ftrace_types import MergedStmt, RawStmt
+from ftrace_types import ClusterAssignment, ClusterRole, MergedStmt, RawStmt
 
 
 def _accumulate_stmt(acc: dict[int, MergedStmt], s: RawStmt) -> dict[int, MergedStmt]:
@@ -55,5 +55,64 @@ def merge_stmts_pass(tree: dict) -> dict:
 
     if "children" in tree:
         result["children"] = [merge_stmts_pass(child) for child in tree["children"]]
+
+    return result
+
+
+def assign_trap_clusters(
+    traps: list[dict],
+) -> dict[str, ClusterAssignment]:
+    """Assign each block to exactly one trap cluster.
+
+    Handler membership takes priority over coverage. A block can be both
+    a coveredBlock (for a finally/outer trap) and a handlerBlock (for a
+    catch/inner trap). Handler wins.
+    """
+    all_handler_bids: frozenset[str] = frozenset(
+        bid for trap in traps for bid in trap.get("handlerBlocks", [])
+    )
+
+    def _fold_trap(
+        acc: dict[str, ClusterAssignment], indexed_trap: tuple[int, dict]
+    ) -> dict[str, ClusterAssignment]:
+        i, trap = indexed_trap
+        covered = {
+            bid: {"kind": ClusterRole.TRY, "trapIndex": i}
+            for bid in trap.get("coveredBlocks", [])
+            if bid not in all_handler_bids and bid not in acc
+        }
+        handlers = {
+            bid: {"kind": ClusterRole.HANDLER, "trapIndex": i}
+            for bid in trap.get("handlerBlocks", [])
+            if bid not in acc and bid not in covered
+        }
+        return {**acc, **covered, **handlers}
+
+    return reduce(_fold_trap, enumerate(traps), {})
+
+
+def blocks_for_cluster(
+    assignment: dict[str, ClusterAssignment], kind: str, trap_index: int
+) -> list[str]:
+    """Return block IDs assigned to a specific cluster, in insertion order."""
+    return [
+        bid
+        for bid, a in assignment.items()
+        if a["kind"] == kind and a["trapIndex"] == trap_index
+    ]
+
+
+def assign_clusters_pass(tree: dict) -> dict:
+    """Pass 2: Add clusterAssignment to each method node. Returns new tree."""
+    if _is_leaf_node(tree):
+        return dict(tree)
+
+    result = dict(tree)
+
+    if "traps" in tree:
+        result["clusterAssignment"] = assign_trap_clusters(tree.get("traps", []))
+
+    if "children" in tree:
+        result["children"] = [assign_clusters_pass(child) for child in tree["children"]]
 
     return result

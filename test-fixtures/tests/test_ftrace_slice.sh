@@ -55,4 +55,17 @@ uv run ftrace-to-dot --input "$OUT/sliced-semantic.json" --output "$OUT/sliced-p
 assert_file_contains "$OUT/sliced-pipeline.dot" "digraph" \
     "sliced DOT output is a digraph"
 
+# Fully piped: cat | slice | expand-refs | semantic | to-dot (all stdin/stdout)
+cat "$OUT/complex.json" \
+  | uv run ftrace-slice --query '.children[] | select(.method == "handleException")' 2>/dev/null \
+  | uv run ftrace-expand-refs 2>/dev/null \
+  | uv run ftrace-semantic 2>/dev/null \
+  | uv run ftrace-to-dot --output "$OUT/piped.dot" 2>/dev/null
+
+assert_file_contains "$OUT/piped.dot" "digraph" \
+    "piped pipeline produces a digraph"
+
+assert_file_contains "$OUT/piped.dot" "handleException" \
+    "piped pipeline DOT contains handleException"
+
 report

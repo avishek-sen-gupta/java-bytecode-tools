@@ -56,7 +56,7 @@ def main():
         description="Slice a subtree using jq and bundle a ref index for expansion."
     )
     parser.add_argument(
-        "--input", required=True, type=Path, help="Full ftrace JSON file"
+        "--input", type=Path, help="Full ftrace JSON file (default: stdin)"
     )
     parser.add_argument(
         "--query",
@@ -66,14 +66,22 @@ def main():
     parser.add_argument("--output", type=Path, help="Output file (default: stdout)")
     args = parser.parse_args()
 
-    if not args.input.exists():
-        print(f"Error: {args.input} not found.", file=sys.stderr)
-        sys.exit(1)
+    # 1. Read the full tree (file or stdin)
+    if args.input:
+        if not args.input.exists():
+            print(f"Error: {args.input} not found.", file=sys.stderr)
+            sys.exit(1)
+        raw_json = args.input.read_text()
+    else:
+        raw_json = sys.stdin.read()
 
-    # 1. Use jq to slice the target subtree
+    full_tree = json.loads(raw_json)
+
+    # 2. Use jq to slice the target subtree
     try:
         result = subprocess.run(
-            ["jq", args.query, str(args.input)],
+            ["jq", args.query],
+            input=raw_json,
             capture_output=True,
             text=True,
             check=True,
@@ -92,10 +100,6 @@ def main():
             file=sys.stderr,
         )
         sys.exit(1)
-
-    # 2. Build scoped ref index from full tree
-    with open(args.input) as f:
-        full_tree = json.load(f)
 
     ref_sigs = collect_ref_signatures(target)
     ref_index = index_full_tree(full_tree, ref_sigs)

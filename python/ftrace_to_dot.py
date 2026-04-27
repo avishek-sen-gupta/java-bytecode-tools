@@ -88,7 +88,9 @@ def _render_edge(edge: SemanticEdge) -> str:
     return f"    {src} -> {dst};"
 
 
-def _render_exception_edge(ee: ExceptionEdge, clusters: list[SemanticCluster]) -> str:
+def _render_exception_edge(
+    ee: ExceptionEdge, clusters: list[SemanticCluster], method_counter: int
+) -> str:
     """Render an exception edge with ltail/lhead cluster references."""
     src, dst = ee["from"], ee["to"]
     trap_type = escape(ee["trapType"])
@@ -98,9 +100,9 @@ def _render_exception_edge(ee: ExceptionEdge, clusters: list[SemanticCluster]) -
     from_idx = ee.get("fromCluster", -1)
     to_idx = ee.get("toCluster", -1)
     if from_idx >= 0 and clusters[from_idx].get("nodeIds", []):
-        attrs += f', ltail="cluster_trap_{from_idx}"'
+        attrs += f', ltail="cluster_trap_{method_counter}_{from_idx}"'
     if to_idx >= 0 and clusters[to_idx].get("nodeIds", []):
-        attrs += f', lhead="cluster_trap_{to_idx}"'
+        attrs += f', lhead="cluster_trap_{method_counter}_{to_idx}"'
     return f"    {src} -> {dst} [{attrs}];"
 
 
@@ -137,13 +139,15 @@ def _render_leaf(node: MethodSemanticCFG, counter: int) -> tuple[list[str], str,
     return ([f"  {nid} [{attrs}];"], nid, counter + 1)
 
 
-def _render_trap_cluster(index: int, cluster: SemanticCluster) -> list[str]:
+def _render_trap_cluster(
+    index: int, cluster: SemanticCluster, method_counter: int
+) -> list[str]:
     """Render one trap cluster as a DOT subgraph."""
     trap_type = cluster["trapType"]
     role = cluster["role"]
     node_ids = cluster.get("nodeIds", [])
 
-    tc_id = f"cluster_trap_{index}"
+    tc_id = f"cluster_trap_{method_counter}_{index}"
     header = [f"    subgraph {tc_id} {{"]
 
     if role == "try":
@@ -238,8 +242,12 @@ def _render_method(node: MethodSemanticCFG, counter: int) -> _MethodDotResult:
         "",
         *[_render_node(n["id"], n) for n in nodes],
         *[_render_edge(e) for e in edges],
-        *[line for i, c in enumerate(clusters) for line in _render_trap_cluster(i, c)],
-        *[_render_exception_edge(ee, clusters) for ee in exception_edges],
+        *[
+            line
+            for i, c in enumerate(clusters)
+            for line in _render_trap_cluster(i, c, counter)
+        ],
+        *[_render_exception_edge(ee, clusters, counter) for ee in exception_edges],
         "  }",
         "",
     ]

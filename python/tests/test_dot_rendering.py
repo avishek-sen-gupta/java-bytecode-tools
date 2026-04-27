@@ -356,8 +356,8 @@ class TestRenderTrapCluster:
             "role": "try",
             "nodeIds": ["n0", "n1"],
         }
-        lines = _render_trap_cluster(0, cluster)
-        assert "subgraph cluster_trap_0 {" in lines[0]
+        lines = _render_trap_cluster(0, cluster, method_counter=0)
+        assert "subgraph cluster_trap_0_0 {" in lines[0]
         assert "try (RuntimeException)" in lines[1]
         assert "#ffa500" in lines[2]
         assert "n0;" in lines[3]
@@ -373,8 +373,8 @@ class TestRenderTrapCluster:
             "nodeIds": ["n2"],
             "entryNodeId": "n2",
         }
-        lines = _render_trap_cluster(1, cluster)
-        assert "subgraph cluster_trap_1 {" in lines[0]
+        lines = _render_trap_cluster(1, cluster, method_counter=0)
+        assert "subgraph cluster_trap_0_1 {" in lines[0]
         assert "catch (RuntimeException)" in lines[1]
         assert "#007bff" in lines[2]
         assert "n2;" in lines[3]
@@ -389,7 +389,8 @@ class TestRenderTrapCluster:
             "nodeIds": ["n3"],
             "entryNodeId": "n3",
         }
-        lines = _render_trap_cluster(2, cluster)
+        lines = _render_trap_cluster(2, cluster, method_counter=3)
+        assert "subgraph cluster_trap_3_2 {" in lines[0]
         assert "finally" in lines[1]
         assert "#007bff" in lines[2]
 
@@ -402,18 +403,134 @@ class TestRenderTrapCluster:
             "nodeIds": ["n4"],
             "entryNodeId": "n4",
         }
-        lines = _render_trap_cluster(3, cluster)
+        lines = _render_trap_cluster(3, cluster, method_counter=0)
         assert "finally" in lines[1]
 
     def test_empty_node_ids(self):
         from ftrace_to_dot import _render_trap_cluster
 
         cluster = {"trapType": "IOException", "role": "try", "nodeIds": []}
-        lines = _render_trap_cluster(0, cluster)
-        assert lines[0] == "    subgraph cluster_trap_0 {"
+        lines = _render_trap_cluster(0, cluster, method_counter=5)
+        assert lines[0] == "    subgraph cluster_trap_5_0 {"
         assert lines[-1] == "    }"
         # Only header (1) + label (1) + style (1) + footer (1) = 4 lines
         assert len(lines) == 4
+
+
+class TestTrapClusterNamespacing:
+    """Trap cluster IDs must be globally unique across expanded methods."""
+
+    def test_child_methods_get_unique_trap_cluster_ids(self):
+        """Two methods each with cluster_trap index 0 must not collide."""
+        from ftrace_to_dot import build_dot
+
+        child = {
+            "class": "com.example.Other",
+            "method": "run",
+            "lineStart": 30,
+            "lineEnd": 40,
+            "entryNodeId": "n5",
+            "nodes": [
+                {"id": "n5", "lines": [30], "kind": "plain", "label": ["L30"]},
+                {"id": "n6", "lines": [35], "kind": "plain", "label": ["L35"]},
+            ],
+            "edges": [],
+            "clusters": [
+                {"trapType": "IOException", "role": "try", "nodeIds": ["n5"]},
+                {
+                    "trapType": "IOException",
+                    "role": "handler",
+                    "nodeIds": ["n6"],
+                    "entryNodeId": "n6",
+                },
+            ],
+            "exceptionEdges": [
+                {
+                    "from": "n5",
+                    "to": "n6",
+                    "trapType": "IOException",
+                    "fromCluster": 0,
+                    "toCluster": 1,
+                },
+            ],
+            "children": [],
+            "callSiteLine": 9,
+        }
+        method = _make_semantic_method(
+            nodes=[
+                {"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]},
+                {"id": "n1", "lines": [9], "kind": "call", "label": ["L9"]},
+            ],
+            edges=[],
+            clusters=[
+                {"trapType": "RuntimeException", "role": "try", "nodeIds": ["n0"]},
+                {
+                    "trapType": "RuntimeException",
+                    "role": "handler",
+                    "nodeIds": ["n1"],
+                    "entryNodeId": "n1",
+                },
+            ],
+            exception_edges=[
+                {
+                    "from": "n0",
+                    "to": "n1",
+                    "trapType": "RuntimeException",
+                    "fromCluster": 0,
+                    "toCluster": 1,
+                },
+            ],
+            children=[child],
+        )
+        dot = build_dot(method)
+
+        # Parent method is counter=0, so its traps are cluster_trap_0_0, cluster_trap_0_1
+        assert "cluster_trap_0_0" in dot
+        assert "cluster_trap_0_1" in dot
+        # Child method is counter=1, so its traps are cluster_trap_1_0, cluster_trap_1_1
+        assert "cluster_trap_1_0" in dot
+        assert "cluster_trap_1_1" in dot
+        # Old non-namespaced names must NOT appear as standalone IDs
+        import re
+
+        # Should not have bare "cluster_trap_0" that isn't followed by "_"
+        bare_trap_ids = re.findall(r"cluster_trap_(\d+)(?!_)", dot)
+        assert (
+            bare_trap_ids == []
+        ), f"Found non-namespaced trap cluster IDs: {bare_trap_ids}"
+
+    def test_exception_edge_references_namespaced_clusters(self):
+        """ltail/lhead must reference the namespaced cluster IDs."""
+        from ftrace_to_dot import build_dot
+
+        method = _make_semantic_method(
+            nodes=[
+                {"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]},
+                {"id": "n1", "lines": [11], "kind": "plain", "label": ["L11"]},
+            ],
+            edges=[],
+            clusters=[
+                {"trapType": "RuntimeException", "role": "try", "nodeIds": ["n0"]},
+                {
+                    "trapType": "RuntimeException",
+                    "role": "handler",
+                    "nodeIds": ["n1"],
+                    "entryNodeId": "n1",
+                },
+            ],
+            exception_edges=[
+                {
+                    "from": "n0",
+                    "to": "n1",
+                    "trapType": "RuntimeException",
+                    "fromCluster": 0,
+                    "toCluster": 1,
+                },
+            ],
+        )
+        dot = build_dot(method)
+        assert 'ltail="cluster_trap_0_0"' in dot
+        assert 'lhead="cluster_trap_0_1"' in dot
 
 
 class TestRenderCrossEdges:

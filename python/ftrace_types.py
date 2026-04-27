@@ -4,8 +4,24 @@ All structured data flowing between pipeline stages is typed here.
 Uses TypedDict for JSON-compatible structures, StrEnum for constrained fields.
 """
 
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import TypedDict
+
+
+@dataclass(frozen=True)
+class NodeCounter:
+    """Immutable counter for generating unique semantic node IDs.
+
+    Threaded through the pipeline to ensure globally unique IDs
+    across all methods in an expanded call tree.
+    """
+
+    value: int = 0
+
+    def advance(self, n: int) -> "NodeCounter":
+        """Return a new counter advanced by n."""
+        return NodeCounter(self.value + n)
 
 
 class NodeKind(StrEnum):

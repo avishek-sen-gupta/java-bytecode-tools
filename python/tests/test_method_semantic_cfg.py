@@ -71,7 +71,9 @@ class TestBuildSemanticGraphReturnsNewType:
         from ftrace_semantic import build_semantic_graph_pass
 
         hints = typing.get_type_hints(build_semantic_graph_pass)
-        assert hints["return"].__name__ == "MethodSemanticCFG"
+        # build_semantic_graph_pass returns tuple[MethodSemanticCFG, NodeCounter]
+        assert hints["return"].__origin__ is tuple
+        assert hints["return"].__args__[0].__name__ == "MethodSemanticCFG"
 
     def test_transform_return_type_annotation(self):
         from ftrace_semantic import transform

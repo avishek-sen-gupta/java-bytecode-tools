@@ -165,3 +165,39 @@ class TestShortClass:
         from ftrace_types import short_class
 
         assert short_class("pkg.Class") == "Class"
+
+
+class TestNodeCounter:
+    def test_default_value(self):
+        from ftrace_types import NodeCounter
+
+        c = NodeCounter()
+        assert c.value == 0
+
+    def test_custom_value(self):
+        from ftrace_types import NodeCounter
+
+        c = NodeCounter(42)
+        assert c.value == 42
+
+    def test_advance(self):
+        from ftrace_types import NodeCounter
+
+        c = NodeCounter(10)
+        c2 = c.advance(5)
+        assert c2.value == 15
+
+    def test_advance_is_immutable(self):
+        from ftrace_types import NodeCounter
+
+        c = NodeCounter(10)
+        c.advance(5)
+        assert c.value == 10
+
+    def test_frozen(self):
+        from ftrace_types import NodeCounter
+        import dataclasses
+
+        c = NodeCounter(10)
+        with __import__("pytest").raises(dataclasses.FrozenInstanceError):
+            c.value = 20

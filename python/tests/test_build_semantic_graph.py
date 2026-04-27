@@ -6,6 +6,7 @@ from ftrace_types import (
     SemanticCluster,
     ExceptionEdge,
     NodeKind,
+    NodeCounter,
     ClusterRole,
 )
 
@@ -30,14 +31,12 @@ class TestResolveInputs:
         }
         metadata = {
             "clusterAssignment": {"B0": {"kind": "try", "trapIndex": 0}},
-            "blockAliases": {"B2": "B0"},
         }
         result = _resolve_inputs(tree, metadata)
         assert result["blocks"] == tree["blocks"]
         assert result["edges"] == tree["edges"]
         assert result["traps"] == tree["traps"]
         assert result["cluster_assignment"] == metadata["clusterAssignment"]
-        assert result["block_aliases"] == metadata["blockAliases"]
 
     def test_defaults_when_fields_missing(self):
         from ftrace_semantic import _resolve_inputs
@@ -47,13 +46,10 @@ class TestResolveInputs:
         assert result["edges"] == []
         assert result["traps"] == []
         assert result["cluster_assignment"] == {}
-        assert result["block_aliases"] == {}
 
 
-def _make_enriched_method(
-    blocks, traps, cluster_assignment, block_aliases=(), children=(), edges=()
-):
-    """Build a method node with all intermediate fields from passes 1-3."""
+def _make_enriched_method(blocks, traps, cluster_assignment, children=(), edges=()):
+    """Build a method node with all intermediate fields from passes 1-2."""
     return {
         "class": "com.example.Svc",
         "method": "handle",
@@ -66,7 +62,6 @@ def _make_enriched_method(
         "traps": traps,
         "metadata": {
             "clusterAssignment": cluster_assignment,
-            "blockAliases": dict(block_aliases) if block_aliases else {},
         },
         "children": list(children) if children else [],
     }
@@ -157,7 +152,7 @@ class TestBuildNodes:
                 ],
             }
         ]
-        result = _build_nodes(blocks, {}, 0)
+        result = _build_nodes(blocks, 0)
         assert len(result["nodes"]) == 1
         assert result["nodes"][0]["id"] == "n0"
         assert result["nodes"][0]["kind"] == NodeKind.PLAIN
@@ -166,35 +161,11 @@ class TestBuildNodes:
         assert result["bid_to_nids"] == {"B0": ["n0"]}
         assert result["node_counter"] == 1
 
-    def test_aliased_block_shares_canonical_nodes(self):
-        from ftrace_semantic import _build_nodes
-
-        blocks = [
-            {
-                "id": "B0",
-                "stmts": [],
-                "mergedStmts": [
-                    {"line": 5, "calls": [], "branches": [], "assigns": []}
-                ],
-            },
-            {
-                "id": "B1",
-                "stmts": [],
-                "mergedStmts": [
-                    {"line": 5, "calls": [], "branches": [], "assigns": []}
-                ],
-            },
-        ]
-        result = _build_nodes(blocks, {"B1": "B0"}, 0)
-        assert len(result["nodes"]) == 1
-        assert result["block_first"]["B1"] == result["block_first"]["B0"]
-        assert result["block_last"]["B1"] == result["block_last"]["B0"]
-
     def test_empty_merged_stmts_produces_placeholder(self):
         from ftrace_semantic import _build_nodes
 
         blocks = [{"id": "B0", "stmts": [], "mergedStmts": []}]
-        result = _build_nodes(blocks, {}, 0)
+        result = _build_nodes(blocks, 0)
         assert len(result["nodes"]) == 1
         assert result["nodes"][0]["kind"] == NodeKind.PLAIN
         assert result["nodes"][0]["label"] == ["B0"]
@@ -213,7 +184,7 @@ class TestBuildNodes:
                 "branchCondition": "i <= 0",
             }
         ]
-        result = _build_nodes(blocks, {}, 0)
+        result = _build_nodes(blocks, 0)
         assert result["nodes"][0]["kind"] == NodeKind.BRANCH
         assert "i <= 0" in result["nodes"][0]["label"]
 
@@ -229,7 +200,7 @@ class TestBuildNodes:
                 ],
             }
         ]
-        result = _build_nodes(blocks, {}, 42)
+        result = _build_nodes(blocks, 42)
         assert result["nodes"][0]["id"] == "n42"
         assert result["node_counter"] == 43
 
@@ -246,7 +217,7 @@ class TestBuildNodes:
                 ],
             }
         ]
-        result = _build_nodes(blocks, {}, 0)
+        result = _build_nodes(blocks, 0)
         assert len(result["nodes"]) == 2
         assert result["block_first"]["B0"] == "n0"
         assert result["block_last"]["B0"] == "n1"
@@ -262,7 +233,6 @@ class TestBuildEdges:
             block_first={"B0": "n0"},
             block_last={"B0": "n1"},
             bid_to_nids={"B0": ["n0", "n1"]},
-            block_aliases={},
         )
         assert result["edges"] == [{"from": "n0", "to": "n1"}]
 
@@ -274,7 +244,6 @@ class TestBuildEdges:
             block_first={"B0": "n0", "B1": "n1"},
             block_last={"B0": "n0", "B1": "n1"},
             bid_to_nids={"B0": ["n0"], "B1": ["n1"]},
-            block_aliases={},
         )
         unconditional = [e for e in result["edges"] if "branch" not in e]
         assert {"from": "n0", "to": "n1"} in unconditional
@@ -290,7 +259,6 @@ class TestBuildEdges:
             block_first={"B0": "n0", "B1": "n1", "B2": "n2"},
             block_last={"B0": "n0", "B1": "n1", "B2": "n2"},
             bid_to_nids={"B0": ["n0"], "B1": ["n1"], "B2": ["n2"]},
-            block_aliases={},
         )
         branch_edges = [e for e in result["edges"] if "branch" in e]
         labels = {e["branch"] for e in branch_edges}
@@ -300,16 +268,12 @@ class TestBuildEdges:
         from ftrace_semantic import _build_edges
 
         result = _build_edges(
-            raw_edges=[{"fromBlock": "B0", "toBlock": "B1"}],
-            block_first={"B0": "n0", "B1": "n0"},
-            block_last={"B0": "n0", "B1": "n0"},
-            bid_to_nids={"B0": ["n0"], "B1": ["n0"]},
-            block_aliases={"B1": "B0"},
+            raw_edges=[{"fromBlock": "B0", "toBlock": "B0"}],
+            block_first={"B0": "n0"},
+            block_last={"B0": "n0"},
+            bid_to_nids={"B0": ["n0"]},
         )
-        inter_edges = [
-            e for e in result["edges"] if e.get("from") != e.get("to") or "branch" in e
-        ]
-        self_loops = [e for e in result["edges"] if e["from"] == e["to"]]
+        self_loops = [e for e in result["edges"] if e.get("from") == e.get("to")]
         assert self_loops == []
 
     def test_duplicate_edges_deduplicated(self):
@@ -323,7 +287,6 @@ class TestBuildEdges:
             block_first={"B0": "n0", "B1": "n1"},
             block_last={"B0": "n0", "B1": "n1"},
             bid_to_nids={"B0": ["n0"], "B1": ["n1"]},
-            block_aliases={},
         )
         unconditional = [e for e in result["edges"] if "branch" not in e]
         assert len(unconditional) == 1
@@ -340,7 +303,6 @@ class TestBuildEdges:
             block_first={"B0": "n0", "B1": "n1"},
             block_last={"B0": "n0", "B1": "n1"},
             bid_to_nids={"B0": ["n0"], "B1": ["n1"]},
-            block_aliases={},
         )
         branch_edges = [e for e in result["edges"] if "branch" in e]
         assert len(branch_edges) == 2
@@ -445,7 +407,7 @@ class TestBuildSemanticGraphPass:
             cluster_assignment={},
             edges=[{"fromBlock": "B0", "toBlock": "B1"}],
         )
-        result = build_semantic_graph_pass(tree)
+        result, _ = build_semantic_graph_pass(tree)
 
         assert "nodes" in result
         assert "edges" in result
@@ -501,7 +463,7 @@ class TestBuildSemanticGraphPass:
                 {"fromBlock": "B0", "toBlock": "B2", "label": "F"},
             ],
         )
-        result = build_semantic_graph_pass(tree)
+        result, _ = build_semantic_graph_pass(tree)
 
         branch_edges = [e for e in result["edges"] if "branch" in e]
         assert len(branch_edges) == 2
@@ -520,23 +482,12 @@ class TestBuildSemanticGraphPass:
                         {"line": 9, "calls": [], "branches": [], "assigns": []}
                     ],
                 },
-                {
-                    "id": "B1",
-                    "stmts": [],
-                    "mergedStmts": [
-                        {"line": 9, "calls": [], "branches": [], "assigns": []}
-                    ],
-                },
             ],
             traps=[],
-            cluster_assignment={
-                "B0": {"kind": ClusterRole.TRY, "trapIndex": 0},
-                "B1": {"kind": ClusterRole.TRY, "trapIndex": 0},
-            },
-            block_aliases={"B1": "B0"},
-            edges=[{"fromBlock": "B0", "toBlock": "B1"}],
+            cluster_assignment={},
+            edges=[{"fromBlock": "B0", "toBlock": "B0"}],
         )
-        result = build_semantic_graph_pass(tree)
+        result, _ = build_semantic_graph_pass(tree)
 
         self_loops = [e for e in result["edges"] if e["from"] == e["to"]]
         assert self_loops == []
@@ -574,7 +525,7 @@ class TestBuildSemanticGraphPass:
                 "B3": {"kind": ClusterRole.HANDLER, "trapIndex": 0},
             },
         )
-        result = build_semantic_graph_pass(tree)
+        result, _ = build_semantic_graph_pass(tree)
 
         assert len(result["clusters"]) == 2
         try_cluster = [c for c in result["clusters"] if c["role"] == ClusterRole.TRY][0]
@@ -618,7 +569,7 @@ class TestBuildSemanticGraphPass:
                 "B3": {"kind": ClusterRole.HANDLER, "trapIndex": 0},
             },
         )
-        result = build_semantic_graph_pass(tree)
+        result, _ = build_semantic_graph_pass(tree)
 
         assert len(result["exceptionEdges"]) == 1
         ee = result["exceptionEdges"][0]
@@ -640,7 +591,7 @@ class TestBuildSemanticGraphPass:
             traps=[],
             cluster_assignment={},
         )
-        result = build_semantic_graph_pass(tree)
+        result, _ = build_semantic_graph_pass(tree)
 
         for field in (
             "blocks",
@@ -666,7 +617,7 @@ class TestBuildSemanticGraphPass:
             traps=[],
             cluster_assignment={},
         )
-        result = build_semantic_graph_pass(tree)
+        result, _ = build_semantic_graph_pass(tree)
 
         assert result["class"] == "com.example.Svc"
         assert result["method"] == "handle"
@@ -682,7 +633,7 @@ class TestBuildSemanticGraphPass:
             "methodSignature": "sig",
             "ref": True,
         }
-        result = build_semantic_graph_pass(tree)
+        result, _ = build_semantic_graph_pass(tree)
         assert result.get("ref") is True
         assert "nodes" not in result
 
@@ -695,7 +646,7 @@ class TestBuildSemanticGraphPass:
             "methodSignature": "sig",
             "cycle": True,
         }
-        result = build_semantic_graph_pass(tree)
+        result, _ = build_semantic_graph_pass(tree)
         assert result.get("cycle") is True
 
     def test_leaf_filtered_node(self):
@@ -707,7 +658,7 @@ class TestBuildSemanticGraphPass:
             "methodSignature": "sig",
             "filtered": True,
         }
-        result = build_semantic_graph_pass(tree)
+        result, _ = build_semantic_graph_pass(tree)
         assert result.get("filtered") is True
 
     def test_does_not_mutate_input(self):
@@ -746,7 +697,7 @@ class TestSourceTraceFallback:
             "metadata": {"mergedSourceTrace": []},
             "children": [],
         }
-        result = build_semantic_graph_pass(tree)
+        result, _ = build_semantic_graph_pass(tree)
 
         assert result["nodes"] == []
         assert result["edges"] == []
@@ -772,7 +723,7 @@ class TestSourceTraceFallback:
             },
             "children": [],
         }
-        result = build_semantic_graph_pass(tree)
+        result, _ = build_semantic_graph_pass(tree)
 
         assert len(result["nodes"]) == 2
         assert result["nodes"][0]["kind"] == NodeKind.PLAIN
@@ -835,6 +786,58 @@ class TestTransform:
         assert "nodes" not in result
         assert violations == []
 
+    def test_identical_blocks_produce_separate_nodes(self):
+        """Blocks with identical content in the same cluster must produce
+        separate nodes. Aliasing was removed because it hides structurally
+        distinct control flow."""
+        from ftrace_semantic import transform
+
+        tree = {
+            "class": "Svc",
+            "method": "run",
+            "methodSignature": "<Svc: void run()>",
+            "lineStart": 1,
+            "lineEnd": 20,
+            "sourceLineCount": 20,
+            "blocks": [
+                {
+                    "id": "B0",
+                    "stmts": [{"line": 5}],
+                },
+                {
+                    "id": "B3",
+                    "stmts": [
+                        {"line": 14, "call": "PrintStream.println"},
+                    ],
+                },
+                {
+                    "id": "B8",
+                    "stmts": [
+                        {"line": 14, "call": "PrintStream.println"},
+                    ],
+                },
+            ],
+            "edges": [
+                {"fromBlock": "B0", "toBlock": "B3"},
+                {"fromBlock": "B0", "toBlock": "B8"},
+            ],
+            "traps": [
+                {
+                    "type": "java.lang.Exception",
+                    "handler": "B3",
+                    "coveredBlocks": ["B0"],
+                    "handlerBlocks": ["B3", "B8"],
+                }
+            ],
+            "children": [],
+        }
+        result, violations = transform(tree)
+
+        # B3 and B8 have identical content but must produce separate nodes
+        assert (
+            len(result["nodes"]) == 3
+        ), f"Expected 3 nodes (B0, B3, B8 each separate), got {len(result['nodes'])}"
+
 
 class TestBuildFromSourceTrace:
     def test_linear_nodes_and_sequential_edges(self):
@@ -872,7 +875,7 @@ class TestBuildFromSourceTrace:
         merged = [{"line": 5, "calls": [], "branches": [], "assigns": []}]
         result = _build_from_source_trace(merged, 42)
         assert result["nodes"][0]["id"] == "n42"
-        assert result["node_counter"] == 43
+        assert result["counter"].value == 43
 
     def test_empty_source_trace(self):
         from ftrace_semantic import _build_from_source_trace
@@ -926,7 +929,7 @@ class TestBuildFromBlocks:
             "edges": [{"fromBlock": "B0", "toBlock": "B1"}],
             "traps": [],
         }
-        metadata = {"clusterAssignment": {}, "blockAliases": {}}
+        metadata = {"clusterAssignment": {}}
         result = _build_from_blocks(tree, metadata, 0)
         assert len(result["nodes"]) == 2
         assert any(
@@ -970,12 +973,11 @@ class TestBuildFromBlocks:
                 "B0": {"kind": "try", "trapIndex": 0},
                 "B1": {"kind": "handler", "trapIndex": 0},
             },
-            "blockAliases": {},
         }
         result = _build_from_blocks(tree, metadata, 0)
         assert len(result["clusters"]) >= 1
 
-    def test_returns_correct_node_counter(self):
+    def test_returns_correct_counter(self):
         from ftrace_semantic import _build_from_blocks
 
         tree = {
@@ -991,9 +993,9 @@ class TestBuildFromBlocks:
             "edges": [],
             "traps": [],
         }
-        metadata = {"clusterAssignment": {}, "blockAliases": {}}
+        metadata = {"clusterAssignment": {}}
         result = _build_from_blocks(tree, metadata, 0)
-        assert result["node_counter"] >= 1
+        assert result["counter"].value >= 1
 
     def test_does_not_mutate_input(self):
         import copy
@@ -1013,7 +1015,7 @@ class TestBuildFromBlocks:
             "edges": [],
             "traps": [],
         }
-        metadata = {"clusterAssignment": {}, "blockAliases": {}}
+        metadata = {"clusterAssignment": {}}
         original_tree = copy.deepcopy(tree)
         original_meta = copy.deepcopy(metadata)
         _build_from_blocks(tree, metadata, 0)
@@ -1037,9 +1039,9 @@ class TestAssembleResult:
             "edges": [],
             "clusters": [],
             "exception_edges": [],
-            "node_counter": 0,
+            "counter": NodeCounter(0),
         }
-        result = _assemble_result(
+        result, _ = _assemble_result(
             tree, build_result, frozenset({"blocks", "traps", "metadata"})
         )
         assert "blocks" not in result
@@ -1061,9 +1063,9 @@ class TestAssembleResult:
             "edges": [],
             "clusters": [],
             "exception_edges": [],
-            "node_counter": 0,
+            "counter": NodeCounter(0),
         }
-        result = _assemble_result(tree, build_result, frozenset())
+        result, _ = _assemble_result(tree, build_result, frozenset())
         assert result["method"] == "run"
         assert result["methodSignature"] == "sig"
         assert result["lineStart"] == 1
@@ -1081,9 +1083,9 @@ class TestAssembleResult:
             "edges": [],
             "clusters": [],
             "exception_edges": [],
-            "node_counter": 2,
+            "counter": NodeCounter(2),
         }
-        result = _assemble_result(tree, build_result, frozenset())
+        result, _ = _assemble_result(tree, build_result, frozenset())
         assert result["entryNodeId"] == "n0"
 
     def test_no_entry_node_id_when_no_nodes(self):
@@ -1095,9 +1097,9 @@ class TestAssembleResult:
             "edges": [],
             "clusters": [],
             "exception_edges": [],
-            "node_counter": 0,
+            "counter": NodeCounter(0),
         }
-        result = _assemble_result(tree, build_result, frozenset())
+        result, _ = _assemble_result(tree, build_result, frozenset())
         assert "entryNodeId" not in result
 
     def test_recurses_children(self):
@@ -1117,9 +1119,9 @@ class TestAssembleResult:
             "edges": [],
             "clusters": [],
             "exception_edges": [],
-            "node_counter": 1,
+            "counter": NodeCounter(1),
         }
-        result = _assemble_result(tree, build_result, frozenset())
+        result, _ = _assemble_result(tree, build_result, frozenset())
         assert "children" in result
         assert len(result["children"]) == 1
         assert result["children"][0]["method"] == "inner"
@@ -1134,28 +1136,11 @@ class TestResolveEdgeTriples:
             raw_edges,
             block_first={"B0": "n0", "B1": "n1"},
             block_last={"B0": "n0", "B1": "n1"},
-            aliased_blocks=frozenset(),
         )
         assert len(result) == 1
         assert result[0]["from_nid"] == "n0"
         assert result[0]["to_nid"] == "n1"
         assert result[0]["to_block"] == "B1"
-
-    def test_filters_aliased_block_edges(self):
-        from ftrace_semantic import _resolve_edge_triples
-
-        raw_edges = [
-            {"fromBlock": "B0", "toBlock": "B1"},
-            {"fromBlock": "B2", "toBlock": "B1"},
-        ]
-        result = _resolve_edge_triples(
-            raw_edges,
-            block_first={"B0": "n0", "B1": "n1", "B2": "n0"},
-            block_last={"B0": "n0", "B1": "n1", "B2": "n0"},
-            aliased_blocks=frozenset({"B2"}),
-        )
-        assert len(result) == 1
-        assert result[0]["from_nid"] == "n0"
 
     def test_filters_missing_node_edges(self):
         from ftrace_semantic import _resolve_edge_triples
@@ -1165,7 +1150,6 @@ class TestResolveEdgeTriples:
             raw_edges,
             block_first={"B0": "n0"},
             block_last={"B0": "n0"},
-            aliased_blocks=frozenset(),
         )
         assert result == []
 
@@ -1177,7 +1161,6 @@ class TestResolveEdgeTriples:
             raw_edges,
             block_first={"B0": "n0", "B1": "n0"},
             block_last={"B0": "n0", "B1": "n0"},
-            aliased_blocks=frozenset(),
         )
         assert result == []
 
@@ -1189,7 +1172,6 @@ class TestResolveEdgeTriples:
             raw_edges,
             block_first={"B0": "n0", "B1": "n1"},
             block_last={"B0": "n0", "B1": "n1"},
-            aliased_blocks=frozenset(),
         )
         assert result[0]["label"] == "T"
 
@@ -1204,7 +1186,6 @@ class TestResolveEdgeTriples:
             raw_edges,
             block_first={"B0": "n0", "B1": "n1", "B2": "n2"},
             block_last={"B0": "n0", "B1": "n1", "B2": "n2"},
-            aliased_blocks=frozenset(),
         )
         assert result[0]["to_nid"] == "n1"
         assert result[1]["to_nid"] == "n2"
@@ -1220,7 +1201,6 @@ class TestResolveEdgeTriples:
             raw_edges,
             block_first={"B0": "n0", "B1": "n1"},
             block_last={"B0": "n0", "B1": "n1"},
-            aliased_blocks=frozenset(),
         )
         assert raw_edges == original
 
@@ -1258,19 +1238,6 @@ class TestClassifyConvergence:
         labels = {e["branch"] for e in result}
         assert labels == {"T", "F"}
 
-    def test_aliasing_convergence_collapses_to_unlabeled(self):
-        from ftrace_semantic import _classify_convergence
-
-        resolved = [
-            {"from_nid": "n0", "to_nid": "n1", "label": "T", "to_block": "B1"},
-            {"from_nid": "n0", "to_nid": "n1", "label": "F", "to_block": "B2"},
-        ]
-        result = _classify_convergence(resolved)
-        assert len(result) == 1
-        assert result[0]["from"] == "n0"
-        assert result[0]["to"] == "n1"
-        assert "branch" not in result[0]
-
     def test_multiple_independent_groups(self):
         from ftrace_semantic import _classify_convergence
 
@@ -1292,49 +1259,6 @@ class TestClassifyConvergence:
         original = copy.deepcopy(resolved)
         _classify_convergence(resolved)
         assert resolved == original
-
-
-class TestSuppressReverseEdges:
-    def test_suppresses_reverse_at_shared_node(self):
-        from ftrace_semantic import _suppress_reverse_edges
-
-        edges = [
-            {"from": "n0", "to": "n1"},
-            {"from": "n1", "to": "n0"},
-        ]
-        result = _suppress_reverse_edges(edges, shared_nids=frozenset({"n0"}))
-        assert len(result) == 1
-        assert result[0]["from"] == "n0"
-
-    def test_keeps_reverse_at_non_shared_node(self):
-        from ftrace_semantic import _suppress_reverse_edges
-
-        edges = [
-            {"from": "n0", "to": "n1"},
-            {"from": "n1", "to": "n0"},
-        ]
-        result = _suppress_reverse_edges(edges, shared_nids=frozenset())
-        assert len(result) == 2
-
-    def test_labeled_edges_never_suppressed(self):
-        from ftrace_semantic import _suppress_reverse_edges
-
-        edges = [
-            {"from": "n0", "to": "n1"},
-            {"from": "n1", "to": "n0", "branch": "T"},
-        ]
-        result = _suppress_reverse_edges(edges, shared_nids=frozenset({"n0"}))
-        assert len(result) == 2
-
-    def test_does_not_mutate_input(self):
-        import copy
-
-        from ftrace_semantic import _suppress_reverse_edges
-
-        edges = [{"from": "n0", "to": "n1"}, {"from": "n1", "to": "n0"}]
-        original = copy.deepcopy(edges)
-        _suppress_reverse_edges(edges, shared_nids=frozenset({"n0"}))
-        assert edges == original
 
 
 class TestBuildClusterPair:
@@ -1550,3 +1474,149 @@ class TestBuildExceptionEdge:
         result1 = _build_exception_edge("n0", "n5", "X", 0)
         result2 = _build_exception_edge("n0", "n5", "X", 0)
         assert result1 == result2
+
+
+def _collect_all_node_ids(tree: dict) -> list[str]:
+    """Recursively collect all node IDs from a semantic tree."""
+    ids = [n["id"] for n in tree.get("nodes", [])]
+    for child in tree.get("children", []):
+        ids.extend(_collect_all_node_ids(child))
+    return ids
+
+
+class TestNodeCounterThreading:
+    def test_children_get_unique_node_ids(self):
+        """Children must receive sequential non-overlapping ID ranges.
+
+        The old `i * 100` stride causes collisions when a child has >100 nodes.
+        With sequential counter threading, all IDs must be globally unique.
+        """
+        from ftrace_semantic import build_semantic_graph_pass
+        from ftrace_types import NodeCounter
+
+        # Build a child with 3 blocks (3 nodes) — simple enough to construct
+        def _make_child(method_name: str, call_site_line: int):
+            return {
+                "class": "com.example.Svc",
+                "method": method_name,
+                "methodSignature": f"<com.example.Svc: void {method_name}()>",
+                "lineStart": 1,
+                "lineEnd": 10,
+                "sourceLineCount": 10,
+                "blocks": [
+                    {
+                        "id": "B0",
+                        "stmts": [],
+                        "mergedStmts": [
+                            {"line": 1, "calls": [], "branches": [], "assigns": []},
+                        ],
+                    },
+                    {
+                        "id": "B1",
+                        "stmts": [],
+                        "mergedStmts": [
+                            {"line": 5, "calls": [], "branches": [], "assigns": []},
+                        ],
+                    },
+                    {
+                        "id": "B2",
+                        "stmts": [],
+                        "mergedStmts": [
+                            {"line": 10, "calls": [], "branches": [], "assigns": []},
+                        ],
+                    },
+                ],
+                "edges": [
+                    {"fromBlock": "B0", "toBlock": "B1"},
+                    {"fromBlock": "B1", "toBlock": "B2"},
+                ],
+                "traps": [],
+                "metadata": {"clusterAssignment": {}},
+                "children": [],
+                "callSiteLine": call_site_line,
+            }
+
+        parent = _make_enriched_method(
+            blocks=[
+                {
+                    "id": "B0",
+                    "stmts": [],
+                    "mergedStmts": [
+                        {
+                            "line": 1,
+                            "calls": ["Svc.child1"],
+                            "branches": [],
+                            "assigns": [],
+                        },
+                        {
+                            "line": 2,
+                            "calls": ["Svc.child2"],
+                            "branches": [],
+                            "assigns": [],
+                        },
+                        {
+                            "line": 3,
+                            "calls": ["Svc.child3"],
+                            "branches": [],
+                            "assigns": [],
+                        },
+                    ],
+                },
+            ],
+            traps=[],
+            cluster_assignment={},
+            children=[
+                _make_child("child1", 1),
+                _make_child("child2", 2),
+                _make_child("child3", 3),
+            ],
+        )
+
+        result, counter = build_semantic_graph_pass(parent, NodeCounter())
+        all_ids = _collect_all_node_ids(result)
+
+        # All IDs must be unique
+        assert len(all_ids) == len(set(all_ids)), (
+            f"Duplicate node IDs found: "
+            f"{[nid for nid in all_ids if all_ids.count(nid) > 1]}"
+        )
+        # Parent has 3 nodes, each child has 3 nodes = 12 total
+        assert len(all_ids) == 12
+
+    def test_build_semantic_graph_pass_returns_tuple(self):
+        """build_semantic_graph_pass must return (MethodSemanticCFG, NodeCounter)."""
+        from ftrace_semantic import build_semantic_graph_pass
+        from ftrace_types import NodeCounter
+
+        tree = _make_enriched_method(
+            blocks=[
+                {
+                    "id": "B0",
+                    "stmts": [],
+                    "mergedStmts": [
+                        {"line": 5, "calls": [], "branches": [], "assigns": []},
+                    ],
+                },
+            ],
+            traps=[],
+            cluster_assignment={},
+        )
+        result, counter = build_semantic_graph_pass(tree, NodeCounter())
+        assert isinstance(counter, NodeCounter)
+        assert counter.value >= 1
+        assert "nodes" in result
+
+    def test_leaf_returns_zero_advance_counter(self):
+        """Leaf nodes consume no IDs — counter should pass through unchanged."""
+        from ftrace_semantic import build_semantic_graph_pass
+        from ftrace_types import NodeCounter
+
+        tree = {
+            "class": "Svc",
+            "method": "run",
+            "methodSignature": "sig",
+            "ref": True,
+        }
+        result, counter = build_semantic_graph_pass(tree, NodeCounter(42))
+        assert counter.value == 42
+        assert result.get("ref") is True

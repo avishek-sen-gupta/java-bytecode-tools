@@ -56,6 +56,92 @@ public class ForwardTracer {
     return sig.substring(sig.lastIndexOf(' ') + 1, sig.indexOf('('));
   }
 
+  /**
+   * Pass 1 — Discover all reachable methods from a root signature via DFS over the call graph.
+   *
+   * <p>Pure function over the call graph — no SootUp access. Testable with synthetic graphs.
+   *
+   * @param rootSig entry method signature
+   * @param callGraph prebuilt caller→callees map
+   * @param knownSignatures set of signatures that have bodies (project methods)
+   * @param filter class-level allow/stop filter (null-safe)
+   * @return discovery result with classifications and callee lists
+   */
+  static DiscoveryResult discoverReachable(
+      String rootSig,
+      Map<String, List<String>> callGraph,
+      Set<String> knownSignatures,
+      BytecodeTracer.FilterConfig filter) {
+    Set<String> normalMethods = new LinkedHashSet<>();
+    Map<String, List<DiscoveryResult.CalleeEntry>> calleeMap = new LinkedHashMap<>();
+    Set<String> pathAncestors = new LinkedHashSet<>();
+    Set<String> visited = new HashSet<>();
+
+    discoverDFS(
+        rootSig,
+        callGraph,
+        knownSignatures,
+        filter,
+        pathAncestors,
+        visited,
+        normalMethods,
+        calleeMap);
+
+    return new DiscoveryResult(normalMethods, calleeMap);
+  }
+
+  private static void discoverDFS(
+      String sig,
+      Map<String, List<String>> callGraph,
+      Set<String> knownSignatures,
+      BytecodeTracer.FilterConfig filter,
+      Set<String> pathAncestors,
+      Set<String> visited,
+      Set<String> normalMethods,
+      Map<String, List<DiscoveryResult.CalleeEntry>> calleeMap) {
+    if (visited.contains(sig)) return;
+    visited.add(sig);
+
+    normalMethods.add(sig);
+    pathAncestors.add(sig);
+
+    List<String> callees = callGraph.getOrDefault(sig, List.of());
+    List<DiscoveryResult.CalleeEntry> entries = new ArrayList<>();
+    for (String calleeSig : callees) {
+      Classification classification =
+          classifyCallee(calleeSig, pathAncestors, knownSignatures, filter);
+      entries.add(new DiscoveryResult.CalleeEntry(calleeSig, classification));
+      if (classification == Classification.NORMAL) {
+        discoverDFS(
+            calleeSig,
+            callGraph,
+            knownSignatures,
+            filter,
+            pathAncestors,
+            visited,
+            normalMethods,
+            calleeMap);
+      }
+    }
+
+    pathAncestors.remove(sig);
+    calleeMap.put(sig, List.copyOf(entries));
+  }
+
+  private static Classification classifyCallee(
+      String calleeSig,
+      Set<String> pathAncestors,
+      Set<String> knownSignatures,
+      BytecodeTracer.FilterConfig filter) {
+    if (pathAncestors.contains(calleeSig)) return Classification.CYCLE;
+    if (!knownSignatures.contains(calleeSig)) return Classification.FILTERED;
+    if (filter != null && filter.stop() != null) {
+      String calleeClass = extractClassName(calleeSig);
+      if (!filter.shouldRecurse(calleeClass)) return Classification.FILTERED;
+    }
+    return Classification.NORMAL;
+  }
+
   private final BytecodeTracer tracer;
 
   public ForwardTracer(BytecodeTracer tracer) {

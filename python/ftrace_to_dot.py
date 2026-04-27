@@ -197,8 +197,88 @@ def _render_cross_edges(
     ]
 
 
+def _render_method(node: MethodSemanticCFG, counter: int) -> _MethodDotResult:
+    """Recursively render a method and its children as DOT lines."""
+    # Leaf check
+    leaf_kind = next(
+        (k for k in ("cycle", "ref", "filtered") if node.get(k, False)),
+        "",
+    )
+    if leaf_kind:
+        leaf_lines, nid, next_counter = _render_leaf(node, counter)
+        return {
+            "lines": leaf_lines,
+            "cross_edges": [],
+            "next_counter": next_counter,
+            "entry_nid": nid,
+        }
+
+    # Extract fields
+    cls = short_class(node.get("class", "?"))
+    method_name = node.get("method", "?")
+    nodes = node.get("nodes", [])
+    edges = node.get("edges", [])
+    clusters = node.get("clusters", [])
+    exception_edges = node.get("exceptionEdges", [])
+    children = node.get("children", [])
+    line_start = node.get("lineStart", "?")
+    line_end = node.get("lineEnd", "?")
+    entry_nid = node.get("entryNodeId", "") or (nodes[0]["id"] if nodes else "")
+
+    # Subgraph for this method
+    cid = f"cluster_{counter}"
+    subgraph = [
+        f"  subgraph {cid} {{",
+        f'    label="{escape(cls)}.{escape(method_name)} [{line_start}-{line_end}]";',
+        '    style="rounded,filled"; fillcolor="#f0f0f0";',
+        '    color="#4a86c8";',
+        "",
+        *[_render_node(n["id"], n) for n in nodes],
+        *[_render_edge(e) for e in edges],
+        *[line for i, c in enumerate(clusters) for line in _render_trap_cluster(i, c)],
+        *[_render_exception_edge(ee, clusters) for ee in exception_edges],
+        "  }",
+        "",
+    ]
+
+    # Recurse children, threading counter
+    def _fold_child(
+        acc: dict[str, list[_MethodDotResult] | int],
+        child: MethodSemanticCFG,
+    ) -> dict[str, list[_MethodDotResult] | int]:
+        result = _render_method(child, acc["counter"])
+        return {
+            "results": [*acc["results"], result],
+            "counter": result["next_counter"],
+        }
+
+    folded = reduce(
+        _fold_child,
+        children,
+        {"results": [], "counter": counter + 1},
+    )
+
+    child_results: list[_MethodDotResult] = folded["results"]
+    child_lines = [line for r in child_results for line in r["lines"]]
+    child_cross = [edge for r in child_results for edge in r["cross_edges"]]
+    child_entries = [r["entry_nid"] for r in child_results]
+
+    cross_edges = [
+        *child_cross,
+        *_render_cross_edges(nodes, children, child_entries, entry_nid),
+    ]
+
+    return {
+        "lines": [*subgraph, *child_lines],
+        "cross_edges": cross_edges,
+        "next_counter": folded["counter"],
+        "entry_nid": entry_nid,
+    }
+
+
 def build_dot(root: MethodSemanticCFG) -> str:
-    lines = [
+    """Render a MethodSemanticCFG tree as a Graphviz DOT string."""
+    header = [
         "digraph ftrace {",
         "  rankdir=TB;",
         "  compound=true;",
@@ -207,123 +287,9 @@ def build_dot(root: MethodSemanticCFG) -> str:
         '  edge [fontname="Helvetica", fontsize=9];',
         "",
     ]
-    cross_edges: list[str] = []
-    cluster_counter = [0]
-
-    def next_cluster_id() -> str:
-        cid = f"cluster_{cluster_counter[0]}"
-        cluster_counter[0] += 1
-        return cid
-
-    def add_method(node: MethodSemanticCFG) -> str:
-        """Add a method node. Returns entry node ID."""
-        cls = short_class(node.get("class", "?"))
-        method = node.get("method", "?")
-
-        # Leaf nodes
-        for leaf_kind in ("cycle", "ref", "filtered"):
-            if node.get(leaf_kind):
-                nid = f"n_leaf_{cluster_counter[0]}"
-                cluster_counter[0] += 1
-                label = f"{cls}.{method}\\n({leaf_kind})"
-                style = NODE_STYLE[NodeKind(leaf_kind)]
-                attrs = f'label="{escape(label)}"'
-                for k, v in style.items():
-                    attrs += f', {k}="{v}"'
-                lines.append(f"  {nid} [{attrs}];")
-                return nid
-
-        nodes = node.get("nodes", [])
-        edges = node.get("edges", [])
-        clusters = node.get("clusters", [])
-        exception_edges = node.get("exceptionEdges", [])
-        children = node.get("children", [])
-        line_start = node.get("lineStart", "?")
-        line_end = node.get("lineEnd", "?")
-
-        cid = next_cluster_id()
-        lines.append(f"  subgraph {cid} {{")
-        lines.append(
-            f'    label="{escape(cls)}.{escape(method)} [{line_start}-{line_end}]";'
-        )
-        lines.append('    style="rounded,filled"; fillcolor="#f0f0f0";')
-        lines.append('    color="#4a86c8";')
-        lines.append("")
-
-        # Nodes
-        for n in nodes:
-            lines.append(_render_node(n["id"], n))
-
-        # Edges
-        for e in edges:
-            lines.append(_render_edge(e))
-
-        # Trap clusters as nested subgraphs
-        for i, cluster in enumerate(clusters):
-            trap_type = cluster["trapType"]
-            role = cluster["role"]
-            node_ids = cluster.get("nodeIds", [])
-
-            tc_id = f"cluster_trap_{i}"
-            lines.append(f"    subgraph {tc_id} {{")
-
-            if role == "try":
-                lines.append(f'      label="try ({escape(trap_type)})";')
-                lines.append(
-                    '      style="dashed,rounded"; color="#ffa500"; fontcolor="#ffa500";'
-                )
-            else:
-                h_label = (
-                    "finally"
-                    if trap_type.lower() in ("throwable", "any")
-                    else f"catch ({escape(trap_type)})"
-                )
-                lines.append(f'      label="{h_label}";')
-                lines.append(
-                    '      style="dashed,rounded"; color="#007bff"; fontcolor="#007bff";'
-                )
-
-            for nid in node_ids:
-                lines.append(f"      {nid};")
-            lines.append("    }")
-
-        # Exception edges
-        for ee in exception_edges:
-            lines.append(_render_exception_edge(ee, clusters))
-
-        lines.append("  }")
-        lines.append("")
-
-        # Cross-cluster call edges to children
-        # Build line → node ID lookup for call site matching
-        line_to_nids: dict[int, list[str]] = {}
-        for n in nodes:
-            for ln in n.get("lines", []):
-                line_to_nids.setdefault(ln, []).append(n["id"])
-
-        entry_nid = node.get("entryNodeId", "") or (nodes[0]["id"] if nodes else "")
-
-        for child in children:
-            child_entry = add_method(child)
-            if child_entry:
-                csl = child.get("callSiteLine", -1)
-                source_nids = line_to_nids.get(csl, [])
-                if source_nids:
-                    cross_edges.append(
-                        f"  {source_nids[0]} -> {child_entry} "
-                        f'[color="#e05050", style=bold, penwidth=1.5];'
-                    )
-                elif entry_nid:
-                    cross_edges.append(f"  {entry_nid} -> {child_entry};")
-
-        return entry_nid
-
-    add_method(root)
-
-    lines.append("  // Cross-cluster call edges")
-    lines.extend(cross_edges)
-    lines.append("}")
-    return "\n".join(lines)
+    result = _render_method(root, 0)
+    footer = ["  // Cross-cluster call edges", *result["cross_edges"], "}"]
+    return "\n".join([*header, *result["lines"], *footer])
 
 
 def main():

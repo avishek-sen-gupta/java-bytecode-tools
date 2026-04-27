@@ -9,6 +9,7 @@ dedup) happen upstream in ftrace_semantic.
 import json
 import sys
 from pathlib import Path
+from functools import reduce
 from typing import TypedDict
 
 from ftrace_types import (
@@ -160,6 +161,40 @@ def _render_trap_cluster(index: int, cluster: SemanticCluster) -> list[str]:
 
     node_lines = [f"      {nid};" for nid in node_ids]
     return [*header, *style_lines, *node_lines, "    }"]
+
+
+def _render_cross_edges(
+    nodes: list[SemanticNode],
+    children: list[MethodSemanticCFG],
+    child_entries: list[str],
+    entry_nid: str,
+) -> list[str]:
+    """Build parent→child call edges by matching callSiteLine to node lines."""
+    line_to_nids: dict[int, list[str]] = reduce(
+        lambda acc, pair: {**acc, pair[0]: [*acc.get(pair[0], []), pair[1]]},
+        ((ln, n["id"]) for n in nodes for ln in n.get("lines", [])),
+        {},
+    )
+
+    def _edge_for_child(child: MethodSemanticCFG, child_entry: str) -> list[str]:
+        if not child_entry:
+            return []
+        csl = child.get("callSiteLine", -1)
+        source_nids = line_to_nids.get(csl, [])
+        if source_nids:
+            return [
+                f"  {source_nids[0]} -> {child_entry} "
+                f'[color="#e05050", style=bold, penwidth=1.5];'
+            ]
+        if entry_nid:
+            return [f"  {entry_nid} -> {child_entry};"]
+        return []
+
+    return [
+        line
+        for child, child_entry in zip(children, child_entries)
+        for line in _edge_for_child(child, child_entry)
+    ]
 
 
 def build_dot(root: MethodSemanticCFG) -> str:

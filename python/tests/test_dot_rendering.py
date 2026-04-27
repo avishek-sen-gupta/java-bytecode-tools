@@ -414,3 +414,57 @@ class TestRenderTrapCluster:
         assert lines[-1] == "    }"
         # Only header (1) + label (1) + style (1) + footer (1) = 4 lines
         assert len(lines) == 4
+
+
+class TestRenderCrossEdges:
+    def test_matching_call_site_line(self):
+        from ftrace_to_dot import _render_cross_edges
+
+        nodes = [
+            {"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]},
+            {"id": "n1", "lines": [9], "kind": "call", "label": ["L9", "Other.run"]},
+        ]
+        children = [{"callSiteLine": 9, "method": "run"}]
+        child_entries = ["n5"]
+        result = _render_cross_edges(nodes, children, child_entries, "n0")
+        assert len(result) == 1
+        assert "n1 -> n5" in result[0]
+        assert "#e05050" in result[0]
+        assert "bold" in result[0]
+
+    def test_fallback_to_entry_nid(self):
+        from ftrace_to_dot import _render_cross_edges
+
+        nodes = [
+            {"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]},
+        ]
+        children = [{"callSiteLine": 99, "method": "run"}]
+        child_entries = ["n5"]
+        result = _render_cross_edges(nodes, children, child_entries, "n0")
+        assert len(result) == 1
+        assert "n0 -> n5" in result[0]
+
+    def test_empty_child_entry_skipped(self):
+        from ftrace_to_dot import _render_cross_edges
+
+        nodes = [{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}]
+        children = [{"callSiteLine": 5, "method": "run"}]
+        child_entries = [""]
+        result = _render_cross_edges(nodes, children, child_entries, "n0")
+        assert result == []
+
+    def test_no_children(self):
+        from ftrace_to_dot import _render_cross_edges
+
+        nodes = [{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}]
+        result = _render_cross_edges(nodes, [], [], "n0")
+        assert result == []
+
+    def test_no_entry_nid_no_match(self):
+        from ftrace_to_dot import _render_cross_edges
+
+        nodes = [{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}]
+        children = [{"callSiteLine": 99, "method": "run"}]
+        child_entries = ["n5"]
+        result = _render_cross_edges(nodes, children, child_entries, "")
+        assert result == []

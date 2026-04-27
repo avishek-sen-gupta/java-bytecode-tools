@@ -108,6 +108,50 @@ class TestMergeSourceTrace:
         assert sorted(result[0]["calls"]) == ["Baz.qux", "Foo.bar"]
         assert result[0]["branches"] == ["x > 0"]
 
+    def test_does_not_mutate_input(self):
+        from ftrace_semantic import merge_source_trace
+
+        trace = [
+            {"line": 5, "calls": ["Foo.bar"]},
+            {"line": 5, "calls": ["Baz.qux"]},
+        ]
+        original = [dict(e) for e in trace]
+        merge_source_trace(trace)
+        assert trace == original
+
+
+class TestAccumulateSourceTrace:
+    def test_empty_accumulator(self):
+        from ftrace_semantic import _accumulate_source_trace
+
+        result = _accumulate_source_trace({}, {"line": 5, "calls": ["Foo.bar"]})
+        assert result == {
+            5: {"line": 5, "calls": ["Foo.bar"], "branches": [], "assigns": []}
+        }
+
+    def test_negative_line_returns_acc_unchanged(self):
+        from ftrace_semantic import _accumulate_source_trace
+
+        acc = {5: {"line": 5, "calls": [], "branches": [], "assigns": []}}
+        result = _accumulate_source_trace(acc, {"line": -1})
+        assert result is acc
+
+    def test_deduplicates_calls(self):
+        from ftrace_semantic import _accumulate_source_trace
+
+        acc = {5: {"line": 5, "calls": ["Foo.bar"], "branches": [], "assigns": []}}
+        result = _accumulate_source_trace(
+            acc, {"line": 5, "calls": ["Foo.bar", "Baz.qux"]}
+        )
+        assert sorted(result[5]["calls"]) == ["Baz.qux", "Foo.bar"]
+
+    def test_appends_branch(self):
+        from ftrace_semantic import _accumulate_source_trace
+
+        acc = {5: {"line": 5, "calls": [], "branches": ["x > 0"], "assigns": []}}
+        result = _accumulate_source_trace(acc, {"line": 5, "branch": "y < 1"})
+        assert result[5]["branches"] == ["x > 0", "y < 1"]
+
 
 class TestMergeStmtsPass:
     """Tests for the full tree-walking pass."""

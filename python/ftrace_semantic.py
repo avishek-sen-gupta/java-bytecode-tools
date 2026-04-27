@@ -116,20 +116,29 @@ def merge_block_stmts(stmts: list[RawStmt]) -> list[MergedStmt]:
     return [by_line[ln] for ln in sorted(by_line)]
 
 
+def _accumulate_source_trace(
+    acc: dict[int, MergedStmt], entry: SourceTraceEntry
+) -> dict[int, MergedStmt]:
+    """Fold a single source trace entry into the accumulator, keyed by line number."""
+    line = entry["line"]
+    if line < 0:
+        return acc
+    existing = acc.get(line, {"line": line, "calls": [], "branches": [], "assigns": []})
+    new_calls = [c for c in entry.get("calls", []) if c not in existing["calls"]]
+    return {
+        **acc,
+        line: {
+            **existing,
+            "calls": existing["calls"] + new_calls,
+            "branches": existing["branches"]
+            + ([entry["branch"]] if "branch" in entry else []),
+        },
+    }
+
+
 def merge_source_trace(source_trace: list[SourceTraceEntry]) -> list[MergedStmt]:
     """Deduplicate sourceTrace by line number, merging calls and branches."""
-    by_line: dict[int, MergedStmt] = {}
-    for entry in source_trace:
-        line = entry["line"]
-        if line < 0:
-            continue
-        if line not in by_line:
-            by_line[line] = {"line": line, "calls": [], "branches": [], "assigns": []}
-        for c in entry.get("calls", []):
-            if c not in by_line[line]["calls"]:
-                by_line[line]["calls"].append(c)
-        if "branch" in entry:
-            by_line[line]["branches"].append(entry["branch"])
+    by_line = reduce(_accumulate_source_trace, source_trace, {})
     return [by_line[ln] for ln in sorted(by_line)]
 
 
@@ -242,6 +251,40 @@ def block_content_signature(block: RawBlock) -> str:
     return str((entries, block.get("branchCondition", "")))
 
 
+_AliasAcc = TypedDict(
+    "_AliasAcc",
+    {
+        "sigs": dict[tuple[str, int], dict[str, str]],
+        "aliases": dict[str, str],
+    },
+)
+
+
+def _accumulate_alias(
+    acc: _AliasAcc,
+    block: RawBlock,
+    cluster_assignment: dict[str, ClusterAssignment],
+) -> _AliasAcc:
+    """Fold a single block into the alias accumulator."""
+    bid = block["id"]
+    if bid not in cluster_assignment:
+        return acc
+    assignment = cluster_assignment[bid]
+    cluster_key = (assignment["kind"], assignment["trapIndex"])
+    sig = block_content_signature(block)
+    cluster_sigs = acc["sigs"].get(cluster_key, {})
+
+    if sig in cluster_sigs:
+        return {
+            "sigs": acc["sigs"],
+            "aliases": {**acc["aliases"], bid: cluster_sigs[sig]},
+        }
+    return {
+        "sigs": {**acc["sigs"], cluster_key: {**cluster_sigs, sig: bid}},
+        "aliases": acc["aliases"],
+    }
+
+
 def compute_block_aliases(
     blocks: list[RawBlock],
     cluster_assignment: dict[str, ClusterAssignment],
@@ -251,24 +294,12 @@ def compute_block_aliases(
     Returns a map of alias_block_id → canonical_block_id.
     Only blocks assigned to the same (kind, trapIndex) cluster are compared.
     """
-    cluster_sigs: dict[tuple[str, int], dict[str, str]] = {}
-    aliases: dict[str, str] = {}
-
-    for block in blocks:
-        bid = block["id"]
-        if bid not in cluster_assignment:
-            continue
-        assignment = cluster_assignment[bid]
-        cluster_key = (assignment["kind"], assignment["trapIndex"])
-        sig = block_content_signature(block)
-
-        sigs = cluster_sigs.setdefault(cluster_key, {})
-        if sig in sigs:
-            aliases[bid] = sigs[sig]
-        else:
-            sigs[sig] = bid
-
-    return aliases
+    result = reduce(
+        lambda acc, block: _accumulate_alias(acc, block, cluster_assignment),
+        blocks,
+        _AliasAcc(sigs={}, aliases={}),
+    )
+    return result["aliases"]
 
 
 def deduplicate_blocks_pass(tree: MethodCFG) -> MethodCFG:
@@ -297,19 +328,19 @@ def short_class(fqcn: str) -> str:
     return fqcn.rsplit(".", 1)[-1]
 
 
+def _format_call(c: str) -> str:
+    """Format a fully qualified call into ShortClass.method form."""
+    return (
+        short_class(c.rsplit(".", 1)[0]) + "." + c.rsplit(".", 1)[-1] if "." in c else c
+    )
+
+
 def make_node_label(entry: MergedStmt) -> list[str]:
     """Build a label list for a merged stmt entry."""
-    parts = [f"L{entry['line']}"]
-    for c in sorted(entry.get("calls", [])):
-        parts.append(
-            short_class(c.rsplit(".", 1)[0]) + "." + c.rsplit(".", 1)[-1]
-            if "." in c
-            else c
-        )
-    if not entry.get("calls"):
-        for a in entry.get("assigns", []):
-            parts.append(a)
-    return parts
+    calls = sorted(entry.get("calls", []))
+    call_labels = [_format_call(c) for c in calls]
+    assign_labels = list(entry.get("assigns", [])) if not calls else []
+    return [f"L{entry['line']}"] + call_labels + assign_labels
 
 
 def classify_node_kind(entry: MergedStmt) -> NodeKind:
@@ -516,21 +547,19 @@ def _build_trap_clusters(
         "nodeIds": try_nids,
     }
 
+    handler_entry_nid = block_first.get(trap["handler"], "")
     handler_cluster: SemanticCluster = {
         "trapType": etype,
         "role": ClusterRole.HANDLER,
         "nodeIds": handler_nids,
+        **({"entryNodeId": handler_entry_nid} if handler_entry_nid else {}),
     }
-    handler_entry_nid = block_first.get(trap["handler"], "")
-    if handler_entry_nid:
-        handler_cluster["entryNodeId"] = handler_entry_nid
 
     clusters = [try_cluster, handler_cluster]
 
     # Exception edge: try entry → handler entry
-    exception_edges: list[ExceptionEdge] = []
-    if handler_entry_nid:
-        src_nid = (
+    src_nid = (
+        (
             block_first.get(try_bids[0], "")
             if try_bids
             else next(
@@ -542,16 +571,22 @@ def _build_trap_clusters(
                 "",
             )
         )
-        if src_nid:
-            exception_edges.append(
-                {
-                    "from": src_nid,
-                    "to": handler_entry_nid,
-                    "trapType": etype,
-                    "fromCluster": cluster_offset,
-                    "toCluster": cluster_offset + 1,
-                }
-            )
+        if handler_entry_nid
+        else ""
+    )
+    exception_edges = (
+        [
+            {
+                "from": src_nid,
+                "to": handler_entry_nid,
+                "trapType": etype,
+                "fromCluster": cluster_offset,
+                "toCluster": cluster_offset + 1,
+            }
+        ]
+        if src_nid
+        else []
+    )
 
     return (clusters, exception_edges)
 

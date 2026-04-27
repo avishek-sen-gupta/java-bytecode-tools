@@ -35,9 +35,11 @@ java-bytecode-tools/
 │   ├── pom.xml
 │   └── src/main/java/tools/bytecode/
 │       ├── BytecodeTracer.java
-│       ├── ForwardTracer.java
+│       ├── ForwardTracer.java   # Two-pass ref-by-default tracer
 │       ├── BackwardTracer.java
 │       ├── CallGraphBuilder.java
+│       ├── Classification.java  # NORMAL / CYCLE / FILTERED enum
+│       ├── DiscoveryResult.java # Pass 1 output record
 │       └── cli/             # picocli CLI commands
 ├── python/                  # uv project — visualization tools
 │   ├── pyproject.toml
@@ -83,7 +85,20 @@ Output lists every method with its source line range. Pick the method and note i
 
 #### Forward trace — "what does this method call?"
 
-Traces downward through all callees, building a recursive tree with per-method block-level CFG, branch conditions, and call sites.
+Traces downward through all callees using a two-pass architecture:
+1. **Discover** — DFS over the call graph classifying each method as normal, cycle, or filtered
+2. **Build** — construct block-level CFGs for each discovered method in a flat loop (no recursion)
+
+Output is an **envelope** with the root method's full CFG and a flat `refIndex` of all other methods:
+
+```json
+{
+  "trace": { "class": "OrderService", "method": "processOrder", "blocks": [...], "children": [...] },
+  "refIndex": { "<com.example.OrderDao: void save()>": { "blocks": [...], ... }, ... }
+}
+```
+
+Every method except the root is a **ref node** by default — a lightweight pointer into the refIndex. This makes the output deterministic (not dependent on DFS traversal order) and enables targeted expansion via `ftrace-expand-refs`.
 
 ```bash
 scripts/bytecode.sh --prefix com.example. /path/to/classes \
@@ -135,7 +150,7 @@ scripts/bytecode.sh --prefix com.example. /path/to/classes \
 
 ### Step 4 (optional): Slice and expand
 
-Interprocedural traces can be huge and contain many `ref` nodes (deduplicated methods). You can "drill down" into a specific method by slicing the trace and expanding all its refs:
+Since every callee is a ref node, you can drill into any method by slicing and expanding:
 
 ```bash
 cd python
@@ -143,7 +158,7 @@ cd python
 # Slice: extract subtree + bundle ref index
 uv run ftrace-slice \
   --input ../trace.json \
-  --query ".children[0].children[2]" \
+  --query ".trace.children[0]" \
   --output ../sliced.json
 
 # Expand refs: replace ref nodes with full method bodies
@@ -152,13 +167,19 @@ uv run ftrace-expand-refs \
   --output ../expanded.json
 ```
 
+`ftrace-expand-refs` accepts both sliced traces (from `ftrace-slice`) and raw envelopes (from `xtrace`) — so you can also expand the entire trace directly:
+
+```bash
+uv run ftrace-expand-refs --input ../trace.json --output ../expanded.json
+```
+
 Or pipe the whole thing — all tools (including xtrace) support stdin/stdout:
 
 ```bash
 scripts/bytecode.sh --prefix com.example. /path/to/classes \
   xtrace --call-graph callgraph.json \
   --from com.example.service.OrderService --from-line 64 \
-  | cd python && uv run ftrace-slice --query ".children[0].children[2]" \
+  | cd python && uv run ftrace-slice --query ".trace.children[0]" \
   | uv run ftrace-expand-refs \
   | uv run ftrace-semantic \
   | uv run ftrace-to-dot > ../sliced.svg
@@ -257,12 +278,12 @@ scripts/bytecode.sh --prefix com.example. /path/to/classes xtrace --call-graph c
 cd python
 uv run ftrace-semantic --input ../out.json --output ../out-semantic.json
 uv run ftrace-to-dot --input ../out-semantic.json --output ../out.svg
-uv run ftrace-slice --input ../trace.json --query "<jq-query>" --output ../sliced.json
+uv run ftrace-slice --input ../trace.json --query ".trace.children[0]" --output ../sliced.json
 uv run ftrace-expand-refs --input ../sliced.json --output ../expanded.json
 
 # Or pipe the full pipeline end-to-end (xtrace writes JSON to stdout when --output is omitted):
 scripts/bytecode.sh --prefix com.example. /path/to/classes \
   xtrace --call-graph callgraph.json --from <class> --from-line <N> \
-  | cd python && uv run ftrace-slice --query "<jq-query>" \
+  | cd python && uv run ftrace-slice --query ".trace.children[0]" \
   | uv run ftrace-expand-refs | uv run ftrace-semantic | uv run ftrace-to-dot > ../out.svg
 ```

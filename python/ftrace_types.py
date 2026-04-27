@@ -222,6 +222,12 @@ ExceptionEdge = TypedDict(
 )
 
 
+# Type aliases for pass-enriched metadata values
+MergedSourceTraceData = list[MergedStmt]
+ClusterAssignmentData = dict[str, ClusterAssignment]
+BlockAliasesData = dict[str, str]
+PassData = MergedSourceTraceData | ClusterAssignmentData | BlockAliasesData
+
 # Use functional syntax for base because "class" is a reserved keyword
 _MethodCFGRequired = TypedDict("_MethodCFGRequired", {"class": str}, total=False)
 
@@ -263,14 +269,8 @@ class MethodCFG(_MethodCFGRequired, total=False):
     filtered: bool
     callSiteLine: int
 
-    # Pass 1: merge_stmts
-    mergedSourceTrace: list[MergedStmt]
-
-    # Pass 2: assign_clusters
-    clusterAssignment: dict[str, ClusterAssignment]
-
-    # Pass 3: deduplicate_blocks
-    blockAliases: BlockAliases
+    # Pass-enriched metadata (accumulated by passes 1-3, consumed and dropped by pass 4)
+    metadata: dict[str, PassData]
 
 
 # Use functional syntax for base because "class" is a reserved keyword

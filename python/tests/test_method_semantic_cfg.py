@@ -44,9 +44,7 @@ class TestMethodSemanticCFGType:
             "blocks",
             "traps",
             "sourceTrace",
-            "mergedSourceTrace",
-            "clusterAssignment",
-            "blockAliases",
+            "metadata",
         ):
             assert field not in hints, f"MethodSemanticCFG should not have {field}"
 
@@ -58,6 +56,14 @@ class TestMethodCFGNoSemanticFields:
         hints = typing.get_type_hints(MethodCFG)
         for field in ("nodes", "clusters", "exceptionEdges"):
             assert field not in hints, f"MethodCFG should no longer have {field}"
+
+    def test_has_metadata_field(self):
+        from ftrace_types import MethodCFG
+
+        hints = typing.get_type_hints(MethodCFG)
+        assert "metadata" in hints, "MethodCFG should have metadata field"
+        for field in ("mergedSourceTrace", "clusterAssignment", "blockAliases"):
+            assert field not in hints, f"MethodCFG should not have top-level {field}"
 
 
 class TestBuildSemanticGraphReturnsNewType:

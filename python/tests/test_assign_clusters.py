@@ -124,8 +124,9 @@ class TestAssignClustersPass:
             "children": [],
         }
         result = assign_clusters_pass(tree)
-        assert "clusterAssignment" in result
-        assert result["clusterAssignment"]["B0"] == {
+        assert "metadata" in result
+        assert "clusterAssignment" in result["metadata"]
+        assert result["metadata"]["clusterAssignment"]["B0"] == {
             "kind": ClusterRole.TRY,
             "trapIndex": 0,
         }
@@ -135,7 +136,7 @@ class TestAssignClustersPass:
 
         tree = {"class": "Svc", "method": "run", "ref": True, "methodSignature": "sig"}
         result = assign_clusters_pass(tree)
-        assert "clusterAssignment" not in result
+        assert "clusterAssignment" not in result.get("metadata", {})
 
     def test_no_traps_empty_assignment(self):
         from ftrace_semantic import assign_clusters_pass
@@ -148,7 +149,7 @@ class TestAssignClustersPass:
             "children": [],
         }
         result = assign_clusters_pass(tree)
-        assert result["clusterAssignment"] == {}
+        assert result["metadata"]["clusterAssignment"] == {}
 
     def test_does_not_mutate_input(self):
         from ftrace_semantic import assign_clusters_pass

@@ -24,8 +24,10 @@ def _make_enriched_method(
         "blocks": blocks,
         "edges": list(edges) if edges else [],
         "traps": traps,
-        "clusterAssignment": cluster_assignment,
-        "blockAliases": dict(block_aliases) if block_aliases else {},
+        "metadata": {
+            "clusterAssignment": cluster_assignment,
+            "blockAliases": dict(block_aliases) if block_aliases else {},
+        },
         "children": list(children) if children else [],
     }
 
@@ -332,8 +334,7 @@ class TestBuildSemanticGraphPass:
         for field in (
             "blocks",
             "traps",
-            "clusterAssignment",
-            "blockAliases",
+            "metadata",
             "sourceTrace",
         ):
             assert field not in result, f"{field} should be removed"
@@ -431,7 +432,7 @@ class TestSourceTraceFallback:
             "lineStart": 5,
             "lineEnd": 10,
             "sourceLineCount": 6,
-            "mergedSourceTrace": [],
+            "metadata": {"mergedSourceTrace": []},
             "children": [],
         }
         result = build_semantic_graph_pass(tree)
@@ -452,10 +453,12 @@ class TestSourceTraceFallback:
             "lineStart": 5,
             "lineEnd": 10,
             "sourceLineCount": 6,
-            "mergedSourceTrace": [
-                {"line": 5, "calls": [], "branches": [], "assigns": []},
-                {"line": 10, "calls": ["Foo.bar"], "branches": [], "assigns": []},
-            ],
+            "metadata": {
+                "mergedSourceTrace": [
+                    {"line": 5, "calls": [], "branches": [], "assigns": []},
+                    {"line": 10, "calls": ["Foo.bar"], "branches": [], "assigns": []},
+                ],
+            },
             "children": [],
         }
         result = build_semantic_graph_pass(tree)
@@ -475,7 +478,7 @@ class TestSourceTraceFallback:
         assert result["exceptionEdges"] == []
         # sourceTrace and mergedSourceTrace are NOT in result
         assert "sourceTrace" not in result
-        assert "mergedSourceTrace" not in result
+        assert "metadata" not in result
 
 
 class TestTransform:

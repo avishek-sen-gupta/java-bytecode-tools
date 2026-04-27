@@ -86,7 +86,11 @@ def merge_stmts_pass(tree: MethodCFG) -> MethodCFG:
             for block in tree["blocks"]
         ]
     elif "sourceTrace" in tree:
-        result["mergedSourceTrace"] = merge_source_trace(tree["sourceTrace"])
+        metadata = {
+            **result.get("metadata", {}),
+            "mergedSourceTrace": merge_source_trace(tree["sourceTrace"]),
+        }
+        result["metadata"] = metadata
 
     if "children" in tree:
         result["children"] = [merge_stmts_pass(child) for child in tree["children"]]
@@ -145,7 +149,11 @@ def assign_clusters_pass(tree: MethodCFG) -> MethodCFG:
     result = dict(tree)
 
     if "traps" in tree:
-        result["clusterAssignment"] = assign_trap_clusters(tree.get("traps", []))
+        metadata = {
+            **result.get("metadata", {}),
+            "clusterAssignment": assign_trap_clusters(tree.get("traps", [])),
+        }
+        result["metadata"] = metadata
 
     if "children" in tree:
         result["children"] = [assign_clusters_pass(child) for child in tree["children"]]
@@ -206,10 +214,10 @@ def deduplicate_blocks_pass(tree: MethodCFG) -> MethodCFG:
     result = dict(tree)
 
     if "blocks" in tree:
-        result["blockAliases"] = compute_block_aliases(
-            tree.get("blocks", []),
-            tree.get("clusterAssignment", {}),
-        )
+        cluster_assignment = tree.get("metadata", {}).get("clusterAssignment", {})
+        aliases = compute_block_aliases(tree.get("blocks", []), cluster_assignment)
+        metadata = {**result.get("metadata", {}), "blockAliases": aliases}
+        result["metadata"] = metadata
 
     if "children" in tree:
         result["children"] = [
@@ -264,8 +272,9 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemant
         return dict(tree)
 
     # sourceTrace fallback — no blocks, just a linear list of lines
-    if "mergedSourceTrace" in tree and "blocks" not in tree:
-        merged = tree["mergedSourceTrace"]
+    tree_metadata = tree.get("metadata", {})
+    if "mergedSourceTrace" in tree_metadata and "blocks" not in tree:
+        merged = tree_metadata["mergedSourceTrace"]
         node_counter = next_id
         all_nodes: list[SemanticNode] = []
         all_edges: list[SemanticEdge] = []
@@ -285,7 +294,7 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemant
             for i in range(len(all_nodes) - 1)
         ]
 
-        drop_fields = {"sourceTrace", "mergedSourceTrace"}
+        drop_fields = {"sourceTrace", "metadata"}
         result = {
             k: v for k, v in tree.items() if k not in drop_fields and k != "children"
         }
@@ -305,8 +314,8 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemant
     blocks = tree.get("blocks", [])
     raw_edges = tree.get("edges", [])
     traps = tree.get("traps", [])
-    cluster_assignment = tree.get("clusterAssignment", {})
-    block_aliases = tree.get("blockAliases", {})
+    cluster_assignment = tree_metadata.get("clusterAssignment", {})
+    block_aliases = tree_metadata.get("blockAliases", {})
 
     # --- Build nodes ---
     node_counter = next_id
@@ -484,8 +493,7 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemant
         "blocks",
         "edges",
         "traps",
-        "clusterAssignment",
-        "blockAliases",
+        "metadata",
         "sourceTrace",
     }
     result = {k: v for k, v in tree.items() if k not in drop_fields and k != "children"}

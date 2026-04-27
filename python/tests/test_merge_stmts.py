@@ -206,5 +206,6 @@ class TestMergeStmtsPassSourceTrace:
             "children": [],
         }
         result = merge_stmts_pass(tree)
-        assert "mergedSourceTrace" in result
-        assert len(result["mergedSourceTrace"]) == 2
+        assert "metadata" in result
+        assert "mergedSourceTrace" in result["metadata"]
+        assert len(result["metadata"]["mergedSourceTrace"]) == 2

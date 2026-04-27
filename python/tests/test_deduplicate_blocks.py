@@ -239,21 +239,23 @@ class TestDeduplicateBlocksPass:
                 },
             ],
             "traps": [],
-            "clusterAssignment": {
-                "B3": {"kind": ClusterRole.HANDLER, "trapIndex": 0},
-                "B8": {"kind": ClusterRole.HANDLER, "trapIndex": 0},
+            "metadata": {
+                "clusterAssignment": {
+                    "B3": {"kind": ClusterRole.HANDLER, "trapIndex": 0},
+                    "B8": {"kind": ClusterRole.HANDLER, "trapIndex": 0},
+                },
             },
             "children": [],
         }
         result = deduplicate_blocks_pass(tree)
-        assert result["blockAliases"] == {"B8": "B3"}
+        assert result["metadata"]["blockAliases"] == {"B8": "B3"}
 
     def test_leaf_node_passes_through(self):
         from ftrace_semantic import deduplicate_blocks_pass
 
         tree = {"class": "Svc", "method": "run", "ref": True, "methodSignature": "sig"}
         result = deduplicate_blocks_pass(tree)
-        assert "blockAliases" not in result
+        assert "blockAliases" not in result.get("metadata", {})
 
     def test_does_not_mutate_input(self):
         from ftrace_semantic import deduplicate_blocks_pass
@@ -272,7 +274,7 @@ class TestDeduplicateBlocksPass:
                 },
             ],
             "traps": [],
-            "clusterAssignment": {},
+            "metadata": {"clusterAssignment": {}},
             "children": [],
         }
         original = copy.deepcopy(tree)

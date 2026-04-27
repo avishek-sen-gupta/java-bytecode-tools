@@ -123,9 +123,14 @@ def _resolve_inputs(tree: MethodCFG, tree_metadata: dict) -> _ResolvedInput:
     }
 
 
-def _accumulate_stmt(acc: dict[int, MergedStmt], s: RawStmt) -> dict[int, MergedStmt]:
-    """Fold a single raw stmt into the accumulator, keyed by line number."""
-    line = s["line"]
+def _accumulate_merged(
+    acc: dict[int, MergedStmt],
+    line: int,
+    calls: list[str],
+    branches: list[str],
+    assigns: list[str],
+) -> dict[int, MergedStmt]:
+    """Fold one entry into the line-keyed accumulator, merging calls/branches/assigns."""
     if line < 0:
         return acc
     entry = acc.get(line, {"line": line, "calls": [], "branches": [], "assigns": []})
@@ -133,11 +138,22 @@ def _accumulate_stmt(acc: dict[int, MergedStmt], s: RawStmt) -> dict[int, Merged
         **acc,
         line: {
             **entry,
-            "calls": entry["calls"] + ([s["call"]] if "call" in s else []),
-            "branches": entry["branches"] + ([s["branch"]] if "branch" in s else []),
-            "assigns": entry["assigns"] + ([s["assign"]] if "assign" in s else []),
+            "calls": entry["calls"] + calls,
+            "branches": entry["branches"] + branches,
+            "assigns": entry["assigns"] + assigns,
         },
     }
+
+
+def _accumulate_stmt(acc: dict[int, MergedStmt], s: RawStmt) -> dict[int, MergedStmt]:
+    """Fold a single raw stmt into the accumulator, keyed by line number."""
+    return _accumulate_merged(
+        acc,
+        s["line"],
+        calls=[s["call"]] if "call" in s else [],
+        branches=[s["branch"]] if "branch" in s else [],
+        assigns=[s["assign"]] if "assign" in s else [],
+    )
 
 
 def merge_block_stmts(stmts: list[RawStmt]) -> list[MergedStmt]:
@@ -150,20 +166,17 @@ def _accumulate_source_trace(
     acc: dict[int, MergedStmt], entry: SourceTraceEntry
 ) -> dict[int, MergedStmt]:
     """Fold a single source trace entry into the accumulator, keyed by line number."""
-    line = entry["line"]
-    if line < 0:
-        return acc
-    existing = acc.get(line, {"line": line, "calls": [], "branches": [], "assigns": []})
-    new_calls = [c for c in entry.get("calls", []) if c not in existing["calls"]]
-    return {
-        **acc,
-        line: {
-            **existing,
-            "calls": existing["calls"] + new_calls,
-            "branches": existing["branches"]
-            + ([entry["branch"]] if "branch" in entry else []),
-        },
-    }
+    existing_calls = acc.get(
+        entry["line"], {"line": 0, "calls": [], "branches": [], "assigns": []}
+    )["calls"]
+    new_calls = [c for c in entry.get("calls", []) if c not in existing_calls]
+    return _accumulate_merged(
+        acc,
+        entry["line"],
+        calls=new_calls,
+        branches=[entry["branch"]] if "branch" in entry else [],
+        assigns=[],
+    )
 
 
 def merge_source_trace(source_trace: list[SourceTraceEntry]) -> list[MergedStmt]:

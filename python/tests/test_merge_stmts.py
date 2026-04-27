@@ -153,6 +153,65 @@ class TestAccumulateSourceTrace:
         assert result[5]["branches"] == ["x > 0", "y < 1"]
 
 
+class TestAccumulateMerged:
+    """Tests for the shared accumulator core."""
+
+    def test_skips_negative_lines(self):
+        from ftrace_semantic import _accumulate_merged
+
+        acc: dict[int, MergedStmt] = {
+            5: {"line": 5, "calls": [], "branches": [], "assigns": []}
+        }
+        result = _accumulate_merged(acc, -1, [], [], [])
+        assert result is acc
+
+    def test_merges_calls_by_line(self):
+        from ftrace_semantic import _accumulate_merged
+
+        acc: dict[int, MergedStmt] = {
+            5: {"line": 5, "calls": ["Foo.x"], "branches": [], "assigns": []}
+        }
+        result = _accumulate_merged(acc, 5, ["Bar.y"], [], [])
+        assert result[5]["calls"] == ["Foo.x", "Bar.y"]
+
+    def test_merges_branches_by_line(self):
+        from ftrace_semantic import _accumulate_merged
+
+        acc: dict[int, MergedStmt] = {
+            5: {"line": 5, "calls": [], "branches": ["x > 0"], "assigns": []}
+        }
+        result = _accumulate_merged(acc, 5, [], ["y < 1"], [])
+        assert result[5]["branches"] == ["x > 0", "y < 1"]
+
+    def test_merges_assigns_by_line(self):
+        from ftrace_semantic import _accumulate_merged
+
+        acc: dict[int, MergedStmt] = {
+            5: {"line": 5, "calls": [], "branches": [], "assigns": ["x"]}
+        }
+        result = _accumulate_merged(acc, 5, [], [], ["y"])
+        assert result[5]["assigns"] == ["x", "y"]
+
+    def test_new_line_creates_entry(self):
+        from ftrace_semantic import _accumulate_merged
+
+        result = _accumulate_merged({}, 10, ["Foo.x"], [], ["z"])
+        assert result == {
+            10: {"line": 10, "calls": ["Foo.x"], "branches": [], "assigns": ["z"]}
+        }
+
+    def test_does_not_mutate_input(self):
+        import copy
+        from ftrace_semantic import _accumulate_merged
+
+        acc: dict[int, MergedStmt] = {
+            5: {"line": 5, "calls": ["A"], "branches": [], "assigns": []}
+        }
+        original = copy.deepcopy(acc)
+        _accumulate_merged(acc, 5, ["B"], [], [])
+        assert acc == original
+
+
 class TestMergeStmtsPass:
     """Tests for the full tree-walking pass."""
 

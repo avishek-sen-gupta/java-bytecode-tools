@@ -1,7 +1,0 @@
-{
-  "database": "dolt",
-  "backend": "dolt",
-  "dolt_mode": "server",
-  "dolt_database": "java_bytecode_tools",
-  "project_id": "f971a50c-47a8-42d9-8916-75a2f14e1ad8"
-}

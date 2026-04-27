@@ -46,4 +46,4 @@ scripts/target/
 .dolt/
 *.db
 .beads-credential-key
-.beads/export-state.json
+.beads/

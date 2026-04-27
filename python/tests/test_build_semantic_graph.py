@@ -485,14 +485,7 @@ class TestSourceTraceFallback:
         assert "mergedSourceTrace" not in result
 
 
-class TestPipeAndTransform:
-    def test_pipe_composes_functions(self):
-        from ftrace_semantic import pipe
-
-        add1 = lambda x: x + 1
-        double = lambda x: x * 2
-        assert pipe(add1, double)(3) == 8  # (3+1)*2
-
+class TestTransform:
     def test_transform_runs_all_passes(self):
         from ftrace_semantic import transform
 

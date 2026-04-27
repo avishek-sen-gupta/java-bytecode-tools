@@ -8,7 +8,6 @@ Four composable passes, each a pure function tree → tree:
 """
 
 from functools import reduce
-from typing import Callable
 
 from ftrace_types import (
     ClusterAssignment,
@@ -16,6 +15,7 @@ from ftrace_types import (
     BranchLabel,
     ExceptionEdge,
     MergedStmt,
+    MethodSemanticCFG,
     NodeKind,
     RawBlock,
     RawStmt,
@@ -250,7 +250,7 @@ def classify_node_kind(entry: MergedStmt) -> NodeKind:
     return NodeKind.PLAIN
 
 
-def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodCFG:
+def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemanticCFG:
     """Pass 4: Build semantic graph from enriched tree. Returns new tree.
 
     Consumes blocks, traps, mergedStmts, clusterAssignment, blockAliases.
@@ -515,19 +515,14 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodCFG:
     return result
 
 
-def pipe(*fns: Callable[[MethodCFG], MethodCFG]) -> Callable[[MethodCFG], MethodCFG]:
-    """Compose functions left-to-right: pipe(f, g)(x) == g(f(x))."""
-    return lambda x: reduce(lambda acc, fn: fn(acc), fns, x)
-
-
-def transform(tree: MethodCFG) -> MethodCFG:
+def transform(tree: MethodCFG) -> MethodSemanticCFG:
     """Run all four passes on a tree."""
-    return pipe(
-        merge_stmts_pass,
-        assign_clusters_pass,
-        deduplicate_blocks_pass,
-        build_semantic_graph_pass,
-    )(tree)
+    enriched = reduce(
+        lambda acc, fn: fn(acc),
+        [merge_stmts_pass, assign_clusters_pass, deduplicate_blocks_pass],
+        tree,
+    )
+    return build_semantic_graph_pass(enriched)
 
 
 def main():

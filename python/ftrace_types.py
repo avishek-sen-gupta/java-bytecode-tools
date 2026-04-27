@@ -209,8 +209,11 @@ _MethodCFGRequired = TypedDict("_MethodCFGRequired", {"class": str}, total=False
 class MethodCFG(_MethodCFGRequired, total=False):
     """Recursive trace node representing a method in the call tree.
 
-    Shape changes through pipeline stages. All fields optional because
-    leaf nodes (ref/cycle/filtered) carry only a subset.
+    Shape changes through pipeline stages (passes 1-3). All fields optional
+    because leaf nodes (ref/cycle/filtered) carry only a subset.
+
+    Pass 4 (build_semantic_graph) consumes this type and produces
+    MethodSemanticCFG. Semantic graph fields live there, not here.
 
     Raw fields (from xtrace):
     - class, method, methodSignature: method identity
@@ -219,9 +222,8 @@ class MethodCFG(_MethodCFGRequired, total=False):
     - ref, cycle, filtered: leaf-node markers
     - callSiteLine: line where this method was called
 
-    Enriched fields (added by pipeline passes):
+    Enriched fields (added by pipeline passes 1-3):
     - mergedSourceTrace, clusterAssignment, blockAliases: intermediate
-    - nodes, edges, clusters, exceptionEdges: semantic graph output
     """
 
     # Method identity
@@ -249,11 +251,40 @@ class MethodCFG(_MethodCFGRequired, total=False):
     # Pass 3: deduplicate_blocks
     blockAliases: BlockAliases
 
-    # Pass 4: build_semantic_graph (replaces raw fields)
+
+# Use functional syntax for base because "class" is a reserved keyword
+_MethodSemanticCFGRequired = TypedDict(
+    "_MethodSemanticCFGRequired", {"class": str}, total=False
+)
+
+
+class MethodSemanticCFG(_MethodSemanticCFGRequired, total=False):
+    """Semantic graph representation of a method in the call tree.
+
+    Produced by pass 4 (build_semantic_graph). Contains only identity,
+    leaf markers, semantic graph fields, and recursive children.
+    No raw or intermediate pipeline fields.
+    """
+
+    # Identity
+    method: str
+    methodSignature: str
+
+    # Leaf markers
+    ref: bool
+    cycle: bool
+    filtered: bool
+    callSiteLine: int
+
+    # Semantic graph (intra-method)
     nodes: list[SemanticNode]
     edges: list[SemanticEdge]
     clusters: list[SemanticCluster]
     exceptionEdges: list[ExceptionEdge]
+    entryNodeId: str
+
+    # Inter-method (recursive)
+    children: list["MethodSemanticCFG"]
 
 
 class SlicedTrace(TypedDict):

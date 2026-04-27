@@ -12,12 +12,12 @@ from pathlib import Path
 
 from ftrace_types import (
     ExceptionEdge,
+    MethodSemanticCFG,
     NodeKind,
     BranchLabel,
     SemanticCluster,
     SemanticEdge,
     SemanticNode,
-    MethodCFG,
 )
 
 # -- Visual constants --
@@ -104,7 +104,7 @@ def _render_exception_edge(ee: ExceptionEdge, clusters: list[SemanticCluster]) -
     return f"    {src} -> {dst} [{attrs}];"
 
 
-def build_dot(root: MethodCFG) -> str:
+def build_dot(root: MethodSemanticCFG) -> str:
     lines = [
         "digraph ftrace {",
         "  rankdir=TB;",
@@ -122,7 +122,7 @@ def build_dot(root: MethodCFG) -> str:
         cluster_counter[0] += 1
         return cid
 
-    def add_method(node: MethodCFG) -> str:
+    def add_method(node: MethodSemanticCFG) -> str:
         """Add a method node. Returns entry node ID."""
         cls = short_class(node.get("class", "?"))
         method = node.get("method", "?")

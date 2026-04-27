@@ -31,6 +31,8 @@ from ftrace_types import (
     short_class,
 )
 
+from ftrace_validate import validate_tree
+
 # --- Field-name constants (raw-tree dict keys) ---
 _F_BLOCKS = "blocks"
 _F_EDGES = "edges"
@@ -773,7 +775,11 @@ def transform(tree: MethodCFG) -> MethodSemanticCFG:
         [merge_stmts_pass, assign_clusters_pass, deduplicate_blocks_pass],
         tree,
     )
-    return build_semantic_graph_pass(enriched)
+    semantic_graph = build_semantic_graph_pass(enriched)
+    # Validate the semantic graph structure. Violations are logged as warnings
+    # by the CLI; transform does not act on them.
+    validate_tree(semantic_graph)
+    return semantic_graph
 
 
 def main():

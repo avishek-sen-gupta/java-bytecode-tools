@@ -160,7 +160,8 @@ def transform_to_semantic(raw_trace):
     # Import locally to avoid circular imports
     from ftrace_semantic import transform
 
-    return transform(raw_trace)
+    result, _violations = transform(raw_trace)
+    return result
 
 
 def validate_semantic(semantic_graph):

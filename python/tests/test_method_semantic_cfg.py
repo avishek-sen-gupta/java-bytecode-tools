@@ -77,7 +77,9 @@ class TestBuildSemanticGraphReturnsNewType:
         from ftrace_semantic import transform
 
         hints = typing.get_type_hints(transform)
-        assert hints["return"].__name__ == "MethodSemanticCFG"
+        # transform returns tuple[MethodSemanticCFG, list[Violation]]
+        assert hints["return"].__origin__ is tuple
+        assert hints["return"].__args__[0].__name__ == "MethodSemanticCFG"
 
 
 class TestDotAcceptsNewType:

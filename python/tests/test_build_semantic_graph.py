@@ -811,7 +811,7 @@ class TestTransform:
             "traps": [],
             "children": [],
         }
-        result = transform(tree)
+        result, violations = transform(tree)
 
         # Should have semantic fields
         assert "nodes" in result
@@ -823,10 +823,14 @@ class TestTransform:
         assert "blocks" not in result
         assert "traps" not in result
 
+        # Clean graph should have no violations
+        assert violations == []
+
     def test_transform_leaf_node(self):
         from ftrace_semantic import transform
 
         tree = {"class": "Svc", "method": "run", "methodSignature": "sig", "ref": True}
-        result = transform(tree)
+        result, violations = transform(tree)
         assert result.get("ref") is True
         assert "nodes" not in result
+        assert violations == []

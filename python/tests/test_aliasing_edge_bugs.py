@@ -372,7 +372,7 @@ class TestEndToEndAliasingBugs:
             "children": [],
         }
 
-        result = transform(tree)
+        result, _violations = transform(tree)
 
         # Find all BRANCH-kind nodes
         branch_nodes = {

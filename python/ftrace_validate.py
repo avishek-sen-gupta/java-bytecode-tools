@@ -8,6 +8,7 @@ from collections import Counter
 from functools import reduce
 
 from ftrace_types import (
+    ExceptionEdge,
     MethodSemanticCFG,
     SemanticCluster,
     SemanticEdge,
@@ -91,6 +92,55 @@ def _check_entry_node(
     return []
 
 
+def _check_branch_node(
+    nid: str, node_outgoing: list[SemanticEdge], method_label: str
+) -> list[Violation]:
+    """Check that a branch node has exactly one 'T' and one 'F' edge."""
+    labels = sorted(e.get("branch", "") for e in node_outgoing)
+    if labels == ["F", "T"]:
+        return []
+    return [
+        Violation(
+            kind=ViolationKind.BRANCH_EDGE_VIOLATION,
+            node_id=nid,
+            method=method_label,
+            message=f"Branch node must have exactly one 'T' and one 'F' edge, got labels {labels}",
+        )
+    ]
+
+
+def _check_non_branch_node(
+    nid: str, node_outgoing: list[SemanticEdge], method_label: str
+) -> list[Violation]:
+    """Check that a non-branch node has at most 1 outgoing edge, never labeled."""
+    count_violation = (
+        [
+            Violation(
+                kind=ViolationKind.NON_BRANCH_EDGE_VIOLATION,
+                node_id=nid,
+                method=method_label,
+                message=f"Non-branch node has {len(node_outgoing)} outgoing edges, expected at most 1",
+            )
+        ]
+        if len(node_outgoing) > 1
+        else []
+    )
+    branch_label = node_outgoing[0].get("branch", "") if node_outgoing else ""
+    label_violation = (
+        [
+            Violation(
+                kind=ViolationKind.NON_BRANCH_EDGE_VIOLATION,
+                node_id=nid,
+                method=method_label,
+                message=f"Non-branch node has labeled edge ('{branch_label}'), should be unlabeled",
+            )
+        ]
+        if branch_label
+        else []
+    )
+    return [*count_violation, *label_violation]
+
+
 def _check_branch_edges(
     nodes: list[SemanticNode], edges: list[SemanticEdge], method_label: str
 ) -> list[Violation]:
@@ -99,66 +149,31 @@ def _check_branch_edges(
     - Branch nodes must have exactly 2 outgoing edges, one labeled 'T' and one 'F'.
     - Non-branch nodes must have at most 1 outgoing edge, never labeled.
     """
-    # Build node kind mapping
-    node_kinds = {n["id"]: n.get("kind", "") for n in nodes}
 
     # Build outgoing edges per node using reduce
     def add_edge(acc: dict[str, list[SemanticEdge]], edge: SemanticEdge):
         from_id = edge["from"]
-        acc.setdefault(from_id, []).append(edge)
-        return acc
+        return {**acc, from_id: [*acc.get(from_id, []), edge]}
 
     outgoing = reduce(add_edge, edges, {})
 
-    # Validate each node
-    violations = []
-
-    for node in nodes:
-        nid = node["id"]
-        kind = node_kinds.get(nid, "")
-        node_outgoing = outgoing.get(nid, [])
-
-        if kind == "branch":
-            # Branch node must have exactly T and F labels
-            labels = sorted(e.get("branch", "") for e in node_outgoing)
-            if labels != ["F", "T"]:
-                violations.append(
-                    Violation(
-                        kind=ViolationKind.BRANCH_EDGE_VIOLATION,
-                        node_id=nid,
-                        method=method_label,
-                        message=f"Branch node must have exactly one 'T' and one 'F' edge, got labels {labels}",
-                    )
-                )
-        else:
-            # Non-branch node: at most 1 outgoing edge, no labels
-            if len(node_outgoing) > 1:
-                violations.append(
-                    Violation(
-                        kind=ViolationKind.NON_BRANCH_EDGE_VIOLATION,
-                        node_id=nid,
-                        method=method_label,
-                        message=f"Non-branch node has {len(node_outgoing)} outgoing edges, expected at most 1",
-                    )
-                )
-            branch_label = node_outgoing[0].get("branch", "") if node_outgoing else ""
-            if branch_label:
-                violations.append(
-                    Violation(
-                        kind=ViolationKind.NON_BRANCH_EDGE_VIOLATION,
-                        node_id=nid,
-                        method=method_label,
-                        message=f"Non-branch node has labeled edge ('{branch_label}'), should be unlabeled",
-                    )
-                )
-
-    return violations
+    return [
+        v
+        for node in nodes
+        for v in (
+            _check_branch_node(node["id"], outgoing.get(node["id"], []), method_label)
+            if node.get("kind", "") == "branch"
+            else _check_non_branch_node(
+                node["id"], outgoing.get(node["id"], []), method_label
+            )
+        )
+    ]
 
 
 def _check_reachability(
     nodes: list[SemanticNode],
     edges: list[SemanticEdge],
-    exception_edges: list,
+    exception_edges: list[ExceptionEdge],
     entry_nid: str,
     method_label: str,
 ) -> list[Violation]:
@@ -166,38 +181,20 @@ def _check_reachability(
 
     A node is reachable if it has at least one incoming edge from edges or exceptionEdges.
     """
-    node_ids = frozenset(n["id"] for n in nodes)
+    nodes_with_incoming = frozenset(
+        [*(e["to"] for e in edges), *(e["to"] for e in exception_edges)]
+    )
 
-    # Build set of nodes with incoming edges
-    nodes_with_incoming = set()
-
-    # Count incoming edges from normal edges
-    for edge in edges:
-        nodes_with_incoming.add(edge["to"])
-
-    # Count incoming edges from exception edges
-    for edge in exception_edges:
-        nodes_with_incoming.add(edge["to"])
-
-    # Check each node
-    violations = []
-    for node in nodes:
-        nid = node["id"]
-        # Skip entry node - it doesn't need incoming edges
-        if nid == entry_nid:
-            continue
-        # Report if no incoming edge
-        if nid not in nodes_with_incoming:
-            violations.append(
-                Violation(
-                    kind=ViolationKind.NO_INCOMING_EDGE,
-                    node_id=nid,
-                    method=method_label,
-                    message=f"Node '{nid}' has no incoming edges and is not the entry node",
-                )
-            )
-
-    return violations
+    return [
+        Violation(
+            kind=ViolationKind.NO_INCOMING_EDGE,
+            node_id=n["id"],
+            method=method_label,
+            message=f"Node '{n['id']}' has no incoming edges and is not the entry node",
+        )
+        for n in nodes
+        if n["id"] != entry_nid and n["id"] not in nodes_with_incoming
+    ]
 
 
 def _check_leaf_fields(method: MethodSemanticCFG) -> list[Violation]:
@@ -213,23 +210,19 @@ def _check_leaf_fields(method: MethodSemanticCFG) -> list[Violation]:
     if not is_leaf:
         return []
 
-    violations = []
     label = _method_label(method)
-
-    # Check for forbidden graph fields
     forbidden_fields = ["nodes", "edges", "clusters", "exceptionEdges"]
-    for field in forbidden_fields:
-        if method.get(field):
-            violations.append(
-                Violation(
-                    kind=ViolationKind.LEAF_HAS_GRAPH_FIELDS,
-                    node_id="",
-                    method=label,
-                    message=f"Leaf node has forbidden field '{field}'",
-                )
-            )
 
-    return violations
+    return [
+        Violation(
+            kind=ViolationKind.LEAF_HAS_GRAPH_FIELDS,
+            node_id="",
+            method=label,
+            message=f"Leaf node has forbidden field '{field}'",
+        )
+        for field in forbidden_fields
+        if method.get(field)
+    ]
 
 
 def validate_method(method: MethodSemanticCFG) -> list[Violation]:
@@ -285,7 +278,9 @@ def main():
     parser = argparse.ArgumentParser(
         description="Validate semantic graph invariants and detect structural bugs."
     )
-    parser.add_argument("--input", type=Path, help="Input semantic JSON file (default: stdin)")
+    parser.add_argument(
+        "--input", type=Path, help="Input semantic JSON file (default: stdin)"
+    )
     parser.add_argument(
         "--output", type=Path, help="Output JSON file (default: stdout)"
     )

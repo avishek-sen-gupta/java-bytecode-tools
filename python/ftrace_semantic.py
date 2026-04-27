@@ -28,10 +28,9 @@ from ftrace_types import (
     SemanticNode,
     SourceTraceEntry,
     MethodCFG,
+    Violation,
     short_class,
 )
-
-from ftrace_validate import validate_tree
 
 # --- Field-name constants (raw-tree dict keys) ---
 _F_BLOCKS = "blocks"
@@ -768,18 +767,18 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemant
     return cast(MethodSemanticCFG, result)
 
 
-def transform(tree: MethodCFG) -> MethodSemanticCFG:
-    """Run all four passes on a tree."""
+def transform(tree: MethodCFG) -> tuple[MethodSemanticCFG, list[Violation]]:
+    """Run all four passes on a tree, then validate. Returns (result, violations)."""
+    from ftrace_validate import validate_tree  # local to avoid circular import
+
     enriched = reduce(
         lambda acc, fn: fn(acc),
         [merge_stmts_pass, assign_clusters_pass, deduplicate_blocks_pass],
         tree,
     )
-    semantic_graph = build_semantic_graph_pass(enriched)
-    # Validate the semantic graph structure. Violations are logged as warnings
-    # by the CLI; transform does not act on them.
-    validate_tree(semantic_graph)
-    return semantic_graph
+    result = build_semantic_graph_pass(enriched)
+    violations = validate_tree(result)
+    return (result, violations)
 
 
 def main():
@@ -803,7 +802,18 @@ def main():
     else:
         tree = json.load(sys.stdin)
 
-    result = transform(tree)
+    result, violations = transform(tree)
+
+    # Log violations to stderr
+    if violations:
+        for v in violations:
+            method = v["method"]
+            node_id = v["node_id"]
+            kind = v["kind"]
+            message = v["message"]
+            location = f"{method}:{node_id}" if node_id else method
+            print(f"[{kind}] {location} — {message}", file=sys.stderr)
+
     output = json.dumps(result, indent=2)
 
     if args.output:

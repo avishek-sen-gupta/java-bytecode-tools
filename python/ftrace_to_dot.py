@@ -133,6 +133,35 @@ def _render_leaf(node: MethodSemanticCFG, counter: int) -> tuple[list[str], str,
     return ([f"  {nid} [{attrs}];"], nid, counter + 1)
 
 
+def _render_trap_cluster(index: int, cluster: SemanticCluster) -> list[str]:
+    """Render one trap cluster as a DOT subgraph."""
+    trap_type = cluster["trapType"]
+    role = cluster["role"]
+    node_ids = cluster.get("nodeIds", [])
+
+    tc_id = f"cluster_trap_{index}"
+    header = [f"    subgraph {tc_id} {{"]
+
+    if role == "try":
+        style_lines = [
+            f'      label="try ({escape(trap_type)})";',
+            '      style="dashed,rounded"; color="#ffa500"; fontcolor="#ffa500";',
+        ]
+    else:
+        h_label = (
+            "finally"
+            if trap_type.lower() in ("throwable", "any")
+            else f"catch ({escape(trap_type)})"
+        )
+        style_lines = [
+            f'      label="{h_label}";',
+            '      style="dashed,rounded"; color="#007bff"; fontcolor="#007bff";',
+        ]
+
+    node_lines = [f"      {nid};" for nid in node_ids]
+    return [*header, *style_lines, *node_lines, "    }"]
+
+
 def build_dot(root: MethodSemanticCFG) -> str:
     lines = [
         "digraph ftrace {",

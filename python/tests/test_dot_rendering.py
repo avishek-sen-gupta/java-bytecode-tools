@@ -345,3 +345,72 @@ class TestRenderLeaf:
         assert lines == []
         assert nid == ""
         assert next_counter == 7
+
+
+class TestRenderTrapCluster:
+    def test_try_cluster(self):
+        from ftrace_to_dot import _render_trap_cluster
+
+        cluster = {
+            "trapType": "RuntimeException",
+            "role": "try",
+            "nodeIds": ["n0", "n1"],
+        }
+        lines = _render_trap_cluster(0, cluster)
+        assert "subgraph cluster_trap_0 {" in lines[0]
+        assert "try (RuntimeException)" in lines[1]
+        assert "#ffa500" in lines[2]
+        assert "n0;" in lines[3]
+        assert "n1;" in lines[4]
+        assert lines[-1] == "    }"
+
+    def test_handler_catch(self):
+        from ftrace_to_dot import _render_trap_cluster
+
+        cluster = {
+            "trapType": "RuntimeException",
+            "role": "handler",
+            "nodeIds": ["n2"],
+            "entryNodeId": "n2",
+        }
+        lines = _render_trap_cluster(1, cluster)
+        assert "subgraph cluster_trap_1 {" in lines[0]
+        assert "catch (RuntimeException)" in lines[1]
+        assert "#007bff" in lines[2]
+        assert "n2;" in lines[3]
+        assert lines[-1] == "    }"
+
+    def test_handler_finally_throwable(self):
+        from ftrace_to_dot import _render_trap_cluster
+
+        cluster = {
+            "trapType": "Throwable",
+            "role": "handler",
+            "nodeIds": ["n3"],
+            "entryNodeId": "n3",
+        }
+        lines = _render_trap_cluster(2, cluster)
+        assert "finally" in lines[1]
+        assert "#007bff" in lines[2]
+
+    def test_handler_finally_any(self):
+        from ftrace_to_dot import _render_trap_cluster
+
+        cluster = {
+            "trapType": "any",
+            "role": "handler",
+            "nodeIds": ["n4"],
+            "entryNodeId": "n4",
+        }
+        lines = _render_trap_cluster(3, cluster)
+        assert "finally" in lines[1]
+
+    def test_empty_node_ids(self):
+        from ftrace_to_dot import _render_trap_cluster
+
+        cluster = {"trapType": "IOException", "role": "try", "nodeIds": []}
+        lines = _render_trap_cluster(0, cluster)
+        assert lines[0] == "    subgraph cluster_trap_0 {"
+        assert lines[-1] == "    }"
+        # Only header (1) + label (1) + style (1) + footer (1) = 4 lines
+        assert len(lines) == 4

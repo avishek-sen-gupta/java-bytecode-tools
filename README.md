@@ -25,7 +25,7 @@ Requires Java 21+, Maven, Python 3.13+, and [uv](https://github.com/astral-sh/uv
 pre-commit install
 ```
 
-Hooks run automatically on commit: [Black](https://github.com/psf/black) (Python), [google-java-format](https://github.com/google/google-java-format) (Java), [Talisman](https://github.com/thoughtworks/talisman) (secret detection), and the e2e test suite.
+Hooks run automatically on commit: [Black](https://github.com/psf/black) (Python), [google-java-format](https://github.com/google/google-java-format) (Java), [Talisman](https://github.com/thoughtworks/talisman) (secret detection), [Pyright](https://github.com/microsoft/pyright) (Python type checking), [pip-audit](https://github.com/pypa/pip-audit) (Python dependency vulnerability scanning), and the e2e test suite.
 
 ## Project Structure
 

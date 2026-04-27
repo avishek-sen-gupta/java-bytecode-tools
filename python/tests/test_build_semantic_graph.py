@@ -1335,3 +1335,218 @@ class TestSuppressReverseEdges:
         original = copy.deepcopy(edges)
         _suppress_reverse_edges(edges, shared_nids=frozenset({"n0"}))
         assert edges == original
+
+
+class TestBuildClusterPair:
+    def test_try_cluster_contains_covered_block_nodes(self):
+        from ftrace_semantic import _build_cluster_pair
+
+        result = _build_cluster_pair(
+            trap={
+                "type": "java.lang.Exception",
+                "handler": "B3",
+                "coveredBlocks": ["B0"],
+                "handlerBlocks": ["B3"],
+            },
+            trap_index=0,
+            cluster_assignment={
+                "B0": {"kind": ClusterRole.TRY, "trapIndex": 0},
+                "B3": {"kind": ClusterRole.HANDLER, "trapIndex": 0},
+            },
+            bid_to_nids={"B0": ["n0", "n1"], "B3": ["n2"]},
+            block_first={"B0": "n0", "B3": "n2"},
+        )
+        assert result["try_cluster"]["nodeIds"] == ["n0", "n1"]
+        assert result["try_cluster"]["role"] == ClusterRole.TRY
+        assert result["try_cluster"]["trapType"] == "Exception"
+
+    def test_handler_cluster_contains_handler_block_nodes(self):
+        from ftrace_semantic import _build_cluster_pair
+
+        result = _build_cluster_pair(
+            trap={
+                "type": "java.lang.Exception",
+                "handler": "B3",
+                "coveredBlocks": ["B0"],
+                "handlerBlocks": ["B3"],
+            },
+            trap_index=0,
+            cluster_assignment={
+                "B0": {"kind": ClusterRole.TRY, "trapIndex": 0},
+                "B3": {"kind": ClusterRole.HANDLER, "trapIndex": 0},
+            },
+            bid_to_nids={"B0": ["n0"], "B3": ["n2", "n3"]},
+            block_first={"B0": "n0", "B3": "n2"},
+        )
+        assert result["handler_cluster"]["nodeIds"] == ["n2", "n3"]
+        assert result["handler_cluster"]["role"] == ClusterRole.HANDLER
+
+    def test_handler_entry_node_set_when_present(self):
+        from ftrace_semantic import _build_cluster_pair
+
+        result = _build_cluster_pair(
+            trap={
+                "type": "java.lang.Exception",
+                "handler": "B3",
+                "coveredBlocks": ["B0"],
+                "handlerBlocks": ["B3"],
+            },
+            trap_index=0,
+            cluster_assignment={
+                "B0": {"kind": ClusterRole.TRY, "trapIndex": 0},
+                "B3": {"kind": ClusterRole.HANDLER, "trapIndex": 0},
+            },
+            bid_to_nids={"B0": ["n0"], "B3": ["n2"]},
+            block_first={"B0": "n0", "B3": "n2"},
+        )
+        assert result["handler_cluster"]["entryNodeId"] == "n2"
+        assert result["handler_entry_nid"] == "n2"
+
+    def test_handler_entry_node_absent_when_missing(self):
+        from ftrace_semantic import _build_cluster_pair
+
+        result = _build_cluster_pair(
+            trap={
+                "type": "java.lang.Exception",
+                "handler": "B99",
+                "coveredBlocks": ["B0"],
+                "handlerBlocks": [],
+            },
+            trap_index=0,
+            cluster_assignment={
+                "B0": {"kind": ClusterRole.TRY, "trapIndex": 0},
+            },
+            bid_to_nids={"B0": ["n0"]},
+            block_first={"B0": "n0"},
+        )
+        assert "entryNodeId" not in result["handler_cluster"]
+        assert result["handler_entry_nid"] == ""
+
+    def test_does_not_mutate_input(self):
+        import copy
+        from ftrace_semantic import _build_cluster_pair
+
+        trap = {
+            "type": "java.lang.Exception",
+            "handler": "B3",
+            "coveredBlocks": ["B0"],
+            "handlerBlocks": ["B3"],
+        }
+        ca = {
+            "B0": {"kind": ClusterRole.TRY, "trapIndex": 0},
+            "B3": {"kind": ClusterRole.HANDLER, "trapIndex": 0},
+        }
+        btn = {"B0": ["n0"], "B3": ["n2"]}
+        bf = {"B0": "n0", "B3": "n2"}
+        orig = (
+            copy.deepcopy(trap),
+            copy.deepcopy(ca),
+            copy.deepcopy(btn),
+            copy.deepcopy(bf),
+        )
+        _build_cluster_pair(trap, 0, ca, btn, bf)
+        assert (trap, ca, btn, bf) == orig
+
+
+class TestResolveExceptionEdgeSource:
+    def test_returns_empty_when_no_handler_entry(self):
+        from ftrace_semantic import _resolve_exception_edge_source
+
+        result = _resolve_exception_edge_source(
+            try_bids=["B0"],
+            trap={
+                "type": "X",
+                "handler": "B3",
+                "coveredBlocks": ["B0"],
+                "handlerBlocks": ["B3"],
+            },
+            block_first={"B0": "n0"},
+            handler_entry_nid="",
+        )
+        assert result == ""
+
+    def test_returns_first_try_bid_when_present(self):
+        from ftrace_semantic import _resolve_exception_edge_source
+
+        result = _resolve_exception_edge_source(
+            try_bids=["B0", "B1"],
+            trap={
+                "type": "X",
+                "handler": "B3",
+                "coveredBlocks": ["B0", "B1"],
+                "handlerBlocks": ["B3"],
+            },
+            block_first={"B0": "n0", "B1": "n1", "B3": "n5"},
+            handler_entry_nid="n5",
+        )
+        assert result == "n0"
+
+    def test_falls_back_to_covered_blocks(self):
+        from ftrace_semantic import _resolve_exception_edge_source
+
+        result = _resolve_exception_edge_source(
+            try_bids=[],
+            trap={
+                "type": "X",
+                "handler": "B3",
+                "coveredBlocks": ["B0", "B1"],
+                "handlerBlocks": ["B3"],
+            },
+            block_first={"B1": "n1", "B3": "n5"},
+            handler_entry_nid="n5",
+        )
+        assert result == "n1"
+
+    def test_returns_empty_when_no_covered_blocks_found(self):
+        from ftrace_semantic import _resolve_exception_edge_source
+
+        result = _resolve_exception_edge_source(
+            try_bids=[],
+            trap={
+                "type": "X",
+                "handler": "B3",
+                "coveredBlocks": ["B0"],
+                "handlerBlocks": ["B3"],
+            },
+            block_first={"B3": "n5"},
+            handler_entry_nid="n5",
+        )
+        assert result == ""
+
+
+class TestBuildExceptionEdge:
+    def test_builds_edge_with_correct_cluster_offsets(self):
+        from ftrace_semantic import _build_exception_edge
+
+        result = _build_exception_edge(
+            src_nid="n0",
+            handler_entry_nid="n5",
+            etype="RuntimeException",
+            cluster_offset=4,
+        )
+        assert len(result) == 1
+        ee = result[0]
+        assert ee["from"] == "n0"
+        assert ee["to"] == "n5"
+        assert ee["trapType"] == "RuntimeException"
+        assert ee["fromCluster"] == 4
+        assert ee["toCluster"] == 5
+
+    def test_returns_empty_when_no_source(self):
+        from ftrace_semantic import _build_exception_edge
+
+        result = _build_exception_edge(
+            src_nid="",
+            handler_entry_nid="n5",
+            etype="RuntimeException",
+            cluster_offset=0,
+        )
+        assert result == []
+
+    def test_does_not_mutate_input(self):
+        """No mutable args to mutate — this just verifies the pure-function contract."""
+        from ftrace_semantic import _build_exception_edge
+
+        result1 = _build_exception_edge("n0", "n5", "X", 0)
+        result2 = _build_exception_edge("n0", "n5", "X", 0)
+        assert result1 == result2

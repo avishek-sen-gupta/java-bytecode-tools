@@ -84,6 +84,15 @@ class _ClusterBuildResult(TypedDict):
     exception_edges: list[ExceptionEdge]
 
 
+class _ClusterPairResult(TypedDict):
+    """Output of _build_cluster_pair: try/handler clusters and handler entry node."""
+
+    try_cluster: SemanticCluster
+    handler_cluster: SemanticCluster
+    handler_entry_nid: NodeId
+    try_bids: list[BlockId]
+
+
 class _ResolvedEdge(TypedDict):
     """A raw edge resolved to node IDs with provenance."""
 
@@ -607,15 +616,14 @@ def _build_edges(
     return {"edges": [*intra, *inter]}
 
 
-def _build_trap_clusters(
-    trap_index: int,
+def _build_cluster_pair(
     trap: RawTrap,
+    trap_index: int,
     cluster_assignment: dict[BlockId, ClusterAssignment],
     bid_to_nids: dict[BlockId, list[NodeId]],
     block_first: dict[BlockId, NodeId],
-    cluster_offset: int,
-) -> tuple[list[SemanticCluster], list[ExceptionEdge]]:
-    """Build try + handler clusters and exception edge for one trap."""
+) -> _ClusterPairResult:
+    """Build try + handler cluster pair for one trap."""
     etype = short_class(trap["type"])
 
     try_bids = blocks_for_cluster(cluster_assignment, ClusterRole.TRY, trap_index)
@@ -626,55 +634,90 @@ def _build_trap_clusters(
     try_nids = [nid for bid in try_bids for nid in bid_to_nids.get(bid, [])]
     handler_nids = [nid for bid in handler_bids for nid in bid_to_nids.get(bid, [])]
 
-    try_cluster: SemanticCluster = {
-        "trapType": etype,
-        "role": ClusterRole.TRY,
-        "nodeIds": try_nids,
+    handler_entry_nid = block_first.get(trap["handler"], "")
+    return {
+        "try_cluster": {
+            "trapType": etype,
+            "role": ClusterRole.TRY,
+            "nodeIds": try_nids,
+        },
+        "handler_cluster": cast(
+            SemanticCluster,
+            {
+                "trapType": etype,
+                "role": ClusterRole.HANDLER,
+                "nodeIds": handler_nids,
+                **({"entryNodeId": handler_entry_nid} if handler_entry_nid else {}),
+            },
+        ),
+        "handler_entry_nid": handler_entry_nid,
+        "try_bids": try_bids,
     }
 
-    handler_entry_nid = block_first.get(trap["handler"], "")
-    handler_cluster: SemanticCluster = cast(
-        SemanticCluster,
-        {
-            "trapType": etype,
-            "role": ClusterRole.HANDLER,
-            "nodeIds": handler_nids,
-            **({"entryNodeId": handler_entry_nid} if handler_entry_nid else {}),
-        },
+
+def _resolve_exception_edge_source(
+    try_bids: list[BlockId],
+    trap: RawTrap,
+    block_first: dict[BlockId, NodeId],
+    handler_entry_nid: NodeId,
+) -> NodeId:
+    """Resolve the source node for an exception edge.
+
+    Returns the first try block's entry node, falling back to the first
+    covered block present in block_first. Returns "" if no handler entry.
+    """
+    if not handler_entry_nid:
+        return ""
+    if try_bids:
+        return block_first.get(try_bids[0], "")
+    return next(
+        (block_first[cb] for cb in trap.get("coveredBlocks", []) if cb in block_first),
+        "",
     )
 
-    clusters = [try_cluster, handler_cluster]
 
-    # Exception edge: try entry → handler entry
-    src_nid = (
-        (
-            block_first.get(try_bids[0], "")
-            if try_bids
-            else next(
-                (
-                    block_first[cb]
-                    for cb in trap.get("coveredBlocks", [])
-                    if cb in block_first
-                ),
-                "",
-            )
+def _build_exception_edge(
+    src_nid: NodeId,
+    handler_entry_nid: NodeId,
+    etype: str,
+    cluster_offset: int,
+) -> list[ExceptionEdge]:
+    """Build exception edge from source to handler entry. Returns [] if no source."""
+    if not src_nid:
+        return []
+    return [
+        cast(
+            ExceptionEdge,
+            {
+                "from": src_nid,
+                "to": handler_entry_nid,
+                "trapType": etype,
+                "fromCluster": cluster_offset,
+                "toCluster": cluster_offset + 1,
+            },
         )
-        if handler_entry_nid
-        else ""
-    )
-    ee = cast(
-        ExceptionEdge,
-        {
-            "from": src_nid,
-            "to": handler_entry_nid,
-            "trapType": etype,
-            "fromCluster": cluster_offset,
-            "toCluster": cluster_offset + 1,
-        },
-    )
-    exception_edges: list[ExceptionEdge] = [ee] if src_nid else []
+    ]
 
-    return (clusters, exception_edges)
+
+def _build_trap_clusters(
+    trap_index: int,
+    trap: RawTrap,
+    cluster_assignment: dict[BlockId, ClusterAssignment],
+    bid_to_nids: dict[BlockId, list[NodeId]],
+    block_first: dict[BlockId, NodeId],
+    cluster_offset: int,
+) -> tuple[list[SemanticCluster], list[ExceptionEdge]]:
+    """Build try + handler clusters and exception edge for one trap."""
+    pair = _build_cluster_pair(
+        trap, trap_index, cluster_assignment, bid_to_nids, block_first
+    )
+    src_nid = _resolve_exception_edge_source(
+        pair["try_bids"], trap, block_first, pair["handler_entry_nid"]
+    )
+    exception_edges = _build_exception_edge(
+        src_nid, pair["handler_entry_nid"], short_class(trap["type"]), cluster_offset
+    )
+    return ([pair["try_cluster"], pair["handler_cluster"]], exception_edges)
 
 
 def _build_clusters(

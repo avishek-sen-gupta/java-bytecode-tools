@@ -65,11 +65,17 @@ All commands go through `scripts/bytecode.sh`. It takes two required arguments: 
 
 ### Step 1: Build the call graph
 
-Scans all project classes matching the prefix, extracts invoke statements, and records caller-to-callee edges. Resolves polymorphic dispatch by mapping interfaces to implementations.
+Scans all project classes matching the prefix, extracts invoke statements, and records caller-to-callee edges. Resolves polymorphic dispatch by mapping interfaces to implementations. Progress is printed to stderr every 1000 methods during indexing and scanning.
 
 ```bash
 scripts/bytecode.sh --prefix com.example. /path/to/classes \
   buildcg --output callgraph.json
+```
+
+Omit `--output` to write JSON to stdout (Unix pipeline semantics):
+
+```bash
+scripts/bytecode.sh --prefix com.example. /path/to/classes buildcg > callgraph.json
 ```
 
 ### Step 2: Find the method you care about
@@ -269,7 +275,7 @@ E2E tests compile a small fixture project (`test-fixtures/src/`), exercise every
 # Every command starts with:
 #   scripts/bytecode.sh --prefix <pkg.prefix.> /path/to/classes <subcommand>
 
-scripts/bytecode.sh --prefix com.example. /path/to/classes buildcg --output callgraph.json
+scripts/bytecode.sh --prefix com.example. /path/to/classes buildcg --output callgraph.json   # or omit --output to write to stdout
 scripts/bytecode.sh --prefix com.example. /path/to/classes dump <class>
 scripts/bytecode.sh --prefix com.example. /path/to/classes xtrace --call-graph callgraph.json --from <class> --from-line <N> --output out.json
 scripts/bytecode.sh --prefix com.example. /path/to/classes xtrace --call-graph callgraph.json --to <class> --to-line <N> --collapse

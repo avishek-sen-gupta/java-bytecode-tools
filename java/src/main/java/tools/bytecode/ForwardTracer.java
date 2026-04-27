@@ -143,6 +143,7 @@ public class ForwardTracer {
 
     Map<String, Object> blockInfo = buildBlockTrace(method);
     node.put("blocks", blockInfo.get("blocks"));
+    node.put("edges", blockInfo.get("edges"));
     node.put("traps", blockInfo.get("traps"));
 
     // Recurse into callees

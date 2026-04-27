@@ -20,4 +20,12 @@ assert_json_contains "$OUT/backward_cfg.json" \
     '.chains[0] | any(.[]; .blocks | length > 0)' \
     "frames include CFG blocks"
 
+assert_json_contains "$OUT/backward_cfg.json" \
+    '.chains[0] | any(.[]; .edges | length > 0)' \
+    "frames include CFG edges"
+
+assert_json_contains "$OUT/backward_cfg.json" \
+    '.chains[0] | any(.[]; .edges | all(has("fromBlock") and has("toBlock")))' \
+    "backward edges have fromBlock and toBlock"
+
 report

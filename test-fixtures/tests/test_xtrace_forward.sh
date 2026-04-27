@@ -23,4 +23,12 @@ assert_json_contains "$OUT/forward.json" \
     '.sourceTrace | any(.calls | length > 0)' \
     "sourceTrace has call entries"
 
+assert_json_contains "$OUT/forward.json" \
+    '.edges | length > 0' \
+    "root node has CFG edges"
+
+assert_json_contains "$OUT/forward.json" \
+    '.edges | all(has("fromBlock") and has("toBlock"))' \
+    "edges have fromBlock and toBlock"
+
 report

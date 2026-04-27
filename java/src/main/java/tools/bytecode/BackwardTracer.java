@@ -282,6 +282,7 @@ public class BackwardTracer {
           if (method != null) {
             Map<String, Object> blockInfo = new ForwardTracer(tracer).buildBlockTrace(method);
             fm.put("blocks", blockInfo.get("blocks"));
+            fm.put("edges", blockInfo.get("edges"));
             fm.put("traps", blockInfo.get("traps"));
           }
         } else {

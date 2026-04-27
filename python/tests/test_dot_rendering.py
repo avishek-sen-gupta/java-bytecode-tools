@@ -299,3 +299,49 @@ class TestCrossClusterEdges:
         dot = build_dot(method)
         assert "n1 -> n5" in dot
         assert "#e05050" in dot
+
+
+class TestRenderLeaf:
+    def test_ref_leaf(self):
+        from ftrace_to_dot import _render_leaf
+
+        node = {"class": "com.example.Svc", "method": "run", "ref": True}
+        lines, nid, next_counter = _render_leaf(node, 5)
+        assert len(lines) == 1
+        assert "n_leaf_5" in lines[0]
+        assert "(ref)" in lines[0]
+        assert "#e8e8e8" in lines[0]
+        assert nid == "n_leaf_5"
+        assert next_counter == 6
+
+    def test_cycle_leaf(self):
+        from ftrace_to_dot import _render_leaf
+
+        node = {"class": "com.example.Svc", "method": "run", "cycle": True}
+        lines, nid, next_counter = _render_leaf(node, 0)
+        assert len(lines) == 1
+        assert "n_leaf_0" in lines[0]
+        assert "(cycle)" in lines[0]
+        assert "#ffcccc" in lines[0]
+        assert nid == "n_leaf_0"
+        assert next_counter == 1
+
+    def test_filtered_leaf(self):
+        from ftrace_to_dot import _render_leaf
+
+        node = {"class": "com.example.Svc", "method": "run", "filtered": True}
+        lines, nid, next_counter = _render_leaf(node, 3)
+        assert len(lines) == 1
+        assert "(filtered)" in lines[0]
+        assert "#fff3cd" in lines[0]
+        assert nid == "n_leaf_3"
+        assert next_counter == 4
+
+    def test_non_leaf_returns_empty(self):
+        from ftrace_to_dot import _render_leaf
+
+        node = {"class": "com.example.Svc", "method": "run"}
+        lines, nid, next_counter = _render_leaf(node, 7)
+        assert lines == []
+        assert nid == ""
+        assert next_counter == 7

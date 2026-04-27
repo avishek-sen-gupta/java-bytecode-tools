@@ -9,6 +9,7 @@ dedup) happen upstream in ftrace_semantic.
 import json
 import sys
 from pathlib import Path
+from typing import TypedDict
 
 from ftrace_types import (
     ExceptionEdge,
@@ -102,6 +103,34 @@ def _render_exception_edge(ee: ExceptionEdge, clusters: list[SemanticCluster]) -
     if to_idx >= 0 and clusters[to_idx].get("nodeIds", []):
         attrs += f', lhead="cluster_trap_{to_idx}"'
     return f"    {src} -> {dst} [{attrs}];"
+
+
+class _MethodDotResult(TypedDict):
+    lines: list[str]
+    cross_edges: list[str]
+    next_counter: int
+    entry_nid: str
+
+
+def _render_leaf(node: MethodSemanticCFG, counter: int) -> tuple[list[str], str, int]:
+    """Render a leaf node (ref/cycle/filtered). Returns (lines, nid, next_counter).
+
+    Returns ([], "", counter) if node is not a leaf.
+    """
+    cls = short_class(node.get("class", "?"))
+    method = node.get("method", "?")
+    leaf_kind = next(
+        (k for k in ("cycle", "ref", "filtered") if node.get(k, False)),
+        "",
+    )
+    if not leaf_kind:
+        return ([], "", counter)
+    nid = f"n_leaf_{counter}"
+    label = f"{cls}.{method}\\n({leaf_kind})"
+    style = NODE_STYLE[NodeKind(leaf_kind)]
+    attrs = f'label="{escape(label)}"'
+    attrs += "".join(f', {k}="{v}"' for k, v in style.items())
+    return ([f"  {nid} [{attrs}];"], nid, counter + 1)
 
 
 def build_dot(root: MethodSemanticCFG) -> str:

@@ -39,10 +39,17 @@ if ! check_cmd python3; then
 fi
 PY_VER=$(python3 -c 'import sys; print(sys.version_info.minor)')
 if [ "$PY_VER" -lt 13 ] 2>/dev/null; then
-  echo "WARNING: Python 3.13+ recommended (found 3.$PY_VER)"
-else
-  echo "  python3.${PY_VER} ✓"
+  echo "ERROR: Python 3.13+ required (found 3.$PY_VER)" >&2
+  exit 1
 fi
+echo "  python3.${PY_VER} ✓"
+
+# jq (required by E2E tests)
+if ! check_cmd jq; then
+  echo "ERROR: jq not found. Install via: brew install jq" >&2
+  exit 1
+fi
+echo "  jq ✓"
 
 # uv
 if ! check_cmd uv; then

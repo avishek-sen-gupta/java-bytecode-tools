@@ -5,6 +5,7 @@ No knowledge of how the graph was constructed.
 """
 
 from collections import Counter
+from functools import reduce
 
 from ftrace_types import (
     MethodSemanticCFG,
@@ -90,6 +91,70 @@ def _check_entry_node(
     return []
 
 
+def _check_branch_edges(
+    nodes: list[SemanticNode], edges: list[SemanticEdge], method_label: str
+) -> list[Violation]:
+    """Check branch node edge invariants.
+
+    - Branch nodes must have exactly 2 outgoing edges, one labeled 'T' and one 'F'.
+    - Non-branch nodes must have at most 1 outgoing edge, never labeled.
+    """
+    # Build node kind mapping
+    node_kinds = {n["id"]: n.get("kind", "") for n in nodes}
+
+    # Build outgoing edges per node using reduce
+    def add_edge(acc: dict[str, list[SemanticEdge]], edge: SemanticEdge):
+        from_id = edge["from"]
+        acc.setdefault(from_id, []).append(edge)
+        return acc
+
+    outgoing = reduce(add_edge, edges, {})
+
+    # Validate each node
+    violations = []
+
+    for node in nodes:
+        nid = node["id"]
+        kind = node_kinds.get(nid, "")
+        node_outgoing = outgoing.get(nid, [])
+
+        if kind == "branch":
+            # Branch node must have exactly T and F labels
+            labels = sorted(e.get("branch", "") for e in node_outgoing)
+            if labels != ["F", "T"]:
+                violations.append(
+                    Violation(
+                        kind=ViolationKind.BRANCH_EDGE_VIOLATION,
+                        node_id=nid,
+                        method=method_label,
+                        message=f"Branch node must have exactly one 'T' and one 'F' edge, got labels {labels}",
+                    )
+                )
+        else:
+            # Non-branch node: at most 1 outgoing edge, no labels
+            if len(node_outgoing) > 1:
+                violations.append(
+                    Violation(
+                        kind=ViolationKind.NON_BRANCH_EDGE_VIOLATION,
+                        node_id=nid,
+                        method=method_label,
+                        message=f"Non-branch node has {len(node_outgoing)} outgoing edges, expected at most 1",
+                    )
+                )
+            branch_label = node_outgoing[0].get("branch", "") if node_outgoing else ""
+            if branch_label:
+                violations.append(
+                    Violation(
+                        kind=ViolationKind.NON_BRANCH_EDGE_VIOLATION,
+                        node_id=nid,
+                        method=method_label,
+                        message=f"Non-branch node has labeled edge ('{branch_label}'), should be unlabeled",
+                    )
+                )
+
+    return violations
+
+
 def _check_leaf_fields(method: MethodSemanticCFG) -> list[Violation]:
     """Check that leaf nodes (ref/cycle/filtered) have no graph fields."""
     return []
@@ -117,6 +182,7 @@ def validate_method(method: MethodSemanticCFG) -> list[Violation]:
         *_check_edge_refs(edges, node_ids, label),
         *_check_cluster_refs(clusters, node_ids, label),
         *_check_entry_node(entry_nid, node_ids, label),
+        *_check_branch_edges(nodes, edges, label),
     ]
 
 

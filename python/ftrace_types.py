@@ -84,11 +84,32 @@ class SourceTraceEntry(_SourceTraceEntryRequired, total=False):
     branch: str
 
 
-# RawBlock: id, stmts, successors are required
+# RawBlockEdge: fromBlock, toBlock required; label optional
+_RawBlockEdgeRequired = TypedDict(
+    "_RawBlockEdgeRequired",
+    {
+        "fromBlock": str,
+        "toBlock": str,
+    },
+)
+
+
+class RawBlockEdge(_RawBlockEdgeRequired, total=False):
+    """Edge between two blocks in the control flow graph.
+
+    Fields:
+    - fromBlock: source block ID (required)
+    - toBlock: target block ID (required)
+    - label: "T" or "F" for branch edges (optional, absent for unconditional)
+    """
+
+    label: str
+
+
+# RawBlock: id, stmts required
 class _RawBlockRequired(TypedDict):
     id: str
     stmts: list[RawStmt]
-    successors: list[str]
 
 
 class RawBlock(_RawBlockRequired, total=False):
@@ -97,7 +118,6 @@ class RawBlock(_RawBlockRequired, total=False):
     Fields:
     - id: block identifier (required)
     - stmts: statements in block (required)
-    - successors: successor block IDs (required)
     - branchCondition: condition if this is a branch block
     - mergedStmts: merged statements (replaces stmts in pass 1)
     """
@@ -232,6 +252,7 @@ class MethodCFG(_MethodCFGRequired, total=False):
 
     # Raw fields (from xtrace)
     blocks: list[RawBlock]
+    edges: list[RawBlockEdge]
     traps: list[RawTrap]
     sourceTrace: list[SourceTraceEntry]
     children: list["MethodCFG"]

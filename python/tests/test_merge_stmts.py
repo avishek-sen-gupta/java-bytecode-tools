@@ -122,7 +122,6 @@ class TestMergeStmtsPass:
                 {
                     "id": "B0",
                     "stmts": [{"line": 5}, {"line": 5, "call": "Foo.x"}],
-                    "successors": [],
                 },
             ],
             "traps": [],
@@ -140,7 +139,7 @@ class TestMergeStmtsPass:
             "class": "Svc",
             "method": "run",
             "blocks": [
-                {"id": "B0", "stmts": [{"line": 5}], "successors": []},
+                {"id": "B0", "stmts": [{"line": 5}]},
             ],
             "traps": [],
             "children": [],
@@ -154,13 +153,13 @@ class TestMergeStmtsPass:
         tree = {
             "class": "Svc",
             "method": "run",
-            "blocks": [{"id": "B0", "stmts": [{"line": 5}], "successors": []}],
+            "blocks": [{"id": "B0", "stmts": [{"line": 5}]}],
             "traps": [],
             "children": [
                 {
                     "class": "Svc",
                     "method": "inner",
-                    "blocks": [{"id": "B0", "stmts": [{"line": 10}], "successors": []}],
+                    "blocks": [{"id": "B0", "stmts": [{"line": 10}]}],
                     "traps": [],
                     "children": [],
                 }
@@ -184,7 +183,7 @@ class TestMergeStmtsPass:
         tree = {
             "class": "Svc",
             "method": "run",
-            "blocks": [{"id": "B0", "stmts": [{"line": 5}], "successors": []}],
+            "blocks": [{"id": "B0", "stmts": [{"line": 5}]}],
             "traps": [],
             "children": [],
         }

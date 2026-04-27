@@ -111,7 +111,7 @@ class TestAssignClustersPass:
             "class": "Svc",
             "method": "run",
             "blocks": [
-                {"id": "B0", "stmts": [{"line": 5}], "successors": []},
+                {"id": "B0", "stmts": [{"line": 5}]},
             ],
             "traps": [
                 {
@@ -143,7 +143,7 @@ class TestAssignClustersPass:
         tree = {
             "class": "Svc",
             "method": "run",
-            "blocks": [{"id": "B0", "stmts": [{"line": 5}], "successors": []}],
+            "blocks": [{"id": "B0", "stmts": [{"line": 5}]}],
             "traps": [],
             "children": [],
         }
@@ -157,7 +157,7 @@ class TestAssignClustersPass:
         tree = {
             "class": "Svc",
             "method": "run",
-            "blocks": [{"id": "B0", "stmts": [{"line": 5}], "successors": []}],
+            "blocks": [{"id": "B0", "stmts": [{"line": 5}]}],
             "traps": [
                 {
                     "type": "java.lang.Exception",

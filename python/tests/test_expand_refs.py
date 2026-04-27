@@ -15,7 +15,7 @@ def _make_full_node(sig):
         "lineEnd": 20,
         "sourceLineCount": 11,
         "sourceTrace": [{"line": 10, "code": "int x = 1;"}],
-        "blocks": [{"id": "B0", "stmts": [], "successors": ["B1"]}],
+        "blocks": [{"id": "B0", "stmts": []}],
         "traps": [
             {"handler": "B2", "type": "RuntimeException", "coveredBlocks": ["B0"]}
         ],

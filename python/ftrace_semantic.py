@@ -303,6 +303,7 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemant
         return result
 
     blocks = tree.get("blocks", [])
+    raw_edges = tree.get("edges", [])
     traps = tree.get("traps", [])
     cluster_assignment = tree.get("clusterAssignment", {})
     block_aliases = tree.get("blockAliases", {})
@@ -394,41 +395,32 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemant
 
     emitted: set[tuple[str, str, str]] = set()
 
-    for block in blocks:
-        bid = block["id"]
-        tail_nid = block_last.get(bid, "")
-        if not tail_nid:
+    for raw_edge in raw_edges:
+        from_bid = raw_edge["fromBlock"]
+        to_bid = raw_edge["toBlock"]
+        tail_nid = block_last.get(from_bid, "")
+        succ_nid = block_first.get(to_bid, "")
+        if not tail_nid or not succ_nid or tail_nid == succ_nid:
             continue
-        successors = block.get("successors", [])
-        branch_cond = block.get("branchCondition", "")
 
-        if len(successors) == 2 and branch_cond:
-            true_nid = block_first.get(successors[0], "")
-            false_nid = block_first.get(successors[1], "")
-            for succ_nid, label in [
-                (true_nid, BranchLabel.T),
-                (false_nid, BranchLabel.F),
-            ]:
-                if succ_nid and tail_nid != succ_nid:
-                    key = (tail_nid, succ_nid, label)
-                    if key not in emitted:
-                        emitted.add(key)
-                        all_edges.append(
-                            {"from": tail_nid, "to": succ_nid, "branch": label}
-                        )
+        label = raw_edge.get("label", "")
+        if label:
+            key = (tail_nid, succ_nid, label)
+            if key not in emitted:
+                emitted.add(key)
+                all_edges.append(
+                    {"from": tail_nid, "to": succ_nid, "branch": BranchLabel(label)}
+                )
         else:
-            for succ_id in successors:
-                succ_nid = block_first.get(succ_id, "")
-                if succ_nid and tail_nid != succ_nid:
-                    key = (tail_nid, succ_nid, "")
-                    reverse = (succ_nid, tail_nid, "")
-                    if reverse in emitted and (
-                        tail_nid in shared_nids or succ_nid in shared_nids
-                    ):
-                        continue
-                    if key not in emitted:
-                        emitted.add(key)
-                        all_edges.append({"from": tail_nid, "to": succ_nid})
+            key = (tail_nid, succ_nid, "")
+            reverse = (succ_nid, tail_nid, "")
+            if reverse in emitted and (
+                tail_nid in shared_nids or succ_nid in shared_nids
+            ):
+                continue
+            if key not in emitted:
+                emitted.add(key)
+                all_edges.append({"from": tail_nid, "to": succ_nid})
 
     # --- Build clusters ---
     all_clusters: list[SemanticCluster] = []
@@ -490,6 +482,7 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemant
     # Drop raw/intermediate fields, keep tree metadata
     drop_fields = {
         "blocks",
+        "edges",
         "traps",
         "clusterAssignment",
         "blockAliases",

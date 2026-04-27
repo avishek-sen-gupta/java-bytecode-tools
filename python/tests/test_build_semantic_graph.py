@@ -11,7 +11,7 @@ from ftrace_types import (
 
 
 def _make_enriched_method(
-    blocks, traps, cluster_assignment, block_aliases=(), children=()
+    blocks, traps, cluster_assignment, block_aliases=(), children=(), edges=()
 ):
     """Build a method node with all intermediate fields from passes 1-3."""
     return {
@@ -22,6 +22,7 @@ def _make_enriched_method(
         "lineEnd": 20,
         "sourceLineCount": 20,
         "blocks": blocks,
+        "edges": list(edges) if edges else [],
         "traps": traps,
         "clusterAssignment": cluster_assignment,
         "blockAliases": dict(block_aliases) if block_aliases else {},
@@ -113,7 +114,6 @@ class TestBuildSemanticGraphPass:
                     "mergedStmts": [
                         {"line": 5, "calls": [], "branches": [], "assigns": []}
                     ],
-                    "successors": ["B1"],
                 },
                 {
                     "id": "B1",
@@ -126,11 +126,11 @@ class TestBuildSemanticGraphPass:
                             "assigns": [],
                         }
                     ],
-                    "successors": [],
                 },
             ],
             traps=[],
             cluster_assignment={},
+            edges=[{"fromBlock": "B0", "toBlock": "B1"}],
         )
         result = build_semantic_graph_pass(tree)
 
@@ -165,7 +165,6 @@ class TestBuildSemanticGraphPass:
                         {"line": 6, "calls": [], "branches": ["i <= 0"], "assigns": []}
                     ],
                     "branchCondition": "i <= 0",
-                    "successors": ["B1", "B2"],
                 },
                 {
                     "id": "B1",
@@ -173,7 +172,6 @@ class TestBuildSemanticGraphPass:
                     "mergedStmts": [
                         {"line": 7, "calls": [], "branches": [], "assigns": []}
                     ],
-                    "successors": [],
                 },
                 {
                     "id": "B2",
@@ -181,11 +179,14 @@ class TestBuildSemanticGraphPass:
                     "mergedStmts": [
                         {"line": 9, "calls": [], "branches": [], "assigns": []}
                     ],
-                    "successors": [],
                 },
             ],
             traps=[],
             cluster_assignment={},
+            edges=[
+                {"fromBlock": "B0", "toBlock": "B1", "label": "T"},
+                {"fromBlock": "B0", "toBlock": "B2", "label": "F"},
+            ],
         )
         result = build_semantic_graph_pass(tree)
 
@@ -205,7 +206,6 @@ class TestBuildSemanticGraphPass:
                     "mergedStmts": [
                         {"line": 9, "calls": [], "branches": [], "assigns": []}
                     ],
-                    "successors": ["B1"],
                 },
                 {
                     "id": "B1",
@@ -213,7 +213,6 @@ class TestBuildSemanticGraphPass:
                     "mergedStmts": [
                         {"line": 9, "calls": [], "branches": [], "assigns": []}
                     ],
-                    "successors": [],
                 },
             ],
             traps=[],
@@ -222,6 +221,7 @@ class TestBuildSemanticGraphPass:
                 "B1": {"kind": ClusterRole.TRY, "trapIndex": 0},
             },
             block_aliases={"B1": "B0"},
+            edges=[{"fromBlock": "B0", "toBlock": "B1"}],
         )
         result = build_semantic_graph_pass(tree)
 
@@ -239,7 +239,6 @@ class TestBuildSemanticGraphPass:
                     "mergedStmts": [
                         {"line": 5, "calls": [], "branches": [], "assigns": []}
                     ],
-                    "successors": [],
                 },
                 {
                     "id": "B3",
@@ -247,7 +246,6 @@ class TestBuildSemanticGraphPass:
                     "mergedStmts": [
                         {"line": 11, "calls": [], "branches": [], "assigns": []}
                     ],
-                    "successors": [],
                 },
             ],
             traps=[
@@ -285,7 +283,6 @@ class TestBuildSemanticGraphPass:
                     "mergedStmts": [
                         {"line": 5, "calls": [], "branches": [], "assigns": []}
                     ],
-                    "successors": [],
                 },
                 {
                     "id": "B3",
@@ -293,7 +290,6 @@ class TestBuildSemanticGraphPass:
                     "mergedStmts": [
                         {"line": 11, "calls": [], "branches": [], "assigns": []}
                     ],
-                    "successors": [],
                 },
             ],
             traps=[
@@ -326,7 +322,6 @@ class TestBuildSemanticGraphPass:
                     "mergedStmts": [
                         {"line": 5, "calls": [], "branches": [], "assigns": []}
                     ],
-                    "successors": [],
                 },
             ],
             traps=[],
@@ -354,7 +349,6 @@ class TestBuildSemanticGraphPass:
                     "mergedStmts": [
                         {"line": 5, "calls": [], "branches": [], "assigns": []}
                     ],
-                    "successors": [],
                 },
             ],
             traps=[],
@@ -416,7 +410,6 @@ class TestBuildSemanticGraphPass:
                     "mergedStmts": [
                         {"line": 5, "calls": [], "branches": [], "assigns": []}
                     ],
-                    "successors": [],
                 },
             ],
             traps=[],
@@ -497,13 +490,10 @@ class TestTransform:
             "lineEnd": 10,
             "sourceLineCount": 10,
             "blocks": [
-                {"id": "B0", "stmts": [{"line": 5}], "successors": ["B1"]},
-                {
-                    "id": "B1",
-                    "stmts": [{"line": 10, "call": "Foo.bar"}],
-                    "successors": [],
-                },
+                {"id": "B0", "stmts": [{"line": 5}]},
+                {"id": "B1", "stmts": [{"line": 10, "call": "Foo.bar"}]},
             ],
+            "edges": [{"fromBlock": "B0", "toBlock": "B1"}],
             "traps": [],
             "children": [],
         }

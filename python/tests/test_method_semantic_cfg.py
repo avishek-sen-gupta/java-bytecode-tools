@@ -56,7 +56,7 @@ class TestMethodCFGNoSemanticFields:
         from ftrace_types import MethodCFG
 
         hints = typing.get_type_hints(MethodCFG)
-        for field in ("nodes", "edges", "clusters", "exceptionEdges"):
+        for field in ("nodes", "clusters", "exceptionEdges"):
             assert field not in hints, f"MethodCFG should no longer have {field}"
 
 

@@ -190,6 +190,7 @@ public class ForwardTracer {
 
     Map<String, Map<String, Object>> trapsMap = new LinkedHashMap<>();
     List<Map<String, Object>> blockList = new ArrayList<>();
+    List<Map<String, Object>> edgeList = new ArrayList<>();
 
     for (int i = 0; i < blocks.size(); i++) {
       BasicBlock<?> block = blocks.get(i);
@@ -223,14 +224,21 @@ public class ForwardTracer {
       }
       blockMap.put("stmts", stmtList);
 
-      List<String> successorIds = new ArrayList<>();
-      for (BasicBlock<?> succ : block.getSuccessors()) {
-        String succId = stmtToBlockId.get(succ.getHead());
+      // Build top-level edges
+      List<? extends BasicBlock<?>> successors = block.getSuccessors();
+      boolean isBranch = block.getTail() instanceof JIfStmt && successors.size() == 2;
+      for (int si = 0; si < successors.size(); si++) {
+        String succId = stmtToBlockId.get(successors.get(si).getHead());
         if (succId != null) {
-          successorIds.add(succId);
+          Map<String, Object> edge = new LinkedHashMap<>();
+          edge.put("fromBlock", blockId);
+          edge.put("toBlock", succId);
+          if (isBranch) {
+            edge.put("label", si == 0 ? "T" : "F");
+          }
+          edgeList.add(edge);
         }
       }
-      blockMap.put("successors", successorIds);
 
       // Collect exceptional successors into centralized traps list
       stmtGraph
@@ -296,13 +304,14 @@ public class ForwardTracer {
 
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("blocks", blockList);
+    result.put("edges", edgeList);
 
-    // Build successor lookup for BFS
+    // Build successor lookup for BFS from edge list
     Map<String, List<String>> succMap = new LinkedHashMap<>();
-    for (Map<String, Object> b : blockList) {
-      @SuppressWarnings("unchecked")
-      List<String> succs = (List<String>) b.get("successors");
-      succMap.put((String) b.get("id"), succs);
+    for (Map<String, Object> edge : edgeList) {
+      String from = (String) edge.get("fromBlock");
+      String to = (String) edge.get("toBlock");
+      succMap.computeIfAbsent(from, k -> new ArrayList<>()).add(to);
     }
 
     // Compute normal flow: blocks reachable from method entry via normal successors.

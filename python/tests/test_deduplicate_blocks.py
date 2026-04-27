@@ -18,7 +18,6 @@ class TestBlockContentSignature:
                 }
             ],
             "stmts": [],
-            "successors": [],
         }
         b2 = {
             "id": "B8",
@@ -31,7 +30,6 @@ class TestBlockContentSignature:
                 }
             ],
             "stmts": [],
-            "successors": [],
         }
         assert block_content_signature(b1) == block_content_signature(b2)
 
@@ -49,13 +47,11 @@ class TestBlockContentSignature:
                 }
             ],
             "stmts": [],
-            "successors": [],
         }
         b2 = {
             "id": "B4",
             "mergedStmts": [{"line": 15, "calls": [], "branches": [], "assigns": []}],
             "stmts": [],
-            "successors": [],
         }
         assert block_content_signature(b1) != block_content_signature(b2)
 
@@ -69,7 +65,6 @@ class TestBlockContentSignature:
             ],
             "branchCondition": "i <= 0",
             "stmts": [],
-            "successors": [],
         }
         b2 = {
             "id": "B1",
@@ -77,14 +72,13 @@ class TestBlockContentSignature:
                 {"line": 6, "calls": [], "branches": ["i <= 0"], "assigns": []}
             ],
             "stmts": [],
-            "successors": [],
         }
         assert block_content_signature(b1) != block_content_signature(b2)
 
     def test_empty_merged_stmts(self):
         from ftrace_semantic import block_content_signature
 
-        b = {"id": "B0", "mergedStmts": [], "stmts": [], "successors": []}
+        b = {"id": "B0", "mergedStmts": [], "stmts": []}
         sig = block_content_signature(b)
         assert isinstance(sig, str)
 
@@ -105,7 +99,6 @@ class TestComputeBlockAliases:
                     }
                 ],
                 "stmts": [],
-                "successors": [],
             },
             {
                 "id": "B8",
@@ -118,7 +111,6 @@ class TestComputeBlockAliases:
                     }
                 ],
                 "stmts": [],
-                "successors": [],
             },
         ]
         cluster_assignment = {
@@ -138,7 +130,6 @@ class TestComputeBlockAliases:
                     {"line": 5, "calls": [], "branches": [], "assigns": []}
                 ],
                 "stmts": [],
-                "successors": [],
             },
             {
                 "id": "B1",
@@ -146,7 +137,6 @@ class TestComputeBlockAliases:
                     {"line": 10, "calls": [], "branches": [], "assigns": []}
                 ],
                 "stmts": [],
-                "successors": [],
             },
         ]
         cluster_assignment = {
@@ -171,7 +161,6 @@ class TestComputeBlockAliases:
                     }
                 ],
                 "stmts": [],
-                "successors": [],
             },
             {
                 "id": "B8",
@@ -184,7 +173,6 @@ class TestComputeBlockAliases:
                     }
                 ],
                 "stmts": [],
-                "successors": [],
             },
         ]
         cluster_assignment = {
@@ -204,7 +192,6 @@ class TestComputeBlockAliases:
                     {"line": 5, "calls": [], "branches": [], "assigns": []}
                 ],
                 "stmts": [],
-                "successors": [],
             },
             {
                 "id": "B1",
@@ -212,7 +199,6 @@ class TestComputeBlockAliases:
                     {"line": 5, "calls": [], "branches": [], "assigns": []}
                 ],
                 "stmts": [],
-                "successors": [],
             },
         ]
         aliases = compute_block_aliases(blocks, {})
@@ -238,7 +224,6 @@ class TestDeduplicateBlocksPass:
                         }
                     ],
                     "stmts": [],
-                    "successors": [],
                 },
                 {
                     "id": "B8",
@@ -251,7 +236,6 @@ class TestDeduplicateBlocksPass:
                         }
                     ],
                     "stmts": [],
-                    "successors": [],
                 },
             ],
             "traps": [],
@@ -285,7 +269,6 @@ class TestDeduplicateBlocksPass:
                         {"line": 5, "calls": [], "branches": [], "assigns": []}
                     ],
                     "stmts": [],
-                    "successors": [],
                 },
             ],
             "traps": [],

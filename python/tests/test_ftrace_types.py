@@ -4,6 +4,7 @@ from ftrace_types import (
     RawStmt,
     MergedStmt,
     RawBlock,
+    RawBlockEdge,
     RawTrap,
     ClusterAssignment,
     BlockAliases,
@@ -33,8 +34,24 @@ class TestTypeConstructors:
         assert m["calls"] == ["Foo.bar"]
 
     def test_raw_block(self):
-        b: RawBlock = {"id": "B0", "stmts": [{"line": 5}], "successors": ["B1"]}
+        b: RawBlock = {"id": "B0", "stmts": [{"line": 5}]}
         assert b["id"] == "B0"
+
+    def test_raw_block_has_no_successors(self):
+        import typing
+
+        hints = typing.get_type_hints(RawBlock)
+        assert "successors" not in hints
+
+    def test_raw_block_edge_unconditional(self):
+        e: RawBlockEdge = {"fromBlock": "B0", "toBlock": "B1"}
+        assert e["fromBlock"] == "B0"
+        assert e["toBlock"] == "B1"
+        assert "label" not in e
+
+    def test_raw_block_edge_with_label(self):
+        e: RawBlockEdge = {"fromBlock": "B0", "toBlock": "B1", "label": "T"}
+        assert e["label"] == "T"
 
     def test_raw_trap(self):
         t: RawTrap = {
@@ -109,6 +126,13 @@ class TestTypeConstructors:
         }
         assert st["slice"]["method"] == "foo"
         assert "<Svc: void foo()>" in st["refIndex"]
+
+    def test_method_cfg_has_edges_field(self):
+        import typing
+        from ftrace_types import MethodCFG
+
+        hints = typing.get_type_hints(MethodCFG)
+        assert "edges" in hints
 
     def test_str_enum_equals_string(self):
         assert NodeKind.PLAIN == "plain"

@@ -22,7 +22,7 @@ repos:
     hooks:
       - id: talisman
         name: talisman
-        entry: bash -c '/Users/asgupta/.talisman/bin/talisman_darwin_amd64 --githook pre-commit'
+        entry: bash -c '"$HOME/.talisman/bin/talisman_darwin_amd64" --githook pre-commit'
         language: system
         pass_filenames: false
         types: [file]

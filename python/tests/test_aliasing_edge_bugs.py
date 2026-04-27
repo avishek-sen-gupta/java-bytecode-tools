@@ -156,8 +156,8 @@ class TestConflictingEdgeLabels:
         )
 
     def test_no_duplicate_labels_between_same_node_pair(self):
-        """Even without aliasing, if raw edges produce both T and F
-        between the same node pair, only the first should be kept."""
+        """When T and F edges target the same block, both labeled edges
+        should be kept."""
         from ftrace_semantic import _build_edges
 
         raw_edges = [
@@ -179,10 +179,12 @@ class TestConflictingEdgeLabels:
         edges_n0_n1 = [
             e for e in result["edges"] if e["from"] == "n0" and e["to"] == "n1"
         ]
-        # At most one edge per (src, dst) pair
+        # Both T and F edges should be kept
         assert (
-            len(edges_n0_n1) <= 1
-        ), f"Expected at most 1 edge from n0→n1, got {len(edges_n0_n1)}"
+            len(edges_n0_n1) == 2
+        ), f"Expected 2 edges from n0→n1, got {len(edges_n0_n1)}"
+        labels = {e.get("branch") for e in edges_n0_n1}
+        assert labels == {"T", "F"}, f"Expected labels {{'T', 'F'}}, got {labels}"
 
 
 class TestExcessEdgesFromAliasing:

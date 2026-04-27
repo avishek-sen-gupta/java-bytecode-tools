@@ -483,9 +483,9 @@ def _build_inter_block_edges(
     shared_nids = frozenset(nid for nid, c in nid_block_count.items() if c > 1)
 
     def fold_edge(
-        acc: tuple[list[SemanticEdge], dict[tuple[str, str], str]],
+        acc: tuple[list[SemanticEdge], dict[tuple[str, str], tuple[str, str]]],
         raw_edge: RawBlockEdge,
-    ) -> tuple[list[SemanticEdge], dict[tuple[str, str], str]]:
+    ) -> tuple[list[SemanticEdge], dict[tuple[str, str], tuple[str, str]]]:
         edges, emitted = acc
 
         # Skip edges from aliased blocks — canonical block's edges suffice
@@ -494,6 +494,7 @@ def _build_inter_block_edges(
 
         tail_nid = block_last.get(raw_edge["fromBlock"], "")
         succ_nid = block_first.get(raw_edge["toBlock"], "")
+        to_block = raw_edge["toBlock"]
         if not tail_nid or not succ_nid or tail_nid == succ_nid:
             return (edges, emitted)
 
@@ -502,16 +503,35 @@ def _build_inter_block_edges(
         label = raw_edge.get("label", "")
 
         if key in emitted:
-            prev_label = emitted[key]
-            # T and F converge to same target → branch is a no-op.
-            # Replace the labeled edge with an unlabeled one.
+            prev_label, prev_to_block = emitted[key]
+            # When both T and F target the same raw block, keep both labeled edges
+            # But if they target different blocks (aliasing), collapse to unlabeled
             if label and prev_label and label != prev_label:
-                unlabeled: SemanticEdge = {"from": tail_nid, "to": succ_nid}
-                new_edges: list[SemanticEdge] = [
-                    (unlabeled if e["from"] == tail_nid and e["to"] == succ_nid else e)
-                    for e in edges
-                ]
-                return (new_edges, {**emitted, key: ""})
+                if to_block == prev_to_block:
+                    # Natural convergence: both edges to same block → keep both labels
+                    return (
+                        [
+                            *edges,
+                            {
+                                "from": tail_nid,
+                                "to": succ_nid,
+                                "branch": BranchLabel(label),
+                            },
+                        ],
+                        {**emitted, key: (f"{prev_label},{label}", to_block)},
+                    )
+                else:
+                    # Aliasing-induced convergence: edges to different blocks → collapse to unlabeled
+                    unlabeled: SemanticEdge = {"from": tail_nid, "to": succ_nid}
+                    new_edges: list[SemanticEdge] = [
+                        (
+                            unlabeled
+                            if e["from"] == tail_nid and e["to"] == succ_nid
+                            else e
+                        )
+                        for e in edges
+                    ]
+                    return (new_edges, {**emitted, key: ("", to_block)})
             return (edges, emitted)
 
         if label:
@@ -520,14 +540,14 @@ def _build_inter_block_edges(
                     *edges,
                     {"from": tail_nid, "to": succ_nid, "branch": BranchLabel(label)},
                 ],
-                {**emitted, key: label},
+                {**emitted, key: (label, to_block)},
             )
 
         if reverse in emitted and (tail_nid in shared_nids or succ_nid in shared_nids):
             return (edges, emitted)
         return (
             [*edges, {"from": tail_nid, "to": succ_nid}],
-            {**emitted, key: ""},
+            {**emitted, key: ("", to_block)},
         )
 
     result_edges, _ = reduce(fold_edge, raw_edges, ([], {}))

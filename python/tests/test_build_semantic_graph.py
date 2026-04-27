@@ -328,6 +328,25 @@ class TestBuildEdges:
         unconditional = [e for e in result["edges"] if "branch" not in e]
         assert len(unconditional) == 1
 
+    def test_branch_both_targets_same_keeps_both_labels(self):
+        """When T and F edges target the same block, both labels should be kept."""
+        from ftrace_semantic import _build_edges
+
+        result = _build_edges(
+            raw_edges=[
+                {"fromBlock": "B0", "toBlock": "B1", "label": "T"},
+                {"fromBlock": "B0", "toBlock": "B1", "label": "F"},
+            ],
+            block_first={"B0": "n0", "B1": "n1"},
+            block_last={"B0": "n0", "B1": "n1"},
+            bid_to_nids={"B0": ["n0"], "B1": ["n1"]},
+            block_aliases={},
+        )
+        branch_edges = [e for e in result["edges"] if "branch" in e]
+        assert len(branch_edges) == 2
+        labels = {e["branch"] for e in branch_edges}
+        assert labels == {"T", "F"}
+
 
 class TestBuildClusters:
     def test_single_trap_produces_try_and_handler_clusters(self):

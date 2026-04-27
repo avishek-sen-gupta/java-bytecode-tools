@@ -468,3 +468,35 @@ class TestRenderCrossEdges:
         child_entries = ["n5"]
         result = _render_cross_edges(nodes, children, child_entries, "")
         assert result == []
+
+
+class TestEscape:
+    def test_plain_string(self):
+        from ftrace_to_dot import escape
+
+        assert escape("hello") == "hello"
+
+    def test_backslash(self):
+        from ftrace_to_dot import escape
+
+        assert escape("a\\b") == "a\\\\b"
+
+    def test_double_quote(self):
+        from ftrace_to_dot import escape
+
+        assert escape('say "hi"') == 'say \\"hi\\"'
+
+    def test_newline(self):
+        from ftrace_to_dot import escape
+
+        assert escape("line1\nline2") == "line1\\nline2"
+
+    def test_combined(self):
+        from ftrace_to_dot import escape
+
+        assert escape('"a\\b\n"') == '\\"a\\\\b\\n\\"'
+
+    def test_empty_string(self):
+        from ftrace_to_dot import escape
+
+        assert escape("") == ""

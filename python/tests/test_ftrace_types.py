@@ -138,3 +138,30 @@ class TestTypeConstructors:
         assert NodeKind.PLAIN == "plain"
         assert ClusterRole.TRY == "try"
         assert BranchLabel.T == "T"
+
+
+class TestShortClass:
+    def test_fully_qualified(self):
+        from ftrace_types import short_class
+
+        assert short_class("java.lang.RuntimeException") == "RuntimeException"
+
+    def test_deeply_nested(self):
+        from ftrace_types import short_class
+
+        assert short_class("com.example.service.UserService") == "UserService"
+
+    def test_no_package(self):
+        from ftrace_types import short_class
+
+        assert short_class("Foo") == "Foo"
+
+    def test_empty_string(self):
+        from ftrace_types import short_class
+
+        assert short_class("") == ""
+
+    def test_single_dot(self):
+        from ftrace_types import short_class
+
+        assert short_class("pkg.Class") == "Class"

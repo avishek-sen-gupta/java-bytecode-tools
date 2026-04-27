@@ -591,24 +591,20 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemant
     tree_metadata = tree.get(_F_METADATA, {})
     if _F_MERGED_SOURCE_TRACE in tree_metadata and _F_BLOCKS not in tree:
         merged = tree_metadata[_F_MERGED_SOURCE_TRACE]
-        node_counter = next_id
-        all_nodes: list[SemanticNode] = []
-        all_edges: list[SemanticEdge] = []
-        for entry in merged:
-            nid = f"n{node_counter}"
-            node_counter += 1
-            all_nodes.append(
-                {
-                    "id": nid,
-                    "lines": [entry["line"]],
-                    "kind": classify_node_kind(entry),
-                    "label": make_node_label(entry),
-                }
-            )
-        all_edges = [
+        all_nodes: list[SemanticNode] = [
+            {
+                "id": f"n{next_id + i}",
+                "lines": [entry["line"]],
+                "kind": classify_node_kind(entry),
+                "label": make_node_label(entry),
+            }
+            for i, entry in enumerate(merged)
+        ]
+        all_edges: list[SemanticEdge] = [
             {"from": all_nodes[i]["id"], "to": all_nodes[i + 1]["id"]}
             for i in range(len(all_nodes) - 1)
         ]
+        node_counter = next_id + len(all_nodes)
 
         drop_fields = {_F_SOURCE_TRACE, _F_METADATA}
         result = {

@@ -34,6 +34,35 @@ class BranchLabel(StrEnum):
     F = "F"
 
 
+class ViolationKind(StrEnum):
+    """Kinds of semantic graph validation violations."""
+
+    DUPLICATE_NODE_ID = "duplicate_node_id"
+    DANGLING_EDGE_REF = "dangling_edge_ref"
+    DANGLING_CLUSTER_REF = "dangling_cluster_ref"
+    INVALID_ENTRY_NODE = "invalid_entry_node"
+    BRANCH_EDGE_VIOLATION = "branch_edge_violation"
+    NON_BRANCH_EDGE_VIOLATION = "non_branch_edge_violation"
+    LEAF_HAS_GRAPH_FIELDS = "leaf_has_graph_fields"
+    NO_INCOMING_EDGE = "no_incoming_edge"
+
+
+class Violation(TypedDict):
+    """Validation violation in semantic graph structure.
+
+    Fields:
+    - kind: type of violation
+    - node_id: which node (empty string for method-level violations)
+    - method: fully qualified method name for context ("Class.method")
+    - message: human-readable description
+    """
+
+    kind: ViolationKind
+    node_id: str
+    method: str
+    message: str
+
+
 class SplineStyle(StrEnum):
     """Graphviz splines attribute values for edge routing."""
 

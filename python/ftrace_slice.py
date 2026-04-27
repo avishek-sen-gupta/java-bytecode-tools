@@ -13,6 +13,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from typing import cast
+
 from ftrace_types import MethodCFG
 
 
@@ -34,7 +36,7 @@ def index_full_tree(
     Uses an internal accumulator for DFS first-occurrence semantics;
     the public interface is pure (fresh dict returned).
     """
-    acc: dict[str, dict] = {}
+    acc: dict[str, MethodCFG] = {}
     _index_walk(node, signatures, acc)
     return acc
 
@@ -107,6 +109,7 @@ def main():
         )
         sys.exit(1)
 
+    target = cast(MethodCFG, target)
     ref_sigs = collect_ref_signatures(target)
     ref_index = index_full_tree(full_tree, ref_sigs)
 

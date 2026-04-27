@@ -10,7 +10,7 @@ import json
 import sys
 from pathlib import Path
 from functools import reduce
-from typing import TypedDict
+from typing import TypedDict, cast
 
 from ftrace_types import (
     ExceptionEdge,
@@ -108,6 +108,11 @@ class _MethodDotResult(TypedDict):
     cross_edges: list[str]
     next_counter: int
     entry_nid: str
+
+
+class _FoldChildAcc(TypedDict):
+    results: list[_MethodDotResult]
+    counter: int
 
 
 def _render_leaf(node: MethodSemanticCFG, counter: int) -> tuple[list[str], str, int]:
@@ -240,19 +245,19 @@ def _render_method(node: MethodSemanticCFG, counter: int) -> _MethodDotResult:
 
     # Recurse children, threading counter
     def _fold_child(
-        acc: dict[str, list[_MethodDotResult] | int],
+        acc: _FoldChildAcc,
         child: MethodSemanticCFG,
-    ) -> dict[str, list[_MethodDotResult] | int]:
+    ) -> _FoldChildAcc:
         result = _render_method(child, acc["counter"])
-        return {
-            "results": [*acc["results"], result],
-            "counter": result["next_counter"],
-        }
+        return _FoldChildAcc(
+            results=[*acc["results"], result],
+            counter=result["next_counter"],
+        )
 
-    folded = reduce(
+    folded: _FoldChildAcc = reduce(
         _fold_child,
         children,
-        {"results": [], "counter": counter + 1},
+        _FoldChildAcc(results=[], counter=counter + 1),
     )
 
     child_results: list[_MethodDotResult] = folded["results"]
@@ -265,12 +270,12 @@ def _render_method(node: MethodSemanticCFG, counter: int) -> _MethodDotResult:
         *_render_cross_edges(nodes, children, child_entries, entry_nid),
     ]
 
-    return {
-        "lines": [*subgraph, *child_lines],
-        "cross_edges": cross_edges,
-        "next_counter": folded["counter"],
-        "entry_nid": entry_nid,
-    }
+    return _MethodDotResult(
+        lines=[*subgraph, *child_lines],
+        cross_edges=cross_edges,
+        next_counter=folded["counter"],
+        entry_nid=entry_nid,
+    )
 
 
 def build_dot(root: MethodSemanticCFG) -> str:

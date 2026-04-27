@@ -9,6 +9,8 @@ import json
 import sys
 from pathlib import Path
 
+from typing import cast
+
 from ftrace_types import MethodCFG
 
 
@@ -29,12 +31,15 @@ def expand_refs(
     new_path = path | {sig} if sig else path
 
     if "children" not in node:
-        return dict(node)
+        return cast(MethodCFG, dict(node))
 
-    return {
-        **node,
-        "children": [expand_refs(c, index, new_path) for c in node["children"]],
-    }
+    return cast(
+        MethodCFG,
+        {
+            **node,
+            "children": [expand_refs(c, index, new_path) for c in node["children"]],
+        },
+    )
 
 
 def _expand_ref_node(
@@ -44,18 +49,23 @@ def _expand_ref_node(
     sig = node.get("methodSignature", "")
 
     if not sig or sig not in index or sig in path:
-        return dict(node)
+        return cast(MethodCFG, dict(node))
 
     full = index[sig]
-    return {
-        **{k: v for k, v in full.items() if k != "ref" and k != "children"},
-        **(
-            {} if "callSiteLine" not in node else {"callSiteLine": node["callSiteLine"]}
-        ),
-        "children": [
-            expand_refs(c, index, path | {sig}) for c in full.get("children", [])
-        ],
-    }
+    return cast(
+        MethodCFG,
+        {
+            **{k: v for k, v in full.items() if k != "ref" and k != "children"},
+            **(
+                {}
+                if "callSiteLine" not in node
+                else {"callSiteLine": node["callSiteLine"]}
+            ),
+            "children": [
+                expand_refs(c, index, path | {sig}) for c in full.get("children", [])
+            ],
+        },
+    )
 
 
 def main():

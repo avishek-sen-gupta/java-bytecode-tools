@@ -9,7 +9,7 @@ Four composable passes, each a pure function tree → tree:
 
 from collections import Counter
 from functools import reduce
-from typing import TypedDict
+from typing import TypedDict, cast
 
 from ftrace_types import (
     ClusterAssignment,
@@ -151,9 +151,9 @@ def _is_leaf_node(node: MethodCFG) -> bool:
 def merge_stmts_pass(tree: MethodCFG) -> MethodCFG:
     """Pass 1: Add mergedStmts to each block, or mergedSourceTrace. Returns new tree."""
     if _is_leaf_node(tree):
-        return dict(tree)
+        return cast(MethodCFG, dict(tree))
 
-    result = dict(tree)
+    result: dict = dict(tree)
 
     if "blocks" in tree:
         result["blocks"] = [
@@ -161,16 +161,16 @@ def merge_stmts_pass(tree: MethodCFG) -> MethodCFG:
             for block in tree["blocks"]
         ]
     elif "sourceTrace" in tree:
-        metadata = {
-            **result.get("metadata", {}),
-            "mergedSourceTrace": merge_source_trace(tree["sourceTrace"]),
+        metadata: dict[str, object] = {
+            **tree.get(_F_METADATA, {}),
+            _F_MERGED_SOURCE_TRACE: merge_source_trace(tree["sourceTrace"]),
         }
-        result["metadata"] = metadata
+        result[_F_METADATA] = metadata
 
     if "children" in tree:
         result["children"] = [merge_stmts_pass(child) for child in tree["children"]]
 
-    return result
+    return cast(MethodCFG, result)
 
 
 def assign_trap_clusters(
@@ -190,19 +190,20 @@ def assign_trap_clusters(
         acc: dict[str, ClusterAssignment], indexed_trap: tuple[int, RawTrap]
     ) -> dict[str, ClusterAssignment]:
         i, trap = indexed_trap
-        covered = {
-            bid: {"kind": ClusterRole.TRY, "trapIndex": i}
+        covered: dict[str, ClusterAssignment] = {
+            bid: ClusterAssignment(kind=ClusterRole.TRY, trapIndex=i)
             for bid in trap.get("coveredBlocks", [])
             if bid not in all_handler_bids and bid not in acc
         }
-        handlers = {
-            bid: {"kind": ClusterRole.HANDLER, "trapIndex": i}
+        handlers: dict[str, ClusterAssignment] = {
+            bid: ClusterAssignment(kind=ClusterRole.HANDLER, trapIndex=i)
             for bid in trap.get("handlerBlocks", [])
             if bid not in acc and bid not in covered
         }
         return {**acc, **covered, **handlers}
 
-    return reduce(_fold_trap, enumerate(traps), {})
+    initial: dict[str, ClusterAssignment] = {}
+    return reduce(_fold_trap, enumerate(traps), initial)
 
 
 def blocks_for_cluster(
@@ -219,21 +220,21 @@ def blocks_for_cluster(
 def assign_clusters_pass(tree: MethodCFG) -> MethodCFG:
     """Pass 2: Add clusterAssignment to each method node. Returns new tree."""
     if _is_leaf_node(tree):
-        return dict(tree)
+        return cast(MethodCFG, dict(tree))
 
-    result = dict(tree)
+    result: dict = dict(tree)
 
     if "traps" in tree:
-        metadata = {
-            **result.get("metadata", {}),
-            "clusterAssignment": assign_trap_clusters(tree.get("traps", [])),
+        metadata: dict[str, object] = {
+            **tree.get(_F_METADATA, {}),
+            _F_CLUSTER_ASSIGNMENT: assign_trap_clusters(tree.get("traps", [])),
         }
-        result["metadata"] = metadata
+        result[_F_METADATA] = metadata
 
     if "children" in tree:
         result["children"] = [assign_clusters_pass(child) for child in tree["children"]]
 
-    return result
+    return cast(MethodCFG, result)
 
 
 def block_content_signature(block: RawBlock) -> str:
@@ -306,22 +307,29 @@ def compute_block_aliases(
 def deduplicate_blocks_pass(tree: MethodCFG) -> MethodCFG:
     """Pass 3: Add blockAliases to each method node. Returns new tree."""
     if _is_leaf_node(tree):
-        return dict(tree)
+        return cast(MethodCFG, dict(tree))
 
-    result = dict(tree)
+    result: dict = dict(tree)
 
     if "blocks" in tree:
-        cluster_assignment = tree.get("metadata", {}).get("clusterAssignment", {})
+        tree_metadata = tree.get(_F_METADATA, {})
+        cluster_assignment = cast(
+            dict[str, ClusterAssignment],
+            tree_metadata.get(_F_CLUSTER_ASSIGNMENT, {}),
+        )
         aliases = compute_block_aliases(tree.get("blocks", []), cluster_assignment)
-        metadata = {**result.get("metadata", {}), "blockAliases": aliases}
-        result["metadata"] = metadata
+        metadata: dict[str, object] = {
+            **tree_metadata,
+            _F_BLOCK_ALIASES: aliases,
+        }
+        result[_F_METADATA] = metadata
 
     if "children" in tree:
         result["children"] = [
             deduplicate_blocks_pass(child) for child in tree["children"]
         ]
 
-    return result
+    return cast(MethodCFG, result)
 
 
 def _format_call(c: str) -> str:
@@ -544,12 +552,15 @@ def _build_trap_clusters(
     }
 
     handler_entry_nid = block_first.get(trap["handler"], "")
-    handler_cluster: SemanticCluster = {
-        "trapType": etype,
-        "role": ClusterRole.HANDLER,
-        "nodeIds": handler_nids,
-        **({"entryNodeId": handler_entry_nid} if handler_entry_nid else {}),
-    }
+    handler_cluster: SemanticCluster = cast(
+        SemanticCluster,
+        {
+            "trapType": etype,
+            "role": ClusterRole.HANDLER,
+            "nodeIds": handler_nids,
+            **({"entryNodeId": handler_entry_nid} if handler_entry_nid else {}),
+        },
+    )
 
     clusters = [try_cluster, handler_cluster]
 
@@ -570,19 +581,17 @@ def _build_trap_clusters(
         if handler_entry_nid
         else ""
     )
-    exception_edges = (
-        [
-            {
-                "from": src_nid,
-                "to": handler_entry_nid,
-                "trapType": etype,
-                "fromCluster": cluster_offset,
-                "toCluster": cluster_offset + 1,
-            }
-        ]
-        if src_nid
-        else []
+    ee = cast(
+        ExceptionEdge,
+        {
+            "from": src_nid,
+            "to": handler_entry_nid,
+            "trapType": etype,
+            "fromCluster": cluster_offset,
+            "toCluster": cluster_offset + 1,
+        },
     )
+    exception_edges: list[ExceptionEdge] = [ee] if src_nid else []
 
     return (clusters, exception_edges)
 
@@ -616,12 +625,12 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemant
     from the nodes to continue numbering for children.
     """
     if _is_leaf_node(tree):
-        return dict(tree)
+        return cast(MethodSemanticCFG, dict(tree))
 
     # sourceTrace fallback — no blocks, just a linear list of lines
     tree_metadata = tree.get(_F_METADATA, {})
     if _F_MERGED_SOURCE_TRACE in tree_metadata and _F_BLOCKS not in tree:
-        merged = tree_metadata[_F_MERGED_SOURCE_TRACE]
+        merged = cast(list[MergedStmt], tree_metadata[_F_MERGED_SOURCE_TRACE])
         all_nodes: list[SemanticNode] = [
             {
                 "id": f"n{next_id + i}",
@@ -652,7 +661,7 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemant
                 build_semantic_graph_pass(child, node_counter + i * 100)
                 for i, child in enumerate(tree[_F_CHILDREN])
             ]
-        return result
+        return cast(MethodSemanticCFG, result)
 
     # Resolve inputs from raw tree fields
     resolved = _resolve_inputs(tree, tree_metadata)
@@ -713,7 +722,7 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemant
             for i, child in enumerate(tree[_F_CHILDREN])
         ]
 
-    return result
+    return cast(MethodSemanticCFG, result)
 
 
 def transform(tree: MethodCFG) -> MethodSemanticCFG:

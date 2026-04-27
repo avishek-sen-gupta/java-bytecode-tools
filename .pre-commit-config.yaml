@@ -28,6 +28,18 @@ repos:
         types: [file]
         stages: [pre-commit]
 
+  # Python type checking (production code only)
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        entry: bash -c 'cd python && uv run --with pyright pyright .'
+        language: system
+        files: ^python/.*\.py$
+        exclude: ^python/tests/
+        pass_filenames: false
+        types: [python]
+
   # Tests
   - repo: local
     hooks:

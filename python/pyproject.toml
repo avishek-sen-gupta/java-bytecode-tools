@@ -18,5 +18,8 @@ ftrace-semantic = "ftrace_semantic:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.pyright]
+exclude = ["tests", ".venv"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["."]

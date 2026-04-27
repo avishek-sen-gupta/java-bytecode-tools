@@ -84,6 +84,25 @@ class _ClusterBuildResult(TypedDict):
     exception_edges: list[ExceptionEdge]
 
 
+class _ResolvedEdge(TypedDict):
+    """A raw edge resolved to node IDs with provenance."""
+
+    from_nid: NodeId
+    to_nid: NodeId
+    label: str
+    to_block: BlockId
+
+
+class _GraphBuildResult(TypedDict):
+    """Combined output of source-trace or blocks builder for assembly."""
+
+    nodes: list[SemanticNode]
+    edges: list[SemanticEdge]
+    clusters: list[SemanticCluster]
+    exception_edges: list[ExceptionEdge]
+    node_counter: int
+
+
 def _resolve_inputs(tree: MethodCFG, tree_metadata: dict) -> _ResolvedInput:
     """Extract and normalize raw inputs for the semantic graph builders."""
     return {
@@ -467,92 +486,112 @@ def _build_intra_block_edges(
     ]
 
 
+def _resolve_edge_triples(
+    raw_edges: list[RawBlockEdge],
+    block_first: dict[BlockId, NodeId],
+    block_last: dict[BlockId, NodeId],
+    aliased_blocks: frozenset[BlockId],
+) -> list[_ResolvedEdge]:
+    """Stage 1: Filter and resolve raw edges to (from_nid, to_nid, label, to_block) tuples.
+
+    Drops edges from aliased blocks, missing nodes, and self-loops.
+    """
+    return [
+        {
+            "from_nid": block_last.get(e["fromBlock"], ""),
+            "to_nid": block_first.get(e["toBlock"], ""),
+            "label": e.get("label", ""),
+            "to_block": e["toBlock"],
+        }
+        for e in raw_edges
+        if e["fromBlock"] not in aliased_blocks
+        and block_last.get(e["fromBlock"], "")
+        and block_first.get(e["toBlock"], "")
+        and block_last.get(e["fromBlock"], "") != block_first.get(e["toBlock"], "")
+    ]
+
+
+def _classify_group(group: list[_ResolvedEdge]) -> list[SemanticEdge]:
+    """Classify a group of edges sharing the same (from, to) key."""
+    from_nid, to_nid = group[0]["from_nid"], group[0]["to_nid"]
+    if len(group) == 1:
+        e = group[0]
+        return (
+            [{"from": from_nid, "to": to_nid, "branch": BranchLabel(e["label"])}]
+            if e["label"]
+            else [{"from": from_nid, "to": to_nid}]
+        )
+    to_blocks = frozenset(e["to_block"] for e in group)
+    if len(to_blocks) == 1:
+        # Natural convergence: same raw block → keep distinct labeled edges
+        unique_labels = dict.fromkeys(e["label"] for e in group)
+        return [
+            (
+                {"from": from_nid, "to": to_nid, "branch": BranchLabel(label)}
+                if label
+                else {"from": from_nid, "to": to_nid}
+            )
+            for label in unique_labels
+        ]
+    # Aliasing-induced convergence: different blocks → single unlabeled edge
+    return [{"from": from_nid, "to": to_nid}]
+
+
+def _classify_convergence(resolved_edges: list[_ResolvedEdge]) -> list[SemanticEdge]:
+    """Stage 2: Group edges by (from, to) and classify natural vs aliasing convergence."""
+    groups = reduce(
+        lambda acc, e: {
+            **acc,
+            (e["from_nid"], e["to_nid"]): [
+                *acc.get((e["from_nid"], e["to_nid"]), []),
+                e,
+            ],
+        },
+        resolved_edges,
+        cast(dict[tuple[str, str], list[_ResolvedEdge]], {}),
+    )
+    return [edge for group in groups.values() for edge in _classify_group(group)]
+
+
+def _suppress_reverse_edges(
+    edges: list[SemanticEdge],
+    shared_nids: frozenset[NodeId],
+) -> list[SemanticEdge]:
+    """Stage 3: Suppress reverse-direction unlabeled edges at shared nodes."""
+
+    def fold(
+        acc: tuple[list[SemanticEdge], frozenset[tuple[str, str]]],
+        e: SemanticEdge,
+    ) -> tuple[list[SemanticEdge], frozenset[tuple[str, str]]]:
+        result, seen = acc
+        key = (e["from"], e["to"])
+        reverse = (e["to"], e["from"])
+        if (
+            "branch" not in e
+            and reverse in seen
+            and (e["from"] in shared_nids or e["to"] in shared_nids)
+        ):
+            return (result, seen | {key})
+        return ([*result, e], seen | {key})
+
+    result, _ = reduce(fold, edges, ([], frozenset()))
+    return result
+
+
 def _build_inter_block_edges(
     raw_edges: list[RawBlockEdge],
     block_first: dict[BlockId, NodeId],
     block_last: dict[BlockId, NodeId],
     block_aliases: dict[BlockId, BlockId],
 ) -> list[SemanticEdge]:
-    """Build edges between blocks from raw CFG edges. Deduplicates and suppresses self-loops.
-
-    Edges originating from aliased blocks are dropped — the canonical block's
-    edges already cover the shared node. This prevents excess outgoing edges
-    and conflicting labels when multiple blocks alias to the same canonical.
-    """
+    """Build edges between blocks via 3-stage pipeline: resolve → classify → suppress."""
     aliased_blocks = frozenset(block_aliases.keys())
     nid_block_count = Counter(nid for nid in block_first.values())
     shared_nids = frozenset(nid for nid, c in nid_block_count.items() if c > 1)
 
-    def fold_edge(
-        acc: tuple[list[SemanticEdge], dict[tuple[str, str], tuple[str, str]]],
-        raw_edge: RawBlockEdge,
-    ) -> tuple[list[SemanticEdge], dict[tuple[str, str], tuple[str, str]]]:
-        edges, emitted = acc
-
-        # Skip edges from aliased blocks — canonical block's edges suffice
-        if raw_edge["fromBlock"] in aliased_blocks:
-            return (edges, emitted)
-
-        tail_nid = block_last.get(raw_edge["fromBlock"], "")
-        succ_nid = block_first.get(raw_edge["toBlock"], "")
-        to_block = raw_edge["toBlock"]
-        if not tail_nid or not succ_nid or tail_nid == succ_nid:
-            return (edges, emitted)
-
-        key = (tail_nid, succ_nid)
-        reverse = (succ_nid, tail_nid)
-        label = raw_edge.get("label", "")
-
-        if key in emitted:
-            prev_label, prev_to_block = emitted[key]
-            # When both T and F target the same raw block, keep both labeled edges
-            # But if they target different blocks (aliasing), collapse to unlabeled
-            if label and prev_label and label != prev_label:
-                if to_block == prev_to_block:
-                    # Natural convergence: both edges to same block → keep both labels
-                    return (
-                        [
-                            *edges,
-                            {
-                                "from": tail_nid,
-                                "to": succ_nid,
-                                "branch": BranchLabel(label),
-                            },
-                        ],
-                        {**emitted, key: (f"{prev_label},{label}", to_block)},
-                    )
-                else:
-                    # Aliasing-induced convergence: edges to different blocks → collapse to unlabeled
-                    unlabeled: SemanticEdge = {"from": tail_nid, "to": succ_nid}
-                    new_edges: list[SemanticEdge] = [
-                        (
-                            unlabeled
-                            if e["from"] == tail_nid and e["to"] == succ_nid
-                            else e
-                        )
-                        for e in edges
-                    ]
-                    return (new_edges, {**emitted, key: ("", to_block)})
-            return (edges, emitted)
-
-        if label:
-            return (
-                [
-                    *edges,
-                    {"from": tail_nid, "to": succ_nid, "branch": BranchLabel(label)},
-                ],
-                {**emitted, key: (label, to_block)},
-            )
-
-        if reverse in emitted and (tail_nid in shared_nids or succ_nid in shared_nids):
-            return (edges, emitted)
-        return (
-            [*edges, {"from": tail_nid, "to": succ_nid}],
-            {**emitted, key: ("", to_block)},
-        )
-
-    result_edges, _ = reduce(fold_edge, raw_edges, ([], {}))
-    return result_edges
+    resolved = _resolve_edge_triples(raw_edges, block_first, block_last, aliased_blocks)
+    classified = _classify_convergence(resolved)
+    return _suppress_reverse_edges(classified, shared_nids)
 
 
 def _build_edges(
@@ -656,115 +695,109 @@ def _build_clusters(
     return {"clusters": all_clusters, "exception_edges": all_exception_edges}
 
 
-def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemanticCFG:
-    """Pass 4: Build semantic graph from enriched tree. Returns new tree.
-
-    Consumes blocks, traps, mergedStmts, clusterAssignment, blockAliases.
-    Emits nodes, edges, clusters, exceptionEdges. Drops raw fields.
-
-    next_id: starting node ID counter (for unique IDs across the tree).
-    Returns the transformed tree. The caller can read the highest node ID
-    from the nodes to continue numbering for children.
-    """
-    if _is_leaf_node(tree):
-        return cast(MethodSemanticCFG, dict(tree))
-
-    # sourceTrace fallback — no blocks, just a linear list of lines
-    tree_metadata = tree.get(_F_METADATA, {})
-    if _F_MERGED_SOURCE_TRACE in tree_metadata and _F_BLOCKS not in tree:
-        merged = cast(list[MergedStmt], tree_metadata[_F_MERGED_SOURCE_TRACE])
-        all_nodes: list[SemanticNode] = [
-            {
-                "id": f"n{next_id + i}",
-                "lines": [entry["line"]],
-                "kind": classify_node_kind(entry),
-                "label": make_node_label(entry),
-            }
-            for i, entry in enumerate(merged)
-        ]
-        all_edges: list[SemanticEdge] = [
-            {"from": all_nodes[i]["id"], "to": all_nodes[i + 1]["id"]}
-            for i in range(len(all_nodes) - 1)
-        ]
-        node_counter = next_id + len(all_nodes)
-
-        drop_fields = {_F_SOURCE_TRACE, _F_METADATA}
-        result = {
-            k: v for k, v in tree.items() if k not in drop_fields and k != _F_CHILDREN
+def _build_from_source_trace(
+    merged: list[MergedStmt], next_id: int
+) -> _GraphBuildResult:
+    """Build a linear node chain from merged source trace entries."""
+    all_nodes: list[SemanticNode] = [
+        {
+            "id": f"n{next_id + i}",
+            "lines": [entry["line"]],
+            "kind": classify_node_kind(entry),
+            "label": make_node_label(entry),
         }
-        result["nodes"] = all_nodes
-        result["edges"] = all_edges
-        result["clusters"] = []
-        result["exceptionEdges"] = []
-        if all_nodes:
-            result["entryNodeId"] = all_nodes[0]["id"]
-        if _F_CHILDREN in tree:
-            result[_F_CHILDREN] = [
-                build_semantic_graph_pass(child, node_counter + i * 100)
-                for i, child in enumerate(tree[_F_CHILDREN])
-            ]
-        return cast(MethodSemanticCFG, result)
+        for i, entry in enumerate(merged)
+    ]
+    all_edges: list[SemanticEdge] = [
+        {"from": all_nodes[i]["id"], "to": all_nodes[i + 1]["id"]}
+        for i in range(len(all_nodes) - 1)
+    ]
+    return {
+        "nodes": all_nodes,
+        "edges": all_edges,
+        "clusters": [],
+        "exception_edges": [],
+        "node_counter": next_id + len(all_nodes),
+    }
 
-    # Resolve inputs from raw tree fields
+
+def _build_from_blocks(
+    tree: MethodCFG, tree_metadata: dict, next_id: int
+) -> _GraphBuildResult:
+    """Build full CFG from blocks, edges, traps, and cluster assignments."""
     resolved = _resolve_inputs(tree, tree_metadata)
 
-    # Build nodes: semantic nodes and block→node mappings
     node_build = _build_nodes(resolved["blocks"], resolved["block_aliases"], next_id)
-    all_nodes = node_build["nodes"]
-    block_first = node_build["block_first"]
-    block_last = node_build["block_last"]
-    bid_to_nids = node_build["bid_to_nids"]
-    node_counter = node_build["node_counter"]
-
-    # Build edges: intra-block and inter-block
     edge_build = _build_edges(
         resolved["edges"],
-        block_first,
-        block_last,
-        bid_to_nids,
+        node_build["block_first"],
+        node_build["block_last"],
+        node_build["bid_to_nids"],
         resolved["block_aliases"],
     )
-    all_edges = edge_build["edges"]
-
-    # Build clusters: exception handling clusters and edges
     cluster_build = _build_clusters(
         resolved["traps"],
         resolved["cluster_assignment"],
-        bid_to_nids,
-        block_first,
+        node_build["bid_to_nids"],
+        node_build["block_first"],
     )
-    all_clusters = cluster_build["clusters"]
-    exception_edges = cluster_build["exception_edges"]
-
-    # --- Assemble result ---
-    # Drop raw/intermediate fields, keep tree metadata
-    drop_fields = {
-        _F_BLOCKS,
-        _F_EDGES,
-        _F_TRAPS,
-        _F_METADATA,
-        _F_SOURCE_TRACE,
+    return {
+        "nodes": node_build["nodes"],
+        "edges": edge_build["edges"],
+        "clusters": cluster_build["clusters"],
+        "exception_edges": cluster_build["exception_edges"],
+        "node_counter": node_build["node_counter"],
     }
+
+
+def _assemble_result(
+    tree: MethodCFG,
+    build_result: _GraphBuildResult,
+    drop_fields: frozenset[str],
+) -> MethodSemanticCFG:
+    """Assemble final result dict: drop raw fields, add semantic fields, recurse children."""
     result = {
         k: v for k, v in tree.items() if k not in drop_fields and k != _F_CHILDREN
     }
-    result["nodes"] = all_nodes
-    result["edges"] = all_edges
-    result["clusters"] = all_clusters
-    result["exceptionEdges"] = exception_edges
-
-    # Set entryNodeId for cross-cluster call edges from parent
-    if all_nodes:
-        result["entryNodeId"] = all_nodes[0]["id"]
-
-    # Recurse into children
+    result["nodes"] = build_result["nodes"]
+    result["edges"] = build_result["edges"]
+    result["clusters"] = build_result["clusters"]
+    result["exceptionEdges"] = build_result["exception_edges"]
+    if build_result["nodes"]:
+        result["entryNodeId"] = build_result["nodes"][0]["id"]
     if _F_CHILDREN in tree:
+        node_counter = build_result["node_counter"]
         result[_F_CHILDREN] = [
             build_semantic_graph_pass(child, node_counter + i * 100)
             for i, child in enumerate(tree[_F_CHILDREN])
         ]
-
     return cast(MethodSemanticCFG, result)
+
+
+_DROP_SOURCE_TRACE = frozenset({_F_SOURCE_TRACE, _F_METADATA})
+_DROP_BLOCKS = frozenset({_F_BLOCKS, _F_EDGES, _F_TRAPS, _F_METADATA, _F_SOURCE_TRACE})
+
+
+def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemanticCFG:
+    """Pass 4: Build semantic graph from enriched tree. Returns new tree.
+
+    Dispatches to _build_from_source_trace or _build_from_blocks,
+    then assembles the result via _assemble_result.
+    """
+    if _is_leaf_node(tree):
+        return cast(MethodSemanticCFG, dict(tree))
+
+    tree_metadata = tree.get(_F_METADATA, {})
+    if _F_MERGED_SOURCE_TRACE in tree_metadata and _F_BLOCKS not in tree:
+        build_result = _build_from_source_trace(
+            cast(list[MergedStmt], tree_metadata[_F_MERGED_SOURCE_TRACE]),
+            next_id,
+        )
+        return _assemble_result(tree, build_result, _DROP_SOURCE_TRACE)
+
+    return _assemble_result(
+        tree, _build_from_blocks(tree, tree_metadata, next_id), _DROP_BLOCKS
+    )
 
 
 def transform(tree: MethodCFG) -> tuple[MethodSemanticCFG, list[Violation]]:

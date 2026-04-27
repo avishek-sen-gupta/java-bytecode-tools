@@ -834,3 +834,504 @@ class TestTransform:
         assert result.get("ref") is True
         assert "nodes" not in result
         assert violations == []
+
+
+class TestBuildFromSourceTrace:
+    def test_linear_nodes_and_sequential_edges(self):
+        from ftrace_semantic import _build_from_source_trace
+
+        merged = [
+            {"line": 5, "calls": [], "branches": [], "assigns": []},
+            {"line": 8, "calls": ["Foo.bar"], "branches": [], "assigns": []},
+            {"line": 12, "calls": [], "branches": [], "assigns": []},
+        ]
+        result = _build_from_source_trace(merged, 0)
+        assert len(result["nodes"]) == 3
+        assert len(result["edges"]) == 2
+        assert result["edges"][0]["from"] == result["nodes"][0]["id"]
+        assert result["edges"][0]["to"] == result["nodes"][1]["id"]
+        assert result["edges"][1]["from"] == result["nodes"][1]["id"]
+        assert result["edges"][1]["to"] == result["nodes"][2]["id"]
+
+    def test_node_kinds_and_labels(self):
+        from ftrace_semantic import _build_from_source_trace
+
+        merged = [
+            {"line": 5, "calls": [], "branches": [], "assigns": []},
+            {"line": 8, "calls": ["Foo.bar"], "branches": [], "assigns": []},
+        ]
+        result = _build_from_source_trace(merged, 0)
+        assert result["nodes"][0]["kind"] == NodeKind.PLAIN
+        assert result["nodes"][1]["kind"] == NodeKind.CALL
+        assert result["nodes"][0]["lines"] == [5]
+        assert result["nodes"][1]["lines"] == [8]
+
+    def test_node_ids_respect_next_id(self):
+        from ftrace_semantic import _build_from_source_trace
+
+        merged = [{"line": 5, "calls": [], "branches": [], "assigns": []}]
+        result = _build_from_source_trace(merged, 42)
+        assert result["nodes"][0]["id"] == "n42"
+        assert result["node_counter"] == 43
+
+    def test_empty_source_trace(self):
+        from ftrace_semantic import _build_from_source_trace
+
+        result = _build_from_source_trace([], 0)
+        assert result["nodes"] == []
+        assert result["edges"] == []
+        assert result["clusters"] == []
+        assert result["exception_edges"] == []
+
+    def test_does_not_mutate_input(self):
+        import copy
+
+        from ftrace_semantic import _build_from_source_trace
+
+        merged = [
+            {"line": 5, "calls": [], "branches": [], "assigns": []},
+            {"line": 10, "calls": ["Foo.bar"], "branches": [], "assigns": []},
+        ]
+        original = copy.deepcopy(merged)
+        _build_from_source_trace(merged, 0)
+        assert merged == original
+
+
+class TestBuildFromBlocks:
+    def test_produces_nodes_and_edges(self):
+        from ftrace_semantic import _build_from_blocks
+
+        tree = {
+            "blocks": [
+                {
+                    "id": "B0",
+                    "stmts": [],
+                    "mergedStmts": [
+                        {"line": 5, "calls": [], "branches": [], "assigns": []}
+                    ],
+                },
+                {
+                    "id": "B1",
+                    "stmts": [],
+                    "mergedStmts": [
+                        {
+                            "line": 10,
+                            "calls": ["Foo.bar"],
+                            "branches": [],
+                            "assigns": [],
+                        }
+                    ],
+                },
+            ],
+            "edges": [{"fromBlock": "B0", "toBlock": "B1"}],
+            "traps": [],
+        }
+        metadata = {"clusterAssignment": {}, "blockAliases": {}}
+        result = _build_from_blocks(tree, metadata, 0)
+        assert len(result["nodes"]) == 2
+        assert any(
+            e["from"] == result["nodes"][0]["id"]
+            and e["to"] == result["nodes"][1]["id"]
+            for e in result["edges"]
+        )
+
+    def test_includes_clusters_when_traps_present(self):
+        from ftrace_semantic import _build_from_blocks
+
+        tree = {
+            "blocks": [
+                {
+                    "id": "B0",
+                    "stmts": [],
+                    "mergedStmts": [
+                        {"line": 5, "calls": [], "branches": [], "assigns": []}
+                    ],
+                },
+                {
+                    "id": "B1",
+                    "stmts": [],
+                    "mergedStmts": [
+                        {"line": 10, "calls": [], "branches": [], "assigns": []}
+                    ],
+                },
+            ],
+            "edges": [],
+            "traps": [
+                {
+                    "type": "java.lang.Exception",
+                    "handler": "B1",
+                    "coveredBlocks": ["B0"],
+                    "handlerBlocks": ["B1"],
+                }
+            ],
+        }
+        metadata = {
+            "clusterAssignment": {
+                "B0": {"kind": "try", "trapIndex": 0},
+                "B1": {"kind": "handler", "trapIndex": 0},
+            },
+            "blockAliases": {},
+        }
+        result = _build_from_blocks(tree, metadata, 0)
+        assert len(result["clusters"]) >= 1
+
+    def test_returns_correct_node_counter(self):
+        from ftrace_semantic import _build_from_blocks
+
+        tree = {
+            "blocks": [
+                {
+                    "id": "B0",
+                    "stmts": [],
+                    "mergedStmts": [
+                        {"line": 5, "calls": [], "branches": [], "assigns": []}
+                    ],
+                },
+            ],
+            "edges": [],
+            "traps": [],
+        }
+        metadata = {"clusterAssignment": {}, "blockAliases": {}}
+        result = _build_from_blocks(tree, metadata, 0)
+        assert result["node_counter"] >= 1
+
+    def test_does_not_mutate_input(self):
+        import copy
+
+        from ftrace_semantic import _build_from_blocks
+
+        tree = {
+            "blocks": [
+                {
+                    "id": "B0",
+                    "stmts": [],
+                    "mergedStmts": [
+                        {"line": 5, "calls": [], "branches": [], "assigns": []}
+                    ],
+                },
+            ],
+            "edges": [],
+            "traps": [],
+        }
+        metadata = {"clusterAssignment": {}, "blockAliases": {}}
+        original_tree = copy.deepcopy(tree)
+        original_meta = copy.deepcopy(metadata)
+        _build_from_blocks(tree, metadata, 0)
+        assert tree == original_tree
+        assert metadata == original_meta
+
+
+class TestAssembleResult:
+    def test_drops_specified_fields(self):
+        from ftrace_semantic import _assemble_result
+
+        tree = {
+            "class": "Svc",
+            "method": "run",
+            "blocks": [{"id": "B0"}],
+            "traps": [],
+            "metadata": {"stuff": True},
+        }
+        build_result = {
+            "nodes": [],
+            "edges": [],
+            "clusters": [],
+            "exception_edges": [],
+            "node_counter": 0,
+        }
+        result = _assemble_result(
+            tree, build_result, frozenset({"blocks", "traps", "metadata"})
+        )
+        assert "blocks" not in result
+        assert "traps" not in result
+        assert "metadata" not in result
+
+    def test_preserves_identity_fields(self):
+        from ftrace_semantic import _assemble_result
+
+        tree = {
+            "class": "Svc",
+            "method": "run",
+            "methodSignature": "sig",
+            "lineStart": 1,
+            "lineEnd": 10,
+        }
+        build_result = {
+            "nodes": [],
+            "edges": [],
+            "clusters": [],
+            "exception_edges": [],
+            "node_counter": 0,
+        }
+        result = _assemble_result(tree, build_result, frozenset())
+        assert result["method"] == "run"
+        assert result["methodSignature"] == "sig"
+        assert result["lineStart"] == 1
+        assert result["lineEnd"] == 10
+
+    def test_sets_entry_node_id_when_nodes_present(self):
+        from ftrace_semantic import _assemble_result
+
+        tree = {"class": "Svc", "method": "run"}
+        build_result = {
+            "nodes": [
+                {"id": "n0", "lines": [5], "kind": NodeKind.PLAIN, "label": ["L5"]},
+                {"id": "n1", "lines": [10], "kind": NodeKind.PLAIN, "label": ["L10"]},
+            ],
+            "edges": [],
+            "clusters": [],
+            "exception_edges": [],
+            "node_counter": 2,
+        }
+        result = _assemble_result(tree, build_result, frozenset())
+        assert result["entryNodeId"] == "n0"
+
+    def test_no_entry_node_id_when_no_nodes(self):
+        from ftrace_semantic import _assemble_result
+
+        tree = {"class": "Svc", "method": "run"}
+        build_result = {
+            "nodes": [],
+            "edges": [],
+            "clusters": [],
+            "exception_edges": [],
+            "node_counter": 0,
+        }
+        result = _assemble_result(tree, build_result, frozenset())
+        assert "entryNodeId" not in result
+
+    def test_recurses_children(self):
+        from ftrace_semantic import _assemble_result
+
+        child = {
+            "class": "Svc",
+            "method": "inner",
+            "methodSignature": "sig",
+            "ref": True,
+        }
+        tree = {"class": "Svc", "method": "run", "children": [child]}
+        build_result = {
+            "nodes": [
+                {"id": "n0", "lines": [5], "kind": NodeKind.PLAIN, "label": ["L5"]},
+            ],
+            "edges": [],
+            "clusters": [],
+            "exception_edges": [],
+            "node_counter": 1,
+        }
+        result = _assemble_result(tree, build_result, frozenset())
+        assert "children" in result
+        assert len(result["children"]) == 1
+        assert result["children"][0]["method"] == "inner"
+
+
+class TestResolveEdgeTriples:
+    def test_resolves_block_ids_to_node_ids(self):
+        from ftrace_semantic import _resolve_edge_triples
+
+        raw_edges = [{"fromBlock": "B0", "toBlock": "B1"}]
+        result = _resolve_edge_triples(
+            raw_edges,
+            block_first={"B0": "n0", "B1": "n1"},
+            block_last={"B0": "n0", "B1": "n1"},
+            aliased_blocks=frozenset(),
+        )
+        assert len(result) == 1
+        assert result[0]["from_nid"] == "n0"
+        assert result[0]["to_nid"] == "n1"
+        assert result[0]["to_block"] == "B1"
+
+    def test_filters_aliased_block_edges(self):
+        from ftrace_semantic import _resolve_edge_triples
+
+        raw_edges = [
+            {"fromBlock": "B0", "toBlock": "B1"},
+            {"fromBlock": "B2", "toBlock": "B1"},
+        ]
+        result = _resolve_edge_triples(
+            raw_edges,
+            block_first={"B0": "n0", "B1": "n1", "B2": "n0"},
+            block_last={"B0": "n0", "B1": "n1", "B2": "n0"},
+            aliased_blocks=frozenset({"B2"}),
+        )
+        assert len(result) == 1
+        assert result[0]["from_nid"] == "n0"
+
+    def test_filters_missing_node_edges(self):
+        from ftrace_semantic import _resolve_edge_triples
+
+        raw_edges = [{"fromBlock": "B0", "toBlock": "B_missing"}]
+        result = _resolve_edge_triples(
+            raw_edges,
+            block_first={"B0": "n0"},
+            block_last={"B0": "n0"},
+            aliased_blocks=frozenset(),
+        )
+        assert result == []
+
+    def test_filters_self_loops(self):
+        from ftrace_semantic import _resolve_edge_triples
+
+        raw_edges = [{"fromBlock": "B0", "toBlock": "B1"}]
+        result = _resolve_edge_triples(
+            raw_edges,
+            block_first={"B0": "n0", "B1": "n0"},
+            block_last={"B0": "n0", "B1": "n0"},
+            aliased_blocks=frozenset(),
+        )
+        assert result == []
+
+    def test_preserves_label(self):
+        from ftrace_semantic import _resolve_edge_triples
+
+        raw_edges = [{"fromBlock": "B0", "toBlock": "B1", "label": "T"}]
+        result = _resolve_edge_triples(
+            raw_edges,
+            block_first={"B0": "n0", "B1": "n1"},
+            block_last={"B0": "n0", "B1": "n1"},
+            aliased_blocks=frozenset(),
+        )
+        assert result[0]["label"] == "T"
+
+    def test_preserves_edge_order(self):
+        from ftrace_semantic import _resolve_edge_triples
+
+        raw_edges = [
+            {"fromBlock": "B0", "toBlock": "B1"},
+            {"fromBlock": "B0", "toBlock": "B2"},
+        ]
+        result = _resolve_edge_triples(
+            raw_edges,
+            block_first={"B0": "n0", "B1": "n1", "B2": "n2"},
+            block_last={"B0": "n0", "B1": "n1", "B2": "n2"},
+            aliased_blocks=frozenset(),
+        )
+        assert result[0]["to_nid"] == "n1"
+        assert result[1]["to_nid"] == "n2"
+
+    def test_does_not_mutate_input(self):
+        import copy
+
+        from ftrace_semantic import _resolve_edge_triples
+
+        raw_edges = [{"fromBlock": "B0", "toBlock": "B1", "label": "T"}]
+        original = copy.deepcopy(raw_edges)
+        _resolve_edge_triples(
+            raw_edges,
+            block_first={"B0": "n0", "B1": "n1"},
+            block_last={"B0": "n0", "B1": "n1"},
+            aliased_blocks=frozenset(),
+        )
+        assert raw_edges == original
+
+
+class TestClassifyConvergence:
+    def test_single_labeled_edge_kept(self):
+        from ftrace_semantic import _classify_convergence
+
+        resolved = [{"from_nid": "n0", "to_nid": "n1", "label": "T", "to_block": "B1"}]
+        result = _classify_convergence(resolved)
+        assert len(result) == 1
+        assert result[0]["from"] == "n0"
+        assert result[0]["to"] == "n1"
+        assert result[0]["branch"] == "T"
+
+    def test_single_unlabeled_edge_kept(self):
+        from ftrace_semantic import _classify_convergence
+
+        resolved = [{"from_nid": "n0", "to_nid": "n1", "label": "", "to_block": "B1"}]
+        result = _classify_convergence(resolved)
+        assert len(result) == 1
+        assert result[0]["from"] == "n0"
+        assert result[0]["to"] == "n1"
+        assert "branch" not in result[0]
+
+    def test_natural_convergence_keeps_both_labels(self):
+        from ftrace_semantic import _classify_convergence
+
+        resolved = [
+            {"from_nid": "n0", "to_nid": "n1", "label": "T", "to_block": "B1"},
+            {"from_nid": "n0", "to_nid": "n1", "label": "F", "to_block": "B1"},
+        ]
+        result = _classify_convergence(resolved)
+        assert len(result) == 2
+        labels = {e["branch"] for e in result}
+        assert labels == {"T", "F"}
+
+    def test_aliasing_convergence_collapses_to_unlabeled(self):
+        from ftrace_semantic import _classify_convergence
+
+        resolved = [
+            {"from_nid": "n0", "to_nid": "n1", "label": "T", "to_block": "B1"},
+            {"from_nid": "n0", "to_nid": "n1", "label": "F", "to_block": "B2"},
+        ]
+        result = _classify_convergence(resolved)
+        assert len(result) == 1
+        assert result[0]["from"] == "n0"
+        assert result[0]["to"] == "n1"
+        assert "branch" not in result[0]
+
+    def test_multiple_independent_groups(self):
+        from ftrace_semantic import _classify_convergence
+
+        resolved = [
+            {"from_nid": "n0", "to_nid": "n1", "label": "T", "to_block": "B1"},
+            {"from_nid": "n0", "to_nid": "n2", "label": "F", "to_block": "B2"},
+        ]
+        result = _classify_convergence(resolved)
+        assert len(result) == 2
+
+    def test_does_not_mutate_input(self):
+        import copy
+
+        from ftrace_semantic import _classify_convergence
+
+        resolved = [
+            {"from_nid": "n0", "to_nid": "n1", "label": "T", "to_block": "B1"},
+        ]
+        original = copy.deepcopy(resolved)
+        _classify_convergence(resolved)
+        assert resolved == original
+
+
+class TestSuppressReverseEdges:
+    def test_suppresses_reverse_at_shared_node(self):
+        from ftrace_semantic import _suppress_reverse_edges
+
+        edges = [
+            {"from": "n0", "to": "n1"},
+            {"from": "n1", "to": "n0"},
+        ]
+        result = _suppress_reverse_edges(edges, shared_nids=frozenset({"n0"}))
+        assert len(result) == 1
+        assert result[0]["from"] == "n0"
+
+    def test_keeps_reverse_at_non_shared_node(self):
+        from ftrace_semantic import _suppress_reverse_edges
+
+        edges = [
+            {"from": "n0", "to": "n1"},
+            {"from": "n1", "to": "n0"},
+        ]
+        result = _suppress_reverse_edges(edges, shared_nids=frozenset())
+        assert len(result) == 2
+
+    def test_labeled_edges_never_suppressed(self):
+        from ftrace_semantic import _suppress_reverse_edges
+
+        edges = [
+            {"from": "n0", "to": "n1"},
+            {"from": "n1", "to": "n0", "branch": "T"},
+        ]
+        result = _suppress_reverse_edges(edges, shared_nids=frozenset({"n0"}))
+        assert len(result) == 2
+
+    def test_does_not_mutate_input(self):
+        import copy
+
+        from ftrace_semantic import _suppress_reverse_edges
+
+        edges = [{"from": "n0", "to": "n1"}, {"from": "n1", "to": "n0"}]
+        original = copy.deepcopy(edges)
+        _suppress_reverse_edges(edges, shared_nids=frozenset({"n0"}))
+        assert edges == original

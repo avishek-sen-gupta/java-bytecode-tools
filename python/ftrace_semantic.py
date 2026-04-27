@@ -9,6 +9,7 @@ Four composable passes, each a pure function tree → tree:
 
 from collections import Counter
 from functools import reduce
+from typing import TypedDict
 
 from ftrace_types import (
     ClusterAssignment,
@@ -19,6 +20,7 @@ from ftrace_types import (
     MethodSemanticCFG,
     NodeKind,
     RawBlock,
+    RawBlockEdge,
     RawStmt,
     RawTrap,
     SemanticCluster,
@@ -42,6 +44,42 @@ _F_BLOCK_ALIASES = "blockAliases"
 # --- Domain type aliases ---
 BlockId = str
 NodeId = str
+
+
+# --- Internal TypedDicts for semantic graph builder communication ---
+
+
+class _ResolvedInput(TypedDict):
+    """Normalized inputs for the semantic graph builders."""
+
+    blocks: list[RawBlock]
+    edges: list[RawBlockEdge]
+    traps: list[RawTrap]
+    cluster_assignment: dict[BlockId, ClusterAssignment]
+    block_aliases: dict[BlockId, BlockId]
+
+
+class _NodeBuildResult(TypedDict):
+    """Output of _build_nodes: semantic nodes plus block→node index maps."""
+
+    nodes: list[SemanticNode]
+    block_first: dict[BlockId, NodeId]
+    block_last: dict[BlockId, NodeId]
+    bid_to_nids: dict[BlockId, list[NodeId]]
+    node_counter: int
+
+
+class _EdgeBuildResult(TypedDict):
+    """Output of _build_edges: all semantic edges (intra-block + inter-block)."""
+
+    edges: list[SemanticEdge]
+
+
+class _ClusterBuildResult(TypedDict):
+    """Output of _build_clusters: clusters and exception edges."""
+
+    clusters: list[SemanticCluster]
+    exception_edges: list[ExceptionEdge]
 
 
 def _accumulate_stmt(acc: dict[int, MergedStmt], s: RawStmt) -> dict[int, MergedStmt]:

@@ -17,7 +17,7 @@ from ftrace_types import (
     SemanticCluster,
     SemanticEdge,
     SemanticNode,
-    TraceNode,
+    MethodCFG,
 )
 
 # -- Visual constants --
@@ -104,7 +104,7 @@ def _render_exception_edge(ee: ExceptionEdge, clusters: list[SemanticCluster]) -
     return f"    {src} -> {dst} [{attrs}];"
 
 
-def build_dot(root: TraceNode) -> str:
+def build_dot(root: MethodCFG) -> str:
     lines = [
         "digraph ftrace {",
         "  rankdir=TB;",
@@ -122,7 +122,7 @@ def build_dot(root: TraceNode) -> str:
         cluster_counter[0] += 1
         return cid
 
-    def add_method(node: TraceNode) -> str:
+    def add_method(node: MethodCFG) -> str:
         """Add a method node. Returns entry node ID."""
         cls = short_class(node.get("class", "?"))
         method = node.get("method", "?")

@@ -203,10 +203,10 @@ ExceptionEdge = TypedDict(
 
 
 # Use functional syntax for base because "class" is a reserved keyword
-_TraceNodeRequired = TypedDict("_TraceNodeRequired", {"class": str}, total=False)
+_MethodCFGRequired = TypedDict("_MethodCFGRequired", {"class": str}, total=False)
 
 
-class TraceNode(_TraceNodeRequired, total=False):
+class MethodCFG(_MethodCFGRequired, total=False):
     """Recursive trace node representing a method in the call tree.
 
     Shape changes through pipeline stages. All fields optional because
@@ -232,7 +232,7 @@ class TraceNode(_TraceNodeRequired, total=False):
     blocks: list[RawBlock]
     traps: list[RawTrap]
     sourceTrace: list[SourceTraceEntry]
-    children: list["TraceNode"]
+    children: list["MethodCFG"]
 
     # Leaf markers
     ref: bool
@@ -264,5 +264,5 @@ class SlicedTrace(TypedDict):
     - refIndex: methodSignature -> full node, scoped to refs in the slice
     """
 
-    slice: TraceNode
-    refIndex: dict[str, TraceNode]
+    slice: MethodCFG
+    refIndex: dict[str, MethodCFG]

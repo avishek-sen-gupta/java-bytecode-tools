@@ -106,3 +106,26 @@ Use the code-review-graph MCP tools before scanning files manually for codebase 
 - `get_impact_radius_tool` — understand blast radius before making changes
 
 Fall back to grep/glob/read only when the graph doesn't cover what you need.
+
+### JetBrains MCP Server (refactoring)
+
+Use the JetBrains MCP server tools for refactoring Python and Java code:
+
+- `rename_refactoring` — rename symbols with full cross-reference updates
+- `replace_text_in_file` — structured text replacements via the IDE
+- `reformat_file` — apply IDE formatting rules
+
+For navigation, semantic search, and code intelligence:
+
+- `get_symbol_info` — inspect symbol definitions, types, documentation, and usages at a given position
+- `get_symbols_overview` — list classes, methods, and fields in a file or directory
+- `get_project_modules` — explore module and dependency structure
+- `get_project_dependencies` — list project dependencies
+- `find_files_by_name_keyword` / `find_files_by_glob` — locate files by name or pattern
+- `search_in_files_by_text` / `search_in_files_by_regex` — search file contents
+- `list_directory_tree` — explore project structure
+- `get_file_text_by_path` — read file contents via the IDE
+- `get_file_problems` — show errors, warnings, and inspections for a file
+- `build_project` — compile and surface build errors
+
+Prefer JetBrains MCP tools over manual grep/glob/read for refactoring, navigation, and semantic search, as they leverage IDE indexing and handle cross-file references automatically.

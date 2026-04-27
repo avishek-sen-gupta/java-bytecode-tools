@@ -24,7 +24,7 @@ from ftrace_types import (
     SemanticEdge,
     SemanticNode,
     SourceTraceEntry,
-    TraceNode,
+    MethodCFG,
 )
 
 
@@ -68,12 +68,12 @@ def merge_source_trace(source_trace: list[SourceTraceEntry]) -> list[MergedStmt]
     return [by_line[ln] for ln in sorted(by_line)]
 
 
-def _is_leaf_node(node: TraceNode) -> bool:
+def _is_leaf_node(node: MethodCFG) -> bool:
     """Check if a node is a leaf (ref, cycle, or filtered)."""
     return bool(node.get("ref") or node.get("cycle") or node.get("filtered"))
 
 
-def merge_stmts_pass(tree: TraceNode) -> TraceNode:
+def merge_stmts_pass(tree: MethodCFG) -> MethodCFG:
     """Pass 1: Add mergedStmts to each block, or mergedSourceTrace. Returns new tree."""
     if _is_leaf_node(tree):
         return dict(tree)
@@ -137,7 +137,7 @@ def blocks_for_cluster(
     ]
 
 
-def assign_clusters_pass(tree: TraceNode) -> TraceNode:
+def assign_clusters_pass(tree: MethodCFG) -> MethodCFG:
     """Pass 2: Add clusterAssignment to each method node. Returns new tree."""
     if _is_leaf_node(tree):
         return dict(tree)
@@ -198,7 +198,7 @@ def compute_block_aliases(
     return aliases
 
 
-def deduplicate_blocks_pass(tree: TraceNode) -> TraceNode:
+def deduplicate_blocks_pass(tree: MethodCFG) -> MethodCFG:
     """Pass 3: Add blockAliases to each method node. Returns new tree."""
     if _is_leaf_node(tree):
         return dict(tree)
@@ -250,7 +250,7 @@ def classify_node_kind(entry: MergedStmt) -> NodeKind:
     return NodeKind.PLAIN
 
 
-def build_semantic_graph_pass(tree: TraceNode, next_id: int = 0) -> TraceNode:
+def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodCFG:
     """Pass 4: Build semantic graph from enriched tree. Returns new tree.
 
     Consumes blocks, traps, mergedStmts, clusterAssignment, blockAliases.
@@ -515,12 +515,12 @@ def build_semantic_graph_pass(tree: TraceNode, next_id: int = 0) -> TraceNode:
     return result
 
 
-def pipe(*fns: Callable[[TraceNode], TraceNode]) -> Callable[[TraceNode], TraceNode]:
+def pipe(*fns: Callable[[MethodCFG], MethodCFG]) -> Callable[[MethodCFG], MethodCFG]:
     """Compose functions left-to-right: pipe(f, g)(x) == g(f(x))."""
     return lambda x: reduce(lambda acc, fn: fn(acc), fns, x)
 
 
-def transform(tree: TraceNode) -> TraceNode:
+def transform(tree: MethodCFG) -> MethodCFG:
     """Run all four passes on a tree."""
     return pipe(
         merge_stmts_pass,

@@ -294,3 +294,97 @@ class TestCheckBranchEdges:
             for v in validate_method(m)
             if v["kind"] == ViolationKind.NON_BRANCH_EDGE_VIOLATION
         ] == []
+
+
+class TestCheckLeafFields:
+    def test_leaf_node_with_no_graph_fields_valid(self):
+        """Leaf node (ref) with no graph fields is valid."""
+        from ftrace_validate import validate_method
+
+        m = _make_method(cls="MyClass", method="leafMethod")
+        m["ref"] = True  # Mark as leaf node
+        # Remove graph fields
+        m.pop("nodes", None)
+        m.pop("edges", None)
+        m.pop("clusters", None)
+        m.pop("exceptionEdges", None)
+        assert [
+            v
+            for v in validate_method(m)
+            if v["kind"] == ViolationKind.LEAF_HAS_GRAPH_FIELDS
+        ] == []
+
+    def test_ref_node_with_edges_reported(self):
+        """Ref node must not have edges field."""
+        from ftrace_validate import validate_method
+
+        m = _make_method(cls="MyClass", method="leafMethod")
+        m["ref"] = True
+        m["edges"] = [{"from": "n0", "to": "n1"}]
+        violations = [
+            v
+            for v in validate_method(m)
+            if v["kind"] == ViolationKind.LEAF_HAS_GRAPH_FIELDS
+        ]
+        assert len(violations) >= 1
+
+    def test_cycle_node_with_nodes_reported(self):
+        """Cycle node must not have nodes field."""
+        from ftrace_validate import validate_method
+
+        m = _make_method(cls="MyClass", method="cycleMethod")
+        m["cycle"] = True
+        m["nodes"] = [_node("n0")]
+        violations = [
+            v
+            for v in validate_method(m)
+            if v["kind"] == ViolationKind.LEAF_HAS_GRAPH_FIELDS
+        ]
+        assert len(violations) >= 1
+
+
+class TestCheckReachability:
+    def test_all_nodes_reachable_valid(self):
+        """All nodes with incoming edges are valid."""
+        from ftrace_validate import validate_method
+
+        m = _make_method(
+            nodes=[_node("n0"), _node("n1"), _node("n2")],
+            edges=[
+                {"from": "n0", "to": "n1"},
+                {"from": "n1", "to": "n2"},
+            ],
+            entry_node_id="n0",
+        )
+        assert [
+            v for v in validate_method(m) if v["kind"] == ViolationKind.NO_INCOMING_EDGE
+        ] == []
+
+    def test_unreachable_node_reported(self):
+        """Node with no incoming edges (except entry) is unreachable."""
+        from ftrace_validate import validate_method
+
+        m = _make_method(
+            nodes=[_node("n0"), _node("n1"), _node("n2")],
+            edges=[{"from": "n0", "to": "n1"}],
+            entry_node_id="n0",
+        )
+        violations = [
+            v for v in validate_method(m) if v["kind"] == ViolationKind.NO_INCOMING_EDGE
+        ]
+        # n2 should be reported as unreachable
+        assert any(v["node_id"] == "n2" for v in violations)
+
+    def test_exception_edge_counts_as_incoming(self):
+        """Node reached via exceptionEdge is reachable."""
+        from ftrace_validate import validate_method
+
+        m = _make_method(
+            nodes=[_node("n0"), _node("n1")],
+            edges=[],
+            exception_edges=[{"from": "n0", "to": "n1"}],
+            entry_node_id="n0",
+        )
+        assert [
+            v for v in validate_method(m) if v["kind"] == ViolationKind.NO_INCOMING_EDGE
+        ] == []

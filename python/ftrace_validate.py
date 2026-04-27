@@ -155,9 +155,81 @@ def _check_branch_edges(
     return violations
 
 
+def _check_reachability(
+    nodes: list[SemanticNode],
+    edges: list[SemanticEdge],
+    exception_edges: list,
+    entry_nid: str,
+    method_label: str,
+) -> list[Violation]:
+    """Check that all nodes except entry are reachable.
+
+    A node is reachable if it has at least one incoming edge from edges or exceptionEdges.
+    """
+    node_ids = frozenset(n["id"] for n in nodes)
+
+    # Build set of nodes with incoming edges
+    nodes_with_incoming = set()
+
+    # Count incoming edges from normal edges
+    for edge in edges:
+        nodes_with_incoming.add(edge["to"])
+
+    # Count incoming edges from exception edges
+    for edge in exception_edges:
+        nodes_with_incoming.add(edge["to"])
+
+    # Check each node
+    violations = []
+    for node in nodes:
+        nid = node["id"]
+        # Skip entry node - it doesn't need incoming edges
+        if nid == entry_nid:
+            continue
+        # Report if no incoming edge
+        if nid not in nodes_with_incoming:
+            violations.append(
+                Violation(
+                    kind=ViolationKind.NO_INCOMING_EDGE,
+                    node_id=nid,
+                    method=method_label,
+                    message=f"Node '{nid}' has no incoming edges and is not the entry node",
+                )
+            )
+
+    return violations
+
+
 def _check_leaf_fields(method: MethodSemanticCFG) -> list[Violation]:
-    """Check that leaf nodes (ref/cycle/filtered) have no graph fields."""
-    return []
+    """Check that leaf nodes (ref/cycle/filtered) have no graph fields.
+
+    Leaf nodes must not have: nodes, edges, clusters, exceptionEdges.
+    """
+    is_leaf = (
+        method.get("ref", False)
+        or method.get("cycle", False)
+        or method.get("filtered", False)
+    )
+    if not is_leaf:
+        return []
+
+    violations = []
+    label = _method_label(method)
+
+    # Check for forbidden graph fields
+    forbidden_fields = ["nodes", "edges", "clusters", "exceptionEdges"]
+    for field in forbidden_fields:
+        if method.get(field):
+            violations.append(
+                Violation(
+                    kind=ViolationKind.LEAF_HAS_GRAPH_FIELDS,
+                    node_id="",
+                    method=label,
+                    message=f"Leaf node has forbidden field '{field}'",
+                )
+            )
+
+    return violations
 
 
 def validate_method(method: MethodSemanticCFG) -> list[Violation]:
@@ -173,6 +245,7 @@ def validate_method(method: MethodSemanticCFG) -> list[Violation]:
     nodes = method.get("nodes", [])
     edges = method.get("edges", [])
     clusters = method.get("clusters", [])
+    exception_edges = method.get("exceptionEdges", [])
     entry_nid = method.get("entryNodeId", "")
     label = _method_label(method)
     node_ids = frozenset(n["id"] for n in nodes)
@@ -183,6 +256,7 @@ def validate_method(method: MethodSemanticCFG) -> list[Violation]:
         *_check_cluster_refs(clusters, node_ids, label),
         *_check_entry_node(entry_nid, node_ids, label),
         *_check_branch_edges(nodes, edges, label),
+        *_check_reachability(nodes, edges, exception_edges, entry_nid, label),
     ]
 
 

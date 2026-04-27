@@ -7,6 +7,7 @@ Four composable passes, each a pure function tree → tree:
 4. build_semantic_graph — emit nodes/edges/clusters, drop raw fields
 """
 
+from collections import Counter
 from functools import reduce
 
 from ftrace_types import (
@@ -26,6 +27,21 @@ from ftrace_types import (
     SourceTraceEntry,
     MethodCFG,
 )
+
+# --- Field-name constants (raw-tree dict keys) ---
+_F_BLOCKS = "blocks"
+_F_EDGES = "edges"
+_F_TRAPS = "traps"
+_F_METADATA = "metadata"
+_F_SOURCE_TRACE = "sourceTrace"
+_F_CHILDREN = "children"
+_F_MERGED_SOURCE_TRACE = "mergedSourceTrace"
+_F_CLUSTER_ASSIGNMENT = "clusterAssignment"
+_F_BLOCK_ALIASES = "blockAliases"
+
+# --- Domain type aliases ---
+BlockId = str
+NodeId = str
 
 
 def _accumulate_stmt(acc: dict[int, MergedStmt], s: RawStmt) -> dict[int, MergedStmt]:
@@ -397,8 +413,6 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemant
 
     # --- Build inter-block edges (CFG edges) ---
     # Track shared nodes for reverse-edge artifact detection
-    from collections import Counter
-
     nid_block_count = Counter(block_first[bid] for bid in block_first)
     shared_nids = frozenset(nid for nid, c in nid_block_count.items() if c > 1)
 

@@ -20,6 +20,42 @@ import sootup.java.core.JavaSootClass;
  */
 public class ForwardTracer {
 
+  // JSON field name constants
+  static final String F_CLASS = "class";
+  static final String F_METHOD = "method";
+  static final String F_METHOD_SIGNATURE = "methodSignature";
+  static final String F_CALL_SITE_LINE = "callSiteLine";
+  static final String F_REF = "ref";
+  static final String F_CYCLE = "cycle";
+  static final String F_FILTERED = "filtered";
+  static final String F_LINE_START = "lineStart";
+  static final String F_LINE_END = "lineEnd";
+  static final String F_SOURCE_LINE_COUNT = "sourceLineCount";
+  static final String F_SOURCE_TRACE = "sourceTrace";
+  static final String F_BLOCKS = "blocks";
+  static final String F_EDGES = "edges";
+  static final String F_TRAPS = "traps";
+  static final String F_CHILDREN = "children";
+  static final String F_FROM_CLASS = "fromClass";
+  static final String F_FROM_LINE = "fromLine";
+  static final String F_TRACE = "trace";
+  static final String F_REF_INDEX = "refIndex";
+
+  /**
+   * Extract the fully qualified class name from a SootUp signature like {@code <com.example.Foo:
+   * void bar(int)>}.
+   */
+  static String extractClassName(String sig) {
+    return sig.substring(1, sig.indexOf(':'));
+  }
+
+  /**
+   * Extract the method name from a SootUp signature like {@code <com.example.Foo: void bar(int)>}.
+   */
+  static String extractMethodName(String sig) {
+    return sig.substring(sig.lastIndexOf(' ') + 1, sig.indexOf('('));
+  }
+
   private final BytecodeTracer tracer;
 
   public ForwardTracer(BytecodeTracer tracer) {

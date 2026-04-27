@@ -1,5 +1,8 @@
 package tools.bytecode.cli;
 
+import java.nio.file.Files;
+import java.util.List;
+import java.util.Map;
 import picocli.CommandLine.Command;
 import tools.bytecode.CallGraphBuilder;
 
@@ -12,12 +15,15 @@ class BuildCgCommand extends BaseCommand {
   @Override
   public void run() {
     try {
-      if (output == null) {
-        System.err.println("buildcg requires --output <file>");
-        System.exit(1);
-      }
       var tracer = createTracer();
-      new CallGraphBuilder(tracer).buildCallGraph(output);
+      Map<String, List<String>> graph = new CallGraphBuilder(tracer).buildCallGraph();
+      if (output != null) {
+        Files.createDirectories(output.getParent());
+        mapper.writeValue(output.toFile(), graph);
+        System.err.println("Wrote call graph to " + output);
+      } else {
+        System.out.println(mapper.writeValueAsString(graph));
+      }
     } catch (Exception e) {
       System.err.println("Error: " + e.getMessage());
       System.exit(1);

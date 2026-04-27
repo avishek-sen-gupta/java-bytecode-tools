@@ -1,10 +1,5 @@
 package tools.bytecode;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.*;
 import sootup.core.jimple.common.expr.AbstractInvokeExpr;
 import sootup.core.jimple.common.expr.JSpecialInvokeExpr;
@@ -28,15 +23,16 @@ public class CallGraphBuilder {
     this.tracer = tracer;
   }
 
-  public void buildCallGraph(Path outputPath) throws IOException {
+  public Map<String, List<String>> buildCallGraph() {
     System.err.println("Building call graph...");
     List<JavaSootClass> projectClasses = tracer.getProjectClasses();
-    System.err.println("Project classes: " + projectClasses.size());
+    System.err.println("Loaded " + projectClasses.size() + " project classes.");
 
     // Index method sigs for resolution
     Map<String, String> sigIndex = new LinkedHashMap<>();
     Map<String, List<String>> nameIndex = new LinkedHashMap<>();
 
+    int indexed = 0;
     for (JavaSootClass cls : projectClasses) {
       String clsName = cls.getType().getFullyQualifiedName();
       for (SootMethod method : cls.getMethods()) {
@@ -45,9 +41,11 @@ public class CallGraphBuilder {
         sigIndex.put(sig, sig);
         String key = clsName + "#" + method.getName() + "#" + method.getParameterCount();
         nameIndex.computeIfAbsent(key, k -> new ArrayList<>()).add(sig);
+        indexed++;
+        if (indexed % 1000 == 0) System.err.println("  indexed " + indexed + " methods...");
       }
     }
-    System.err.println("Methods: " + sigIndex.size());
+    System.err.println("Indexed " + sigIndex.size() + " methods.");
 
     // Build interface → implementation map for polymorphic dispatch resolution
     Map<String, List<String>> ifaceToImpls = new LinkedHashMap<>();
@@ -66,7 +64,7 @@ public class CallGraphBuilder {
         }
       }
     }
-    System.err.println("Interface→impl mappings: " + ifaceToImpls.size());
+    System.err.println("Built " + ifaceToImpls.size() + " interface→impl mappings.");
 
     // Scan all method bodies for call edges
     Map<String, Set<String>> callerToCallees = new LinkedHashMap<>();
@@ -103,22 +101,18 @@ public class CallGraphBuilder {
           }
         }
         scanned++;
-        if (scanned % 5000 == 0) System.err.println("  scanned " + scanned + " methods...");
+        if (scanned % 1000 == 0) System.err.println("  scanned " + scanned + " methods...");
       }
     }
 
     // Convert sets to lists for JSON
-    Map<String, List<String>> output = new LinkedHashMap<>();
+    Map<String, List<String>> result = new LinkedHashMap<>();
     for (var entry : callerToCallees.entrySet()) {
-      output.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+      result.put(entry.getKey(), new ArrayList<>(entry.getValue()));
     }
 
-    int edges = output.values().stream().mapToInt(List::size).sum();
-    System.err.println("Call edges: " + edges);
-
-    ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
-    Files.createDirectories(outputPath.getParent());
-    mapper.writeValue(outputPath.toFile(), output);
-    System.err.println("Wrote call graph to " + outputPath);
+    int edges = result.values().stream().mapToInt(List::size).sum();
+    System.err.println("Done. " + result.size() + " callers, " + edges + " edges.");
+    return result;
   }
 }

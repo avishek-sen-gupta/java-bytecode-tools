@@ -215,8 +215,10 @@ The `--filter` flag accepts a JSON file controlling forward trace recursion:
 }
 ```
 
-- **`allow`**: only recurse into classes matching these prefixes
-- **`stop`**: stop recursion at classes matching these prefixes (appear as filtered leaf nodes)
+- **`allow`**: only recurse into classes whose fully-qualified name starts with one of these prefixes. An empty list or omitting the key disables allow-filtering (all classes are allowed).
+- **`stop`**: stop recursion at classes matching these prefixes — they appear as filtered leaf nodes in the trace.
+
+**Precedence:** `allow` is checked first, then `stop`. A class matching both an allow and a stop prefix is **stopped** (stop wins). Both filters match on class-name prefixes, not individual methods.
 
 Without `--filter`, the tracer recurses into everything reachable.
 

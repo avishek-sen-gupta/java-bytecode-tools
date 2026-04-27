@@ -10,6 +10,46 @@ from ftrace_types import (
 )
 
 
+class TestResolveInputs:
+    def test_extracts_all_fields(self):
+        from ftrace_semantic import _resolve_inputs
+
+        tree = {
+            "class": "Svc",
+            "method": "run",
+            "blocks": [{"id": "B0", "stmts": [], "mergedStmts": []}],
+            "edges": [{"fromBlock": "B0", "toBlock": "B1"}],
+            "traps": [
+                {
+                    "type": "Ex",
+                    "handler": "B1",
+                    "coveredBlocks": ["B0"],
+                    "handlerBlocks": ["B1"],
+                }
+            ],
+        }
+        metadata = {
+            "clusterAssignment": {"B0": {"kind": "try", "trapIndex": 0}},
+            "blockAliases": {"B2": "B0"},
+        }
+        result = _resolve_inputs(tree, metadata)
+        assert result["blocks"] == tree["blocks"]
+        assert result["edges"] == tree["edges"]
+        assert result["traps"] == tree["traps"]
+        assert result["cluster_assignment"] == metadata["clusterAssignment"]
+        assert result["block_aliases"] == metadata["blockAliases"]
+
+    def test_defaults_when_fields_missing(self):
+        from ftrace_semantic import _resolve_inputs
+
+        result = _resolve_inputs({"class": "Svc"}, {})
+        assert result["blocks"] == []
+        assert result["edges"] == []
+        assert result["traps"] == []
+        assert result["cluster_assignment"] == {}
+        assert result["block_aliases"] == {}
+
+
 def _make_enriched_method(
     blocks, traps, cluster_assignment, block_aliases=(), children=(), edges=()
 ):

@@ -82,6 +82,17 @@ class _ClusterBuildResult(TypedDict):
     exception_edges: list[ExceptionEdge]
 
 
+def _resolve_inputs(tree: MethodCFG, tree_metadata: dict) -> _ResolvedInput:
+    """Extract and normalize raw inputs for the semantic graph builders."""
+    return {
+        "blocks": tree.get(_F_BLOCKS, []),
+        "edges": tree.get(_F_EDGES, []),
+        "traps": tree.get(_F_TRAPS, []),
+        "cluster_assignment": tree_metadata.get(_F_CLUSTER_ASSIGNMENT, {}),
+        "block_aliases": tree_metadata.get(_F_BLOCK_ALIASES, {}),
+    }
+
+
 def _accumulate_stmt(acc: dict[int, MergedStmt], s: RawStmt) -> dict[int, MergedStmt]:
     """Fold a single raw stmt into the accumulator, keyed by line number."""
     line = s["line"]

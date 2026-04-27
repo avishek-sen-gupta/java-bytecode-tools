@@ -253,6 +253,82 @@ class TestBuildNodes:
         assert result["bid_to_nids"]["B0"] == ["n0", "n1"]
 
 
+class TestBuildEdges:
+    def test_intra_block_sequential_edges(self):
+        from ftrace_semantic import _build_edges
+
+        result = _build_edges(
+            raw_edges=[],
+            block_first={"B0": "n0"},
+            block_last={"B0": "n1"},
+            bid_to_nids={"B0": ["n0", "n1"]},
+            block_aliases={},
+        )
+        assert result["edges"] == [{"from": "n0", "to": "n1"}]
+
+    def test_inter_block_unconditional_edge(self):
+        from ftrace_semantic import _build_edges
+
+        result = _build_edges(
+            raw_edges=[{"fromBlock": "B0", "toBlock": "B1"}],
+            block_first={"B0": "n0", "B1": "n1"},
+            block_last={"B0": "n0", "B1": "n1"},
+            bid_to_nids={"B0": ["n0"], "B1": ["n1"]},
+            block_aliases={},
+        )
+        unconditional = [e for e in result["edges"] if "branch" not in e]
+        assert {"from": "n0", "to": "n1"} in unconditional
+
+    def test_branch_edges_with_labels(self):
+        from ftrace_semantic import _build_edges
+
+        result = _build_edges(
+            raw_edges=[
+                {"fromBlock": "B0", "toBlock": "B1", "label": "T"},
+                {"fromBlock": "B0", "toBlock": "B2", "label": "F"},
+            ],
+            block_first={"B0": "n0", "B1": "n1", "B2": "n2"},
+            block_last={"B0": "n0", "B1": "n1", "B2": "n2"},
+            bid_to_nids={"B0": ["n0"], "B1": ["n1"], "B2": ["n2"]},
+            block_aliases={},
+        )
+        branch_edges = [e for e in result["edges"] if "branch" in e]
+        labels = {e["branch"] for e in branch_edges}
+        assert labels == {"T", "F"}
+
+    def test_self_loop_suppressed(self):
+        from ftrace_semantic import _build_edges
+
+        result = _build_edges(
+            raw_edges=[{"fromBlock": "B0", "toBlock": "B1"}],
+            block_first={"B0": "n0", "B1": "n0"},
+            block_last={"B0": "n0", "B1": "n0"},
+            bid_to_nids={"B0": ["n0"], "B1": ["n0"]},
+            block_aliases={"B1": "B0"},
+        )
+        inter_edges = [
+            e for e in result["edges"] if e.get("from") != e.get("to") or "branch" in e
+        ]
+        self_loops = [e for e in result["edges"] if e["from"] == e["to"]]
+        assert self_loops == []
+
+    def test_duplicate_edges_deduplicated(self):
+        from ftrace_semantic import _build_edges
+
+        result = _build_edges(
+            raw_edges=[
+                {"fromBlock": "B0", "toBlock": "B1"},
+                {"fromBlock": "B0", "toBlock": "B1"},
+            ],
+            block_first={"B0": "n0", "B1": "n1"},
+            block_last={"B0": "n0", "B1": "n1"},
+            bid_to_nids={"B0": ["n0"], "B1": ["n1"]},
+            block_aliases={},
+        )
+        unconditional = [e for e in result["edges"] if "branch" not in e]
+        assert len(unconditional) == 1
+
+
 class TestBuildSemanticGraphPass:
     def test_simple_linear_chain(self):
         from ftrace_semantic import build_semantic_graph_pass

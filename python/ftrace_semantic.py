@@ -419,6 +419,78 @@ def _build_nodes(
     }
 
 
+def _build_intra_block_edges(
+    bid_to_nids: dict[BlockId, list[NodeId]], block_aliases: dict[BlockId, BlockId]
+) -> list[SemanticEdge]:
+    """Build sequential edges within each canonical block."""
+    return [
+        {"from": nids[i], "to": nids[i + 1]}
+        for bid, nids in bid_to_nids.items()
+        if bid not in block_aliases
+        for i in range(len(nids) - 1)
+    ]
+
+
+def _build_inter_block_edges(
+    raw_edges: list[RawBlockEdge],
+    block_first: dict[BlockId, NodeId],
+    block_last: dict[BlockId, NodeId],
+) -> list[SemanticEdge]:
+    """Build edges between blocks from raw CFG edges. Deduplicates and suppresses self-loops."""
+    nid_block_count = Counter(nid for nid in block_first.values())
+    shared_nids = frozenset(nid for nid, c in nid_block_count.items() if c > 1)
+
+    def fold_edge(
+        acc: tuple[list[SemanticEdge], frozenset[tuple[str, str, str]]],
+        raw_edge: RawBlockEdge,
+    ) -> tuple[list[SemanticEdge], frozenset[tuple[str, str, str]]]:
+        edges, emitted = acc
+        tail_nid = block_last.get(raw_edge["fromBlock"], "")
+        succ_nid = block_first.get(raw_edge["toBlock"], "")
+        if not tail_nid or not succ_nid or tail_nid == succ_nid:
+            return (edges, emitted)
+
+        label = raw_edge.get("label", "")
+        if label:
+            key = (tail_nid, succ_nid, label)
+            if key in emitted:
+                return (edges, emitted)
+            return (
+                [
+                    *edges,
+                    {"from": tail_nid, "to": succ_nid, "branch": BranchLabel(label)},
+                ],
+                emitted | frozenset([key]),
+            )
+
+        key = (tail_nid, succ_nid, "")
+        reverse = (succ_nid, tail_nid, "")
+        if reverse in emitted and (tail_nid in shared_nids or succ_nid in shared_nids):
+            return (edges, emitted)
+        if key in emitted:
+            return (edges, emitted)
+        return (
+            [*edges, {"from": tail_nid, "to": succ_nid}],
+            emitted | frozenset([key]),
+        )
+
+    result_edges, _ = reduce(fold_edge, raw_edges, ([], frozenset()))
+    return result_edges
+
+
+def _build_edges(
+    raw_edges: list[RawBlockEdge],
+    block_first: dict[BlockId, NodeId],
+    block_last: dict[BlockId, NodeId],
+    bid_to_nids: dict[BlockId, list[NodeId]],
+    block_aliases: dict[BlockId, BlockId],
+) -> _EdgeBuildResult:
+    """Build all semantic edges: intra-block sequential + inter-block CFG."""
+    intra = _build_intra_block_edges(bid_to_nids, block_aliases)
+    inter = _build_inter_block_edges(raw_edges, block_first, block_last)
+    return {"edges": [*intra, *inter]}
+
+
 def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemanticCFG:
     """Pass 4: Build semantic graph from enriched tree. Returns new tree.
 

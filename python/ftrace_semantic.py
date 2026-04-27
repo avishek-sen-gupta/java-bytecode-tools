@@ -323,6 +323,102 @@ def classify_node_kind(entry: MergedStmt) -> NodeKind:
     return NodeKind.PLAIN
 
 
+def _process_block_stmts(
+    merged: list[MergedStmt],
+    is_branch_block: bool,
+    branch_condition: str,
+    start_id: int,
+) -> list[SemanticNode]:
+    """Build semantic nodes for one block's merged statements."""
+    last_idx = len(merged) - 1
+    return [
+        {
+            "id": f"n{start_id + idx}",
+            "lines": [entry["line"]],
+            "kind": (
+                NodeKind.BRANCH
+                if is_branch_block and idx == last_idx
+                else classify_node_kind(entry)
+            ),
+            "label": (
+                make_node_label(entry)
+                + ([branch_condition] if branch_condition else [])
+                if is_branch_block and idx == last_idx
+                else make_node_label(entry)
+            ),
+        }
+        for idx, entry in enumerate(merged)
+    ]
+
+
+def _build_nodes(
+    blocks: list[RawBlock], block_aliases: dict[BlockId, BlockId], next_id: int
+) -> _NodeBuildResult:
+    """Build semantic nodes from blocks. Pure function using reduce fold."""
+
+    def fold_block(acc, block):
+        nodes, first, last, bid_nids, counter = acc
+        bid = block["id"]
+
+        # Aliased blocks share the canonical block's nodes
+        if bid in block_aliases:
+            canonical = block_aliases[bid]
+            return (
+                nodes,
+                {**first, bid: first[canonical]},
+                {**last, bid: last[canonical]},
+                {**bid_nids, bid: bid_nids[canonical]},
+                counter,
+            )
+
+        merged = block.get("mergedStmts", [])
+
+        # Empty block: placeholder node
+        if not merged:
+            nid = f"n{counter}"
+            placeholder: SemanticNode = {
+                "id": nid,
+                "lines": [],
+                "kind": NodeKind.PLAIN,
+                "label": [bid],
+            }
+            return (
+                [*nodes, placeholder],
+                {**first, bid: nid},
+                {**last, bid: nid},
+                {**bid_nids, bid: [nid]},
+                counter + 1,
+            )
+
+        # Normal block: build nodes from merged statements
+        block_nodes = _process_block_stmts(
+            merged,
+            bool(block.get("branchCondition")),
+            block.get("branchCondition", ""),
+            counter,
+        )
+        nids = [n["id"] for n in block_nodes]
+        return (
+            [*nodes, *block_nodes],
+            {**first, bid: nids[0]},
+            {**last, bid: nids[-1]},
+            {**bid_nids, bid: nids},
+            counter + len(block_nodes),
+        )
+
+    all_nodes, block_first, block_last, bid_to_nids, node_counter = reduce(
+        fold_block, blocks, ([], {}, {}, {}, next_id)
+    )
+
+    return {
+        "nodes": all_nodes,
+        "block_first": block_first,
+        "block_last": block_last,
+        "bid_to_nids": bid_to_nids,
+        "node_counter": node_counter,
+    }
+
+
 def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemanticCFG:
     """Pass 4: Build semantic graph from enriched tree. Returns new tree.
 

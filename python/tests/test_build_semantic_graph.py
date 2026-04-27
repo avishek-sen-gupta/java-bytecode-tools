@@ -144,6 +144,115 @@ class TestClassifyNodeKind:
         )
 
 
+class TestBuildNodes:
+    def test_single_block_single_stmt(self):
+        from ftrace_semantic import _build_nodes
+
+        blocks = [
+            {
+                "id": "B0",
+                "stmts": [],
+                "mergedStmts": [
+                    {"line": 5, "calls": [], "branches": [], "assigns": []}
+                ],
+            }
+        ]
+        result = _build_nodes(blocks, {}, 0)
+        assert len(result["nodes"]) == 1
+        assert result["nodes"][0]["id"] == "n0"
+        assert result["nodes"][0]["kind"] == NodeKind.PLAIN
+        assert result["block_first"] == {"B0": "n0"}
+        assert result["block_last"] == {"B0": "n0"}
+        assert result["bid_to_nids"] == {"B0": ["n0"]}
+        assert result["node_counter"] == 1
+
+    def test_aliased_block_shares_canonical_nodes(self):
+        from ftrace_semantic import _build_nodes
+
+        blocks = [
+            {
+                "id": "B0",
+                "stmts": [],
+                "mergedStmts": [
+                    {"line": 5, "calls": [], "branches": [], "assigns": []}
+                ],
+            },
+            {
+                "id": "B1",
+                "stmts": [],
+                "mergedStmts": [
+                    {"line": 5, "calls": [], "branches": [], "assigns": []}
+                ],
+            },
+        ]
+        result = _build_nodes(blocks, {"B1": "B0"}, 0)
+        assert len(result["nodes"]) == 1
+        assert result["block_first"]["B1"] == result["block_first"]["B0"]
+        assert result["block_last"]["B1"] == result["block_last"]["B0"]
+
+    def test_empty_merged_stmts_produces_placeholder(self):
+        from ftrace_semantic import _build_nodes
+
+        blocks = [{"id": "B0", "stmts": [], "mergedStmts": []}]
+        result = _build_nodes(blocks, {}, 0)
+        assert len(result["nodes"]) == 1
+        assert result["nodes"][0]["kind"] == NodeKind.PLAIN
+        assert result["nodes"][0]["label"] == ["B0"]
+        assert result["nodes"][0]["lines"] == []
+
+    def test_branch_block_last_node_is_branch_kind(self):
+        from ftrace_semantic import _build_nodes
+
+        blocks = [
+            {
+                "id": "B0",
+                "stmts": [],
+                "mergedStmts": [
+                    {"line": 6, "calls": [], "branches": ["i <= 0"], "assigns": []},
+                ],
+                "branchCondition": "i <= 0",
+            }
+        ]
+        result = _build_nodes(blocks, {}, 0)
+        assert result["nodes"][0]["kind"] == NodeKind.BRANCH
+        assert "i <= 0" in result["nodes"][0]["label"]
+
+    def test_next_id_offsets_node_ids(self):
+        from ftrace_semantic import _build_nodes
+
+        blocks = [
+            {
+                "id": "B0",
+                "stmts": [],
+                "mergedStmts": [
+                    {"line": 5, "calls": [], "branches": [], "assigns": []}
+                ],
+            }
+        ]
+        result = _build_nodes(blocks, {}, 42)
+        assert result["nodes"][0]["id"] == "n42"
+        assert result["node_counter"] == 43
+
+    def test_multi_stmt_block_produces_sequential_nodes(self):
+        from ftrace_semantic import _build_nodes
+
+        blocks = [
+            {
+                "id": "B0",
+                "stmts": [],
+                "mergedStmts": [
+                    {"line": 5, "calls": [], "branches": [], "assigns": []},
+                    {"line": 6, "calls": ["Foo.bar"], "branches": [], "assigns": []},
+                ],
+            }
+        ]
+        result = _build_nodes(blocks, {}, 0)
+        assert len(result["nodes"]) == 2
+        assert result["block_first"]["B0"] == "n0"
+        assert result["block_last"]["B0"] == "n1"
+        assert result["bid_to_nids"]["B0"] == ["n0", "n1"]
+
+
 class TestBuildSemanticGraphPass:
     def test_simple_linear_chain(self):
         from ftrace_semantic import build_semantic_graph_pass

@@ -28,6 +28,7 @@ from ftrace_types import (
     SemanticNode,
     SourceTraceEntry,
     MethodCFG,
+    short_class,
 )
 
 # --- Field-name constants (raw-tree dict keys) ---
@@ -321,11 +322,6 @@ def deduplicate_blocks_pass(tree: MethodCFG) -> MethodCFG:
         ]
 
     return result
-
-
-def short_class(fqcn: str) -> str:
-    """Extract short class name from fully qualified name."""
-    return fqcn.rsplit(".", 1)[-1]
 
 
 def _format_call(c: str) -> str:

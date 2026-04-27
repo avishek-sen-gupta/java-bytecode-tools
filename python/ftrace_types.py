@@ -318,3 +318,11 @@ class SlicedTrace(TypedDict):
 
     slice: MethodCFG
     refIndex: dict[str, MethodCFG]
+
+
+# --- Utility functions ---
+
+
+def short_class(fqcn: str) -> str:
+    """Extract short class name from fully qualified name."""
+    return fqcn.rsplit(".", 1)[-1]

@@ -20,6 +20,7 @@ from ftrace_types import (
     SemanticCluster,
     SemanticEdge,
     SemanticNode,
+    short_class,
 )
 
 # -- Visual constants --
@@ -60,10 +61,6 @@ BRANCH_COLORS: dict[BranchLabel, str] = {
 
 def escape(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-
-
-def short_class(fqcn: str) -> str:
-    return fqcn.rsplit(".", 1)[-1]
 
 
 def _render_node(nid: str, node: SemanticNode) -> str:

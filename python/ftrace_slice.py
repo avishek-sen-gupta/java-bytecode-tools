@@ -85,11 +85,19 @@ def main():
 
     full_tree = json.loads(raw_json)
 
+    # Unwrap envelope if present (xtrace outputs {trace, refIndex})
+    trace_to_query = full_tree
+    if isinstance(full_tree, dict) and "trace" in full_tree and "refIndex" in full_tree:
+        trace_to_query = full_tree["trace"]
+        raw_json_for_query = json.dumps(trace_to_query)
+    else:
+        raw_json_for_query = raw_json
+
     # 2. Use jq to slice the target subtree
     try:
         result = subprocess.run(
             ["jq", args.query],
-            input=raw_json,
+            input=raw_json_for_query,
             capture_output=True,
             text=True,
             check=True,
@@ -111,7 +119,15 @@ def main():
 
     target = cast(MethodCFG, target)
     ref_sigs = collect_ref_signatures(target)
-    ref_index = index_full_tree(full_tree, ref_sigs)
+
+    # Extract refIndex from envelope if present, otherwise build it by walking the tree
+    if isinstance(full_tree, dict) and "trace" in full_tree and "refIndex" in full_tree:
+        # Input was an envelope: filter the existing refIndex by collected signatures
+        full_index = full_tree["refIndex"]
+        ref_index = {sig: full_index[sig] for sig in ref_sigs if sig in full_index}
+    else:
+        # Input was a plain trace: walk to build the refIndex
+        ref_index = index_full_tree(cast(MethodCFG, full_tree), ref_sigs)
 
     # 3. Output SlicedTrace
     sliced_trace = {"slice": target, "refIndex": ref_index}

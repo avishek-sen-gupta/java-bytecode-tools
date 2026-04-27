@@ -14,15 +14,15 @@ $B xtrace --call-graph "$OUT/callgraph.json" \
   --output "$OUT/edges_fwd.json" 2>/dev/null
 
 assert_json_contains "$OUT/edges_fwd.json" \
-    '.edges | length > 0' \
+    '.trace.edges | length > 0' \
     "forward: root has edges"
 
 assert_json_contains "$OUT/edges_fwd.json" \
-    '.edges[] | select(.label == "T" or .label == "F") | .fromBlock' \
+    '.trace.edges[] | select(.label == "T" or .label == "F") | .fromBlock' \
     "forward: has branch-labeled edges (T/F)"
 
 assert_json_contains "$OUT/edges_fwd.json" \
-    '.children[] | select(.edges | length > 0) | .method' \
+    '.refIndex | to_entries[] | select(.value.edges | length > 0) | .value.method' \
     "forward: child methods also have edges"
 
 # ── Forward trace: edges survive semantic transform ──

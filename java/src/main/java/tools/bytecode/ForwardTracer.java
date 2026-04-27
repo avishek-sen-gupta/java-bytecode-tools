@@ -170,6 +170,55 @@ public class ForwardTracer {
     return node;
   }
 
+  /**
+   * Resolve the source line where a caller invokes a callee. Builds a lightweight CallFrame for the
+   * callee (no body needed) and delegates to {@link BytecodeTracer#findCallSiteLine}.
+   */
+  private static int resolveCallSiteLine(BytecodeTracer.CallFrame callerFrame, String calleeSig) {
+    String calleeClass = extractClassName(calleeSig);
+    String calleeMethod = extractMethodName(calleeSig);
+    BytecodeTracer.CallFrame calleeFrame =
+        new BytecodeTracer.CallFrame(
+            calleeClass, calleeMethod, calleeSig, -1, -1, List.of(), List.of());
+    return BytecodeTracer.findCallSiteLine(callerFrame, calleeFrame);
+  }
+
+  /**
+   * Pass 2 — Build a single method's CFG with ref children.
+   *
+   * <p>No recursion. Each callee becomes a ref/cycle/filtered leaf via {@link #buildChildNode}.
+   * Called in a flat loop for all discovered methods.
+   */
+  private Map<String, Object> buildMethodCFG(
+      String sig, Map<String, SootMethod> sigToMethod, DiscoveryResult discovery) {
+    SootMethod method = sigToMethod.get(sig);
+    BytecodeTracer.CallFrame frame = tracer.buildFrame(method, sig);
+
+    Map<String, Object> node = new LinkedHashMap<>();
+    node.put(F_CLASS, frame.className());
+    node.put(F_METHOD, frame.methodName());
+    node.put(F_METHOD_SIGNATURE, sig);
+    node.put(F_LINE_START, frame.entryLine());
+    node.put(F_LINE_END, frame.exitLine());
+    node.put(F_SOURCE_LINE_COUNT, frame.exitLine() - frame.entryLine() + 1);
+    node.put(F_SOURCE_TRACE, frame.sourceTrace());
+
+    Map<String, Object> blockInfo = buildBlockTrace(method);
+    node.put(F_BLOCKS, blockInfo.get("blocks"));
+    node.put(F_EDGES, blockInfo.get("edges"));
+    node.put(F_TRAPS, blockInfo.get("traps"));
+
+    List<DiscoveryResult.CalleeEntry> callees = discovery.calleeMap().getOrDefault(sig, List.of());
+    List<Map<String, Object>> children = new ArrayList<>();
+    for (DiscoveryResult.CalleeEntry entry : callees) {
+      int csLine = resolveCallSiteLine(frame, entry.signature());
+      children.add(buildChildNode(entry.signature(), entry.classification(), csLine));
+    }
+    node.put(F_CHILDREN, children);
+
+    return node;
+  }
+
   private final BytecodeTracer tracer;
 
   public ForwardTracer(BytecodeTracer tracer) {
@@ -194,27 +243,32 @@ public class ForwardTracer {
     // Load call graph
     Map<String, List<String>> callerToCallees = loadForwardCallGraph();
 
-    // DFS forward, building tree
-    System.err.println("Tracing forward from " + entrySig + "...");
-    int[] nodeCount = {0};
-    Set<String> pathAncestors = new LinkedHashSet<>();
-    Set<String> globalVisited = new HashSet<>();
+    // Pass 1 — Discover
+    System.err.println("Discovering reachable methods from " + entrySig + "...");
+    DiscoveryResult discovery =
+        discoverReachable(entrySig, callerToCallees, sigToMethod.keySet(), filter);
+    System.err.println("Discovered: " + discovery.normalMethods().size() + " methods");
 
-    Map<String, Object> root =
-        buildForwardNode(
-            entrySig,
-            sigToMethod,
-            callerToCallees,
-            filter,
-            pathAncestors,
-            globalVisited,
-            nodeCount,
-            -1);
+    // Pass 2 — Build root
+    System.err.println("Building CFGs...");
+    Map<String, Object> root = buildMethodCFG(entrySig, sigToMethod, discovery);
+    root.put(F_FROM_CLASS, fromClass);
+    root.put(F_FROM_LINE, fromLine);
 
-    root.put("fromClass", fromClass);
-    root.put("fromLine", fromLine);
-    System.err.println("Done: " + nodeCount[0] + " nodes in tree");
-    return root;
+    // Pass 2 — Build refIndex (all NORMAL methods except root)
+    Map<String, Object> refIndex = new LinkedHashMap<>();
+    for (String sig : discovery.normalMethods()) {
+      if (sig.equals(entrySig)) continue;
+      refIndex.put(sig, buildMethodCFG(sig, sigToMethod, discovery));
+    }
+
+    // Envelope
+    Map<String, Object> envelope = new LinkedHashMap<>();
+    envelope.put(F_TRACE, root);
+    envelope.put(F_REF_INDEX, refIndex);
+
+    System.err.println("Done: " + (refIndex.size() + 1) + " method CFGs");
+    return envelope;
   }
 
   private Map<String, List<String>> loadForwardCallGraph() throws IOException {
@@ -228,103 +282,6 @@ public class ForwardTracer {
       return cached;
     }
     throw new RuntimeException("Call graph cache not found. Run `buildcg` first.");
-  }
-
-  private Map<String, Object> buildForwardNode(
-      String sig,
-      Map<String, SootMethod> sigToMethod,
-      Map<String, List<String>> callerToCallees,
-      BytecodeTracer.FilterConfig filter,
-      Set<String> pathAncestors,
-      Set<String> globalVisited,
-      int[] nodeCount,
-      int callSiteLine) {
-    Map<String, Object> node = new LinkedHashMap<>();
-    nodeCount[0]++;
-    if (nodeCount[0] % 100 == 0) {
-      System.err.println("Nodes: " + nodeCount[0] + "...");
-    }
-
-    String className = sig.substring(1, sig.indexOf(':'));
-    String methodName = sig.substring(sig.lastIndexOf(' ') + 1, sig.indexOf('('));
-
-    if (callSiteLine > 0) node.put("callSiteLine", callSiteLine);
-
-    // Cycle detection
-    if (pathAncestors.contains(sig)) {
-      node.put("class", className);
-      node.put("method", methodName);
-      node.put("methodSignature", sig);
-      node.put("cycle", true);
-      return node;
-    }
-
-    // Already expanded on a different branch
-    if (globalVisited.contains(sig)) {
-      node.put("class", className);
-      node.put("method", methodName);
-      node.put("methodSignature", sig);
-      node.put("ref", true);
-      return node;
-    }
-
-    SootMethod method = sigToMethod.get(sig);
-
-    // Filtered-out or non-project method
-    if (method == null || (filter != null && !filter.shouldRecurse(className))) {
-      node.put("class", className);
-      node.put("method", methodName);
-      node.put("methodSignature", sig);
-      node.put("filtered", true);
-      return node;
-    }
-
-    globalVisited.add(sig);
-
-    // Full node with sourceTrace
-    BytecodeTracer.CallFrame frame = tracer.buildFrame(method, sig);
-    node.put("class", frame.className());
-    node.put("method", frame.methodName());
-    node.put("methodSignature", sig);
-    node.put("lineStart", frame.entryLine());
-    node.put("lineEnd", frame.exitLine());
-    node.put("sourceLineCount", frame.exitLine() - frame.entryLine() + 1);
-    node.put("sourceTrace", frame.sourceTrace());
-
-    Map<String, Object> blockInfo = buildBlockTrace(method);
-    node.put("blocks", blockInfo.get("blocks"));
-    node.put("edges", blockInfo.get("edges"));
-    node.put("traps", blockInfo.get("traps"));
-
-    // Recurse into callees
-    List<String> callees = callerToCallees.get(sig);
-    List<Map<String, Object>> children = new ArrayList<>();
-    if (callees != null) {
-      pathAncestors.add(sig);
-      for (String calleeSig : callees) {
-        String calleeClass = calleeSig.substring(1, calleeSig.indexOf(':'));
-        String calleeMethod =
-            calleeSig.substring(calleeSig.lastIndexOf(' ') + 1, calleeSig.indexOf('('));
-        BytecodeTracer.CallFrame calleeFrame =
-            new BytecodeTracer.CallFrame(
-                calleeClass, calleeMethod, calleeSig, -1, -1, List.of(), List.of());
-        int csLine = BytecodeTracer.findCallSiteLine(frame, calleeFrame);
-
-        children.add(
-            buildForwardNode(
-                calleeSig,
-                sigToMethod,
-                callerToCallees,
-                filter,
-                pathAncestors,
-                globalVisited,
-                nodeCount,
-                csLine));
-      }
-      pathAncestors.remove(sig);
-    }
-    node.put("children", children);
-    return node;
   }
 
   /** Build block-level CFG trace from a method body. */

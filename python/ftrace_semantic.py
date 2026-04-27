@@ -887,9 +887,15 @@ def main():
 
     if args.input:
         with open(args.input) as f:
-            tree = json.load(f)
+            data = json.load(f)
     else:
-        tree = json.load(sys.stdin)
+        data = json.load(sys.stdin)
+
+    # Unwrap envelope if present (xtrace outputs {trace, refIndex})
+    if isinstance(data, dict) and "trace" in data and "refIndex" in data:
+        tree = cast(MethodCFG, data["trace"])
+    else:
+        tree = cast(MethodCFG, data)
 
     result, violations = transform(tree)
 

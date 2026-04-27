@@ -9,47 +9,47 @@ $B xtrace --call-graph "$OUT/callgraph.json" \
   --from com.example.app.ExceptionService --from-line "$EXCEPTION_LINE" \
   --output "$OUT/exception.json" 2>/dev/null
 
-assert_json_field "$OUT/exception.json" '.method' 'handleException' \
+assert_json_field "$OUT/exception.json" '.trace.method' 'handleException' \
     "method name"
 
 assert_json_contains "$OUT/exception.json" \
-    '.traps | length == 2' \
+    '.trace.traps | length == 2' \
     "has 2 traps (catch + finally)"
 
 assert_json_contains "$OUT/exception.json" \
-    '.traps[] | select(.type | contains("RuntimeException")) | .handlerBlocks | length == 4' \
+    '.trace.traps[] | select(.type | contains("RuntimeException")) | .handlerBlocks | length == 4' \
     "RuntimeException handler has 4 blocks (excludes method return)"
 
 assert_json_contains "$OUT/exception.json" \
-    '.traps[] | select(.type | contains("Throwable")) | .handlerBlocks | length == 2' \
+    '.trace.traps[] | select(.type | contains("Throwable")) | .handlerBlocks | length == 2' \
     "Throwable (finally) handler has 2 blocks (exception-path + inlined normal-path)"
 
 assert_json_contains "$OUT/exception.json" \
-    '.traps[] | select(.type | contains("Throwable")) | .coveredBlocks | length > 5' \
+    '.trace.traps[] | select(.type | contains("Throwable")) | .coveredBlocks | length > 5' \
     "Throwable (finally) trap covers multiple blocks"
 
 # Gap-fill: intermediate blocks (B3, B5) must appear in RuntimeException coveredBlocks
 assert_json_contains "$OUT/exception.json" \
-    '.traps[] | select(.type | contains("RuntimeException")) | .coveredBlocks | index("B3")' \
+    '.trace.traps[] | select(.type | contains("RuntimeException")) | .coveredBlocks | index("B3")' \
     "gap-fill: B3 (intermediate L9) in RuntimeException coveredBlocks"
 
 assert_json_contains "$OUT/exception.json" \
-    '.traps[] | select(.type | contains("RuntimeException")) | .coveredBlocks | index("B5")' \
+    '.trace.traps[] | select(.type | contains("RuntimeException")) | .coveredBlocks | index("B5")' \
     "gap-fill: B5 (intermediate L9) in RuntimeException coveredBlocks"
 
 # Normal-path finally (B13) must NOT be in any trap's coveredBlocks
 assert_json_contains "$OUT/exception.json" \
-    '[.traps[].coveredBlocks[] | select(. == "B13")] | length == 0' \
+    '[.trace.traps[].coveredBlocks[] | select(. == "B13")] | length == 0' \
     "B13 (normal-path finally) not in any coveredBlocks"
 
 # B13 (inlined finally) should be in Throwable's handlerBlocks
 assert_json_contains "$OUT/exception.json" \
-    '.traps[] | select(.type | contains("Throwable")) | .handlerBlocks | index("B13")' \
+    '.trace.traps[] | select(.type | contains("Throwable")) | .handlerBlocks | index("B13")' \
     "B13 (inlined finally) in Throwable handlerBlocks"
 
 # B0 (entry block L6) should be in a trap's coveredBlocks
 assert_json_contains "$OUT/exception.json" \
-    '[.traps[].coveredBlocks[] | select(. == "B0")] | length > 0' \
+    '[.trace.traps[].coveredBlocks[] | select(. == "B0")] | length > 0' \
     "B0 (entry block) in coveredBlocks via gap-fill"
 
 # Pipeline: raw → semantic → dot

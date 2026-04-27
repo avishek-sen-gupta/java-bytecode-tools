@@ -17,6 +17,7 @@ from ftrace_types import (
     MethodSemanticCFG,
     NodeKind,
     BranchLabel,
+    SplineStyle,
     SemanticCluster,
     SemanticEdge,
     SemanticNode,
@@ -278,12 +279,13 @@ def _render_method(node: MethodSemanticCFG, counter: int) -> _MethodDotResult:
     )
 
 
-def build_dot(root: MethodSemanticCFG) -> str:
+def build_dot(root: MethodSemanticCFG, splines: str = "") -> str:
     """Render a MethodSemanticCFG tree as a Graphviz DOT string."""
     header = [
         "digraph ftrace {",
         "  rankdir=TB;",
         "  compound=true;",
+        *([f'  splines="{splines}";'] if splines else []),
         '  node [shape=box, style="filled,rounded", fillcolor=white, '
         'fontname="Helvetica", fontsize=10];',
         '  edge [fontname="Helvetica", fontsize=9];',
@@ -308,6 +310,13 @@ def main():
         type=Path,
         help="Output file (.dot, .svg, or .png). Default: stdout as DOT.",
     )
+    parser.add_argument(
+        "--splines",
+        type=SplineStyle,
+        choices=list(SplineStyle),
+        default=None,
+        help="Edge routing style (default: Graphviz default, i.e. spline).",
+    )
     args = parser.parse_args()
 
     if args.input:
@@ -316,7 +325,7 @@ def main():
     else:
         root = json.load(sys.stdin)
 
-    dot = build_dot(root)
+    dot = build_dot(root, splines=args.splines or "")
 
     if args.output:
         ext = args.output.suffix.lower()

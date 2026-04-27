@@ -470,6 +470,78 @@ class TestRenderCrossEdges:
         assert result == []
 
 
+class TestSplinesOption:
+    def test_default_no_splines_attr(self):
+        from ftrace_to_dot import build_dot
+
+        method = _make_semantic_method(
+            nodes=[{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}],
+            edges=[],
+        )
+        dot = build_dot(method)
+        assert "splines=" not in dot
+
+    def test_ortho_splines(self):
+        from ftrace_to_dot import build_dot
+
+        method = _make_semantic_method(
+            nodes=[{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}],
+            edges=[],
+        )
+        dot = build_dot(method, splines="ortho")
+        assert '  splines="ortho";' in dot
+
+    def test_polyline_splines(self):
+        from ftrace_to_dot import build_dot
+
+        method = _make_semantic_method(
+            nodes=[{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}],
+            edges=[],
+        )
+        dot = build_dot(method, splines="polyline")
+        assert '  splines="polyline";' in dot
+
+    def test_spline_splines(self):
+        from ftrace_to_dot import build_dot
+
+        method = _make_semantic_method(
+            nodes=[{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}],
+            edges=[],
+        )
+        dot = build_dot(method, splines="spline")
+        assert '  splines="spline";' in dot
+
+    def test_line_splines(self):
+        from ftrace_to_dot import build_dot
+
+        method = _make_semantic_method(
+            nodes=[{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}],
+            edges=[],
+        )
+        dot = build_dot(method, splines="line")
+        assert '  splines="line";' in dot
+
+    def test_curved_splines(self):
+        from ftrace_to_dot import build_dot
+
+        method = _make_semantic_method(
+            nodes=[{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}],
+            edges=[],
+        )
+        dot = build_dot(method, splines="curved")
+        assert '  splines="curved";' in dot
+
+    def test_none_splines(self):
+        from ftrace_to_dot import build_dot
+
+        method = _make_semantic_method(
+            nodes=[{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}],
+            edges=[],
+        )
+        dot = build_dot(method, splines="none")
+        assert '  splines="none";' in dot
+
+
 class TestEscape:
     def test_plain_string(self):
         from ftrace_to_dot import escape

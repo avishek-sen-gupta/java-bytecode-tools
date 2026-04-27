@@ -34,6 +34,17 @@ class BranchLabel(StrEnum):
     F = "F"
 
 
+class SplineStyle(StrEnum):
+    """Graphviz splines attribute values for edge routing."""
+
+    ORTHO = "ortho"
+    POLYLINE = "polyline"
+    SPLINE = "spline"
+    LINE = "line"
+    CURVED = "curved"
+    NONE = "none"
+
+
 # RawStmt: line is required, rest are optional
 class _RawStmtRequired(TypedDict):
     line: int

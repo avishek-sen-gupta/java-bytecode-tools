@@ -491,6 +491,89 @@ def _build_edges(
     return {"edges": [*intra, *inter]}
 
 
+def _build_trap_clusters(
+    trap_index: int,
+    trap: RawTrap,
+    cluster_assignment: dict[BlockId, ClusterAssignment],
+    bid_to_nids: dict[BlockId, list[NodeId]],
+    block_first: dict[BlockId, NodeId],
+    cluster_offset: int,
+) -> tuple[list[SemanticCluster], list[ExceptionEdge]]:
+    """Build try + handler clusters and exception edge for one trap."""
+    etype = short_class(trap["type"])
+
+    try_bids = blocks_for_cluster(cluster_assignment, ClusterRole.TRY, trap_index)
+    handler_bids = blocks_for_cluster(
+        cluster_assignment, ClusterRole.HANDLER, trap_index
+    )
+
+    try_nids = [nid for bid in try_bids for nid in bid_to_nids.get(bid, [])]
+    handler_nids = [nid for bid in handler_bids for nid in bid_to_nids.get(bid, [])]
+
+    try_cluster: SemanticCluster = {
+        "trapType": etype,
+        "role": ClusterRole.TRY,
+        "nodeIds": try_nids,
+    }
+
+    handler_cluster: SemanticCluster = {
+        "trapType": etype,
+        "role": ClusterRole.HANDLER,
+        "nodeIds": handler_nids,
+    }
+    handler_entry_nid = block_first.get(trap["handler"], "")
+    if handler_entry_nid:
+        handler_cluster["entryNodeId"] = handler_entry_nid
+
+    clusters = [try_cluster, handler_cluster]
+
+    # Exception edge: try entry → handler entry
+    exception_edges: list[ExceptionEdge] = []
+    if handler_entry_nid:
+        src_nid = (
+            block_first.get(try_bids[0], "")
+            if try_bids
+            else next(
+                (
+                    block_first[cb]
+                    for cb in trap.get("coveredBlocks", [])
+                    if cb in block_first
+                ),
+                "",
+            )
+        )
+        if src_nid:
+            exception_edges.append(
+                {
+                    "from": src_nid,
+                    "to": handler_entry_nid,
+                    "trapType": etype,
+                    "fromCluster": cluster_offset,
+                    "toCluster": cluster_offset + 1,
+                }
+            )
+
+    return (clusters, exception_edges)
+
+
+def _build_clusters(
+    traps: list[RawTrap],
+    cluster_assignment: dict[BlockId, ClusterAssignment],
+    bid_to_nids: dict[BlockId, list[NodeId]],
+    block_first: dict[BlockId, NodeId],
+) -> _ClusterBuildResult:
+    """Build all clusters and exception edges from traps."""
+    trap_results = [
+        _build_trap_clusters(
+            i, trap, cluster_assignment, bid_to_nids, block_first, i * 2
+        )
+        for i, trap in enumerate(traps)
+    ]
+    all_clusters = [c for clusters, _ in trap_results for c in clusters]
+    all_exception_edges = [e for _, edges in trap_results for e in edges]
+    return {"clusters": all_clusters, "exception_edges": all_exception_edges}
+
+
 def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemanticCFG:
     """Pass 4: Build semantic graph from enriched tree. Returns new tree.
 
@@ -505,9 +588,9 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemant
         return dict(tree)
 
     # sourceTrace fallback — no blocks, just a linear list of lines
-    tree_metadata = tree.get("metadata", {})
-    if "mergedSourceTrace" in tree_metadata and "blocks" not in tree:
-        merged = tree_metadata["mergedSourceTrace"]
+    tree_metadata = tree.get(_F_METADATA, {})
+    if _F_MERGED_SOURCE_TRACE in tree_metadata and _F_BLOCKS not in tree:
+        merged = tree_metadata[_F_MERGED_SOURCE_TRACE]
         node_counter = next_id
         all_nodes: list[SemanticNode] = []
         all_edges: list[SemanticEdge] = []
@@ -527,9 +610,9 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemant
             for i in range(len(all_nodes) - 1)
         ]
 
-        drop_fields = {"sourceTrace", "metadata"}
+        drop_fields = {_F_SOURCE_TRACE, _F_METADATA}
         result = {
-            k: v for k, v in tree.items() if k not in drop_fields and k != "children"
+            k: v for k, v in tree.items() if k not in drop_fields and k != _F_CHILDREN
         }
         result["nodes"] = all_nodes
         result["edges"] = all_edges
@@ -537,197 +620,56 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemant
         result["exceptionEdges"] = []
         if all_nodes:
             result["entryNodeId"] = all_nodes[0]["id"]
-        if "children" in tree:
-            result["children"] = [
+        if _F_CHILDREN in tree:
+            result[_F_CHILDREN] = [
                 build_semantic_graph_pass(child, node_counter + i * 100)
-                for i, child in enumerate(tree["children"])
+                for i, child in enumerate(tree[_F_CHILDREN])
             ]
         return result
 
-    blocks = tree.get("blocks", [])
-    raw_edges = tree.get("edges", [])
-    traps = tree.get("traps", [])
-    cluster_assignment = tree_metadata.get("clusterAssignment", {})
-    block_aliases = tree_metadata.get("blockAliases", {})
+    # Resolve inputs from raw tree fields
+    resolved = _resolve_inputs(tree, tree_metadata)
 
-    # --- Build nodes ---
-    node_counter = next_id
-    block_first: dict[str, str] = {}  # block_id → first node_id
-    block_last: dict[str, str] = {}  # block_id → last node_id
-    bid_to_nids: dict[str, list[str]] = {}  # block_id → list of node_ids
-    all_nodes: list[SemanticNode] = []
+    # Build nodes: semantic nodes and block→node mappings
+    node_build = _build_nodes(resolved["blocks"], resolved["block_aliases"], next_id)
+    all_nodes = node_build["nodes"]
+    block_first = node_build["block_first"]
+    block_last = node_build["block_last"]
+    bid_to_nids = node_build["bid_to_nids"]
+    node_counter = node_build["node_counter"]
 
-    for block in blocks:
-        bid = block["id"]
+    # Build edges: intra-block and inter-block
+    edge_build = _build_edges(
+        resolved["edges"],
+        block_first,
+        block_last,
+        bid_to_nids,
+        resolved["block_aliases"],
+    )
+    all_edges = edge_build["edges"]
 
-        # Aliased blocks share the canonical block's nodes
-        if bid in block_aliases:
-            canonical = block_aliases[bid]
-            block_first[bid] = block_first[canonical]
-            block_last[bid] = block_last[canonical]
-            bid_to_nids[bid] = bid_to_nids[canonical]
-            continue
-
-        merged = block.get("mergedStmts", [])
-        if not merged:
-            nid = f"n{node_counter}"
-            node_counter += 1
-            all_nodes.append(
-                {
-                    "id": nid,
-                    "lines": [],
-                    "kind": NodeKind.PLAIN,
-                    "label": [bid],
-                }
-            )
-            block_first[bid] = nid
-            block_last[bid] = nid
-            bid_to_nids[bid] = [nid]
-            continue
-
-        nids_for_block: list[str] = []
-        is_branch_block = bool(block.get("branchCondition"))
-
-        for idx, entry in enumerate(merged):
-            nid = f"n{node_counter}"
-            node_counter += 1
-            is_last = idx == len(merged) - 1
-
-            kind = classify_node_kind(entry)
-            label = make_node_label(entry)
-
-            # Last node in a branch block includes the condition
-            if is_branch_block and is_last:
-                kind = NodeKind.BRANCH
-                cond = block.get("branchCondition", "")
-                if cond:
-                    label.append(cond)
-
-            all_nodes.append(
-                {
-                    "id": nid,
-                    "lines": [entry["line"]],
-                    "kind": kind,
-                    "label": label,
-                }
-            )
-            nids_for_block.append(nid)
-
-            if bid not in block_first:
-                block_first[bid] = nid
-
-        block_last[bid] = nids_for_block[-1]
-        bid_to_nids[bid] = nids_for_block
-
-    # --- Build intra-block edges (sequential within a block) ---
-    canonical_bids = [b["id"] for b in blocks if b["id"] not in block_aliases]
-    all_edges: list[SemanticEdge] = [
-        {"from": nids[i], "to": nids[i + 1]}
-        for bid in canonical_bids
-        for nids in [bid_to_nids.get(bid, [])]
-        for i in range(len(nids) - 1)
-    ]
-
-    # --- Build inter-block edges (CFG edges) ---
-    # Track shared nodes for reverse-edge artifact detection
-    nid_block_count = Counter(block_first[bid] for bid in block_first)
-    shared_nids = frozenset(nid for nid, c in nid_block_count.items() if c > 1)
-
-    emitted: set[tuple[str, str, str]] = set()
-
-    for raw_edge in raw_edges:
-        from_bid = raw_edge["fromBlock"]
-        to_bid = raw_edge["toBlock"]
-        tail_nid = block_last.get(from_bid, "")
-        succ_nid = block_first.get(to_bid, "")
-        if not tail_nid or not succ_nid or tail_nid == succ_nid:
-            continue
-
-        label = raw_edge.get("label", "")
-        if label:
-            key = (tail_nid, succ_nid, label)
-            if key not in emitted:
-                emitted.add(key)
-                all_edges.append(
-                    {"from": tail_nid, "to": succ_nid, "branch": BranchLabel(label)}
-                )
-        else:
-            key = (tail_nid, succ_nid, "")
-            reverse = (succ_nid, tail_nid, "")
-            if reverse in emitted and (
-                tail_nid in shared_nids or succ_nid in shared_nids
-            ):
-                continue
-            if key not in emitted:
-                emitted.add(key)
-                all_edges.append({"from": tail_nid, "to": succ_nid})
-
-    # --- Build clusters ---
-    all_clusters: list[SemanticCluster] = []
-    exception_edges: list[ExceptionEdge] = []
-
-    for i, trap in enumerate(traps):
-        etype = short_class(trap["type"])
-
-        try_bids = blocks_for_cluster(cluster_assignment, ClusterRole.TRY, i)
-        handler_bids = blocks_for_cluster(cluster_assignment, ClusterRole.HANDLER, i)
-
-        try_nids = [nid for bid in try_bids for nid in bid_to_nids.get(bid, [])]
-        handler_nids = [nid for bid in handler_bids for nid in bid_to_nids.get(bid, [])]
-
-        all_clusters.append(
-            {
-                "trapType": etype,
-                "role": ClusterRole.TRY,
-                "nodeIds": try_nids,
-            }
-        )
-
-        handler_cluster: SemanticCluster = {
-            "trapType": etype,
-            "role": ClusterRole.HANDLER,
-            "nodeIds": handler_nids,
-        }
-        handler_entry_nid = block_first.get(trap["handler"], "")
-        if handler_entry_nid:
-            handler_cluster["entryNodeId"] = handler_entry_nid
-        all_clusters.append(handler_cluster)
-
-        # Exception edge
-        if handler_entry_nid:
-            src_nid = (
-                block_first.get(try_bids[0], "")
-                if try_bids
-                else next(
-                    (
-                        block_first[cb]
-                        for cb in trap.get("coveredBlocks", [])
-                        if cb in block_first
-                    ),
-                    "",
-                )
-            )
-            if src_nid:
-                exception_edges.append(
-                    {
-                        "from": src_nid,
-                        "to": handler_entry_nid,
-                        "trapType": etype,
-                        "fromCluster": len(all_clusters) - 2,  # try cluster index
-                        "toCluster": len(all_clusters) - 1,  # handler cluster index
-                    }
-                )
+    # Build clusters: exception handling clusters and edges
+    cluster_build = _build_clusters(
+        resolved["traps"],
+        resolved["cluster_assignment"],
+        bid_to_nids,
+        block_first,
+    )
+    all_clusters = cluster_build["clusters"]
+    exception_edges = cluster_build["exception_edges"]
 
     # --- Assemble result ---
     # Drop raw/intermediate fields, keep tree metadata
     drop_fields = {
-        "blocks",
-        "edges",
-        "traps",
-        "metadata",
-        "sourceTrace",
+        _F_BLOCKS,
+        _F_EDGES,
+        _F_TRAPS,
+        _F_METADATA,
+        _F_SOURCE_TRACE,
     }
-    result = {k: v for k, v in tree.items() if k not in drop_fields and k != "children"}
+    result = {
+        k: v for k, v in tree.items() if k not in drop_fields and k != _F_CHILDREN
+    }
     result["nodes"] = all_nodes
     result["edges"] = all_edges
     result["clusters"] = all_clusters
@@ -738,10 +680,10 @@ def build_semantic_graph_pass(tree: MethodCFG, next_id: int = 0) -> MethodSemant
         result["entryNodeId"] = all_nodes[0]["id"]
 
     # Recurse into children
-    if "children" in tree:
-        result["children"] = [
+    if _F_CHILDREN in tree:
+        result[_F_CHILDREN] = [
             build_semantic_graph_pass(child, node_counter + i * 100)
-            for i, child in enumerate(tree["children"])
+            for i, child in enumerate(tree[_F_CHILDREN])
         ]
 
     return result

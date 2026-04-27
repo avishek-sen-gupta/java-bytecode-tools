@@ -329,6 +329,73 @@ class TestBuildEdges:
         assert len(unconditional) == 1
 
 
+class TestBuildClusters:
+    def test_single_trap_produces_try_and_handler_clusters(self):
+        from ftrace_semantic import _build_clusters
+
+        traps = [
+            {
+                "type": "java.lang.RuntimeException",
+                "handler": "B3",
+                "coveredBlocks": ["B0"],
+                "handlerBlocks": ["B3"],
+            }
+        ]
+        cluster_assignment = {
+            "B0": {"kind": ClusterRole.TRY, "trapIndex": 0},
+            "B3": {"kind": ClusterRole.HANDLER, "trapIndex": 0},
+        }
+        bid_to_nids = {"B0": ["n0"], "B3": ["n1"]}
+        block_first = {"B0": "n0", "B3": "n1"}
+
+        result = _build_clusters(traps, cluster_assignment, bid_to_nids, block_first)
+        assert len(result["clusters"]) == 2
+
+        try_cluster = [c for c in result["clusters"] if c["role"] == ClusterRole.TRY][0]
+        handler_cluster = [
+            c for c in result["clusters"] if c["role"] == ClusterRole.HANDLER
+        ][0]
+        assert try_cluster["trapType"] == "RuntimeException"
+        assert try_cluster["nodeIds"] == ["n0"]
+        assert handler_cluster["trapType"] == "RuntimeException"
+        assert handler_cluster["nodeIds"] == ["n1"]
+        assert handler_cluster["entryNodeId"] == "n1"
+
+    def test_exception_edge_emitted(self):
+        from ftrace_semantic import _build_clusters
+
+        traps = [
+            {
+                "type": "java.lang.RuntimeException",
+                "handler": "B3",
+                "coveredBlocks": ["B0"],
+                "handlerBlocks": ["B3"],
+            }
+        ]
+        cluster_assignment = {
+            "B0": {"kind": ClusterRole.TRY, "trapIndex": 0},
+            "B3": {"kind": ClusterRole.HANDLER, "trapIndex": 0},
+        }
+        bid_to_nids = {"B0": ["n0"], "B3": ["n1"]}
+        block_first = {"B0": "n0", "B3": "n1"}
+
+        result = _build_clusters(traps, cluster_assignment, bid_to_nids, block_first)
+        assert len(result["exception_edges"]) == 1
+        ee = result["exception_edges"][0]
+        assert ee["from"] == "n0"
+        assert ee["to"] == "n1"
+        assert ee["trapType"] == "RuntimeException"
+        assert ee["fromCluster"] == 0
+        assert ee["toCluster"] == 1
+
+    def test_no_traps_produces_empty(self):
+        from ftrace_semantic import _build_clusters
+
+        result = _build_clusters([], {}, {}, {})
+        assert result["clusters"] == []
+        assert result["exception_edges"] == []
+
+
 class TestBuildSemanticGraphPass:
     def test_simple_linear_chain(self):
         from ftrace_semantic import build_semantic_graph_pass

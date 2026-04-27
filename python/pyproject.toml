@@ -13,6 +13,7 @@ ftrace-to-dot = "ftrace_to_dot:main"
 ftrace-slice = "ftrace_slice:main"
 ftrace-expand-refs = "ftrace_expand_refs:main"
 ftrace-semantic = "ftrace_semantic:main"
+ftrace-validate = "ftrace_validate:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -267,3 +267,62 @@ def validate_tree(root: MethodSemanticCFG) -> list[Violation]:
         v for child in root.get("children", []) for v in validate_tree(child)
     ]
     return [*own, *child_violations]
+
+
+def main():
+    """CLI entry point for ftrace-validate UNIX pipeline tool.
+
+    Reads semantic JSON from stdin/file, validates invariants, logs violations
+    to stderr, and passes through the JSON unchanged to stdout/file.
+
+    Exit code 0 if no violations, 1 if violations found.
+    """
+    import argparse
+    import json
+    import sys
+    from pathlib import Path
+
+    parser = argparse.ArgumentParser(
+        description="Validate semantic graph invariants and detect structural bugs."
+    )
+    parser.add_argument("--input", type=Path, help="Input semantic JSON file (default: stdin)")
+    parser.add_argument(
+        "--output", type=Path, help="Output JSON file (default: stdout)"
+    )
+    args = parser.parse_args()
+
+    # Read input
+    if args.input:
+        with open(args.input) as f:
+            root = json.load(f)
+    else:
+        root = json.load(sys.stdin)
+
+    # Validate
+    violations = validate_tree(root)
+
+    # Log violations to stderr
+    if violations:
+        for v in violations:
+            method = v["method"]
+            node_id = v["node_id"]
+            kind = v["kind"]
+            message = v["message"]
+            location = f"{method}:{node_id}" if node_id else method
+            print(f"[{kind}] {location} — {message}", file=sys.stderr)
+
+    # Write output (pass-through)
+    output = json.dumps(root, indent=2)
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(output)
+        print(f"Wrote semantic graph to {args.output}", file=sys.stderr)
+    else:
+        print(output)
+
+    # Exit with appropriate code
+    sys.exit(1 if violations else 0)
+
+
+if __name__ == "__main__":
+    main()

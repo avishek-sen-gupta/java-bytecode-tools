@@ -142,6 +142,34 @@ public class ForwardTracer {
     return Classification.NORMAL;
   }
 
+  /**
+   * Build a child node for a callee. Always produces a leaf (ref, cycle, or filtered).
+   *
+   * @param calleeSig callee method signature
+   * @param classification how this callee was classified during discovery
+   * @param callSiteLine source line of the call site (omitted if <= 0)
+   * @return map suitable for inclusion in the "children" list
+   */
+  static Map<String, Object> buildChildNode(
+      String calleeSig, Classification classification, int callSiteLine) {
+    Map<String, Object> node = new LinkedHashMap<>();
+    node.put(F_CLASS, extractClassName(calleeSig));
+    node.put(F_METHOD, extractMethodName(calleeSig));
+    node.put(F_METHOD_SIGNATURE, calleeSig);
+
+    if (callSiteLine > 0) {
+      node.put(F_CALL_SITE_LINE, callSiteLine);
+    }
+
+    switch (classification) {
+      case NORMAL -> node.put(F_REF, true);
+      case CYCLE -> node.put(F_CYCLE, true);
+      case FILTERED -> node.put(F_FILTERED, true);
+    }
+
+    return node;
+  }
+
   private final BytecodeTracer tracer;
 
   public ForwardTracer(BytecodeTracer tracer) {

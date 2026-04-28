@@ -3,15 +3,15 @@
 [![CI](https://github.com/avishek-sen-gupta/java-bytecode-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/avishek-sen-gupta/java-bytecode-tools/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE.md)
 
-Bytecode-level call-graph and trace tooling for compiled Java classes. The repository combines:
+Interprocedural call tracing via [SootUp](https://soot-oss.github.io/SootUp/) bytecode analysis. Given any code path you want to understand — "what happens when this method fires?" or "what calls this DAO method?" — these tools build a structural call graph from compiled `.class` files and let you trace through it in both directions, producing JSON trees and SVG visualizations.
 
-- A Java CLI built on [SootUp](https://soot-oss.github.io/SootUp/) for call-graph construction and interprocedural tracing
+The repository combines:
+
+- A Java CLI built on SootUp for call-graph construction and interprocedural tracing
 - A small Python toolchain for slicing, ref expansion, validation, semantic graph building, and DOT/SVG rendering
 - A fixture project plus end-to-end tests that exercise the full pipeline
 
-The core workflow is: build a call graph from `.class` files, trace from or to a method identified by source line, then post-process the JSON into smaller slices or rendered diagrams.
-
-**Forward trace of `OrderService.processOrder`**
+**Forward trace of `OrderService.processOrder`** — branches, calls to repository and internal methods, resolved down to source lines:
 
 <p align="center">
   <img src="docs/forward-trace-example.svg" alt="Forward trace visualization" width="700">
@@ -21,12 +21,29 @@ The core workflow is: build a call graph from `.class` files, trace from or to a
 
 ```text
 java-bytecode-tools/
-├── java/                  Maven project with the SootUp-based analyzer
-├── python/                uv-managed post-processing and rendering tools
-├── scripts/bytecode.sh    Thin launcher for the Java CLI
-├── test-fixtures/         Fixture classes and end-to-end tests
-├── build.sh               Prereq check + Java/Python setup
-└── run-all-tests.sh       Java, Python, and E2E test runner
+├── java/                    Maven project — SootUp-based analysis
+│   ├── pom.xml
+│   └── src/main/java/tools/bytecode/
+│       ├── ForwardTracer.java    Two-pass ref-by-default tracer
+│       ├── BackwardTracer.java   BFS over call graph for backward traces
+│       ├── CallGraphBuilder.java Scans bytecode, resolves dispatch
+│       └── cli/                 picocli subcommands
+├── python/                  uv-managed post-processing and rendering tools
+│   ├── ftrace_types.py      Shared type definitions (StrEnum, TypedDict)
+│   ├── ftrace_slice.py      Slice subtree + bundle ref index
+│   ├── ftrace_expand_refs.py Expand ref nodes using ref index
+│   ├── ftrace_semantic.py   Transform raw trace → semantic graph
+│   ├── ftrace_to_dot.py     Render semantic graph as DOT/SVG
+│   ├── ftrace_validate.py   Validate semantic graph structure
+│   └── frames_print.py      Pretty-print backward trace chains
+├── scripts/bytecode.sh      Thin launcher for the Java CLI
+├── test-fixtures/           Fixture classes and end-to-end tests
+│   ├── src/                 Small fixture Java project
+│   ├── tests/               One test script per feature area
+│   ├── lib-test.sh          Shared helpers, setup, and assertions
+│   └── run-e2e.sh           E2E test runner
+├── build.sh                 Prereq check + Java/Python setup
+└── run-all-tests.sh         Java, Python, and E2E test runner
 ```
 
 Key Java commands:
@@ -62,6 +79,21 @@ Requirements checked by the build script:
 
 `build.sh` compiles the Java project, copies Maven runtime dependencies into `java/target/dependency/`, and creates the Python environment in `python/.venv`.
 
+### Pre-Commit Hooks
+
+```bash
+pre-commit install
+```
+
+Hooks run automatically on commit:
+
+- [Black](https://github.com/psf/black) — Python formatting
+- [google-java-format](https://github.com/google/google-java-format) — Java formatting
+- [Talisman](https://github.com/thoughtworks/talisman) — secret detection
+- [Pyright](https://github.com/microsoft/pyright) — Python type checking
+- [pip-audit](https://github.com/pypa/pip-audit) — Python dependency vulnerability scanning
+- E2E test suite
+
 ## Command Shape
 
 All Java commands go through `scripts/bytecode.sh`:
@@ -72,7 +104,7 @@ scripts/bytecode.sh [--prefix <package-prefix>] <classpath> <subcommand> [option
 
 Notes:
 
-- `--prefix` limits analysis to classes whose fully qualified name starts with the given prefix
+- `--prefix` limits analysis to classes whose fully qualified name starts with the given prefix. Without it, every class visible on the classpath is analyzed.
 - `<classpath>` is a colon-separated classpath of compiled classes and jars
 - Java JSON-producing commands write to stdout by default; use `--output <file>` to write a file instead
 - Python tools that accept `--input` also read from stdin when `--input` is omitted
@@ -101,6 +133,8 @@ CP=test-fixtures/classes
 
 ### 1. Build The Call Graph
 
+Scans all project classes matching the prefix, extracts invoke statements, and records caller-to-callee edges. Resolves polymorphic dispatch by mapping interfaces to concrete implementations.
+
 ```bash
 scripts/bytecode.sh --prefix com.example. "$CP" \
   buildcg --output callgraph.json
@@ -115,8 +149,6 @@ The result is a JSON map:
   ]
 }
 ```
-
-The builder scans project classes, indexes methods, and resolves interface/superclass dispatch by mapping abstract types to known implementations in the analyzed prefix.
 
 ### 2. Find A Method And Its Source Lines
 
@@ -140,8 +172,8 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
 
 `xtrace` is implemented as a two-pass pipeline:
 
-1. Discover all reachable project methods from the entry point over the prebuilt call graph
-2. Build CFG-rich method bodies for the root and a flat `refIndex` for discovered callees
+1. **Discover** — DFS over the call graph from the entry point, classifying each reachable method as normal, cycle, or filtered
+2. **Build** — construct CFG-rich method bodies for the root; emit all other methods as lightweight `ref` nodes with their full bodies in a flat `refIndex`
 
 The output is an envelope:
 
@@ -186,8 +218,7 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
 Pretty-print the chain view with:
 
 ```bash
-cd python
-uv run frames-print --input ../backward.json
+cd python && uv run frames-print --input ../backward.json
 ```
 
 You can also constrain the backward search to a known entry point:
@@ -234,17 +265,17 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
 scripts/bytecode.sh --prefix com.example. "$CP" \
   frames --call-graph callgraph.json \
   --to com.example.app.JdbcOrderRepository --to-line 7 \
-  | (cd python && uv run frames-print)
+  | uv --directory python run frames-print
 ```
 
 ```bash
 scripts/bytecode.sh --prefix com.example. "$CP" \
   xtrace --call-graph callgraph.json \
   --from com.example.app.OrderService --from-line 17 \
-  | (cd python && uv run ftrace-slice --to com.example.app.JdbcOrderRepository) \
-  | (cd python && uv run ftrace-expand-refs) \
-  | (cd python && uv run ftrace-semantic) \
-  | (cd python && uv run ftrace-to-dot) \
+  | uv --directory python run ftrace-slice --to com.example.app.JdbcOrderRepository \
+  | uv --directory python run ftrace-expand-refs \
+  | uv --directory python run ftrace-semantic \
+  | uv --directory python run ftrace-to-dot \
   > trace.dot
 ```
 
@@ -254,23 +285,19 @@ If you want a rendered SVG directly, keep the upstream stages on stdout and give
 scripts/bytecode.sh --prefix com.example. "$CP" \
   xtrace --call-graph callgraph.json \
   --from com.example.app.OrderService --from-line 17 \
-  | (cd python && uv run ftrace-slice --to com.example.app.JdbcOrderRepository) \
-  | (cd python && uv run ftrace-expand-refs) \
-  | (cd python && uv run ftrace-semantic) \
-  | (cd python && uv run ftrace-to-dot --output ../trace.svg)
+  | uv --directory python run ftrace-slice --to com.example.app.JdbcOrderRepository \
+  | uv --directory python run ftrace-expand-refs \
+  | uv --directory python run ftrace-semantic \
+  | uv --directory python run ftrace-to-dot --output trace.svg
 ```
 
 ### Slice A Trace
 
-From the repository root:
-
 ```bash
-cd python
-
-uv run ftrace-slice \
-  --input ../forward.json \
+uv --directory python run ftrace-slice \
+  --input forward.json \
   --from com.example.app.OrderService --from-line 17 \
-  --output ../slice.json
+  --output slice.json
 ```
 
 Common modes:
@@ -279,11 +306,11 @@ Common modes:
 - `--to CLASS [--to-line N]`: keep only paths from the root that reach the target
 - `--from ... --to ...`: find the `--from` subtree, then prune it to paths that reach `--to`
 
-The sliced output is:
+The sliced output has the same envelope shape as `xtrace` output:
 
 ```json
 {
-  "slice": {
+  "trace": {
     "class": "com.example.app.OrderService",
     "method": "processOrder",
     "methodSignature": "<com.example.app.OrderService: java.lang.String processOrder(int)>",
@@ -303,7 +330,6 @@ The sliced output is:
     "<com.example.app.JdbcOrderRepository: java.lang.String findById(int)>": {
       "class": "com.example.app.JdbcOrderRepository",
       "method": "findById",
-      "methodSignature": "<com.example.app.JdbcOrderRepository: java.lang.String findById(int)>",
       "lineStart": 6,
       "lineEnd": 11,
       "blocks": [],
@@ -320,34 +346,35 @@ The bundled `refIndex` is reduced to only the signatures still referenced by the
 ### Expand Ref Nodes
 
 ```bash
-cd python
-uv run ftrace-expand-refs --input ../slice.json --output ../expanded.json
+uv --directory python run ftrace-expand-refs --input slice.json --output expanded.json
 ```
 
-This replaces `ref: true` leaves with full method bodies from `refIndex` while preserving `callSiteLine` metadata and avoiding cyclic expansion.
+This replaces `ref: true` leaves with full method bodies from `refIndex` while preserving `callSiteLine` metadata and avoiding cyclic expansion. Both sliced traces (from `ftrace-slice`) and raw envelopes (from `xtrace`) are accepted — so you can expand the whole trace without slicing first:
+
+```bash
+uv --directory python run ftrace-expand-refs --input forward.json --output expanded.json
+```
 
 ### Build A Semantic Graph And Render SVG
 
 ```bash
-cd python
-
-uv run ftrace-semantic --input ../expanded.json --output ../semantic.json
-uv run ftrace-to-dot --input ../semantic.json --output ../trace.svg
+uv --directory python run ftrace-semantic --input expanded.json --output semantic.json
+uv --directory python run ftrace-to-dot --input semantic.json --output trace.svg
 ```
 
-The semantic pass merges duplicate source-line statements, assigns exception clusters, and emits graph-friendly nodes and edges. The renderer then maps that JSON into DOT/SVG with:
+The semantic pass merges duplicate source-line statements, assigns exception clusters, and emits graph-friendly nodes and edges. The renderer maps that JSON into DOT/SVG with:
 
-- per-method clusters
-- statement and branch nodes
-- labeled true/false edges
-- cross-method call edges
-- distinct styles for `ref`, `cycle`, and `filtered` leaves
+- **Method clusters** — one subgraph per method, labeled `Class.method [lines X–Y]`
+- **Per-line nodes** — green for calls, blue for branches, beige for assignments
+- **Diamond nodes** for branch decisions with resolved conditions
+- **T/F edges** for true/false branch paths
+- **Red cross-cluster edges** linking call sites to callee entry nodes
+- **Leaf nodes**: red dashed (cycle), grey dashed (ref), yellow dashed (filtered)
 
 ### Validate Semantic Output
 
 ```bash
-cd python
-uv run ftrace-validate --input ../semantic.json
+uv --directory python run ftrace-validate --input semantic.json
 ```
 
 ## Filters
@@ -363,9 +390,9 @@ uv run ftrace-validate --input ../semantic.json
 
 Behavior:
 
-- `allow`: if present and non-empty, only matching class prefixes are eligible for recursion
-- `stop`: matching class prefixes are emitted as `filtered` leaves instead of being expanded
-- `stop` wins if both lists match a class
+- **`allow`**: if present and non-empty, only matching class prefixes are eligible for recursion. An empty list or omitting the key disables allow-filtering.
+- **`stop`**: matching class prefixes are emitted as `filtered` leaves instead of being expanded.
+- **Precedence**: `allow` is checked first, then `stop`. A class matching both is **stopped** (stop wins). Both filters match on class-name prefixes, not individual methods.
 
 Without `--filter`, recursion follows every reachable method that has a body and is present in the analyzed project set.
 
@@ -400,13 +427,54 @@ The end-to-end suite:
 - compiles the fixture classes
 - builds a shared call graph
 - exercises `buildcg`, `dump`, `trace`, `xtrace`, and `frames`
-- checks the slice, expand, semantic, and render pipeline
+- checks the slice, expand, semantic, and render pipeline (both file-based and fully piped via stdin/stdout)
 - validates outputs with `jq`
+
+## Quick Reference
+
+```bash
+./build.sh
+
+# All Java commands:
+#   scripts/bytecode.sh [--prefix <pkg.>] <classpath> <subcommand> [options]
+
+# Build call graph
+scripts/bytecode.sh --prefix com.example. "$CP" buildcg --output callgraph.json
+
+# Inspect a class
+scripts/bytecode.sh --prefix com.example. "$CP" dump com.example.app.OrderService
+
+# Forward trace
+scripts/bytecode.sh --prefix com.example. "$CP" \
+  xtrace --call-graph callgraph.json --from com.example.app.OrderService --from-line 17
+
+# Backward trace
+scripts/bytecode.sh --prefix com.example. "$CP" \
+  frames --call-graph callgraph.json --to com.example.app.JdbcOrderRepository --to-line 7
+
+# Intraprocedural trace
+scripts/bytecode.sh --prefix com.example. "$CP" trace com.example.app.OrderService 17 23
+
+# Python post-processing
+uv --directory python run ftrace-slice   --input forward.json --from com.example.app.OrderService --output slice.json
+uv --directory python run ftrace-expand-refs --input slice.json --output expanded.json
+uv --directory python run ftrace-semantic    --input expanded.json --output semantic.json
+uv --directory python run ftrace-to-dot      --input semantic.json --output trace.svg
+uv --directory python run ftrace-validate    --input semantic.json
+uv --directory python run frames-print       --input backward.json
+
+# Full pipeline piped end-to-end
+scripts/bytecode.sh --prefix com.example. "$CP" \
+  xtrace --call-graph callgraph.json --from com.example.app.OrderService --from-line 17 \
+  | uv --directory python run ftrace-slice --to com.example.app.JdbcOrderRepository \
+  | uv --directory python run ftrace-expand-refs \
+  | uv --directory python run ftrace-semantic \
+  | uv --directory python run ftrace-to-dot --output trace.svg
+```
 
 ## Practical Notes
 
 - The Java launcher sets `-Xss4m -Xmx2g`
-- The CLI expects compiled bytecode, not source files
-- `--prefix` is optional, but without it the analyzer will consider every class visible on the supplied classpath
+- The CLI expects compiled bytecode (`.class` files), not source files
 - `frames` supports `--depth` to cap backward BFS depth
 - Most JSON-writing commands create parent directories for `--output` automatically

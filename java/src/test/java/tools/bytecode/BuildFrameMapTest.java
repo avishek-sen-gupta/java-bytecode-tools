@@ -21,7 +21,7 @@ class BuildFrameMapTest {
 
     @Test
     void includesIdentityFields() {
-      Map<String, Object> fm = BackwardTracer.buildLightweightFrameMap(frame(10, 20));
+      Map<String, Object> fm = BackwardTracer.buildLightweightFrameMap(frame(10, 20), -1);
 
       assertEquals("com.example.Foo", fm.get("class"));
       assertEquals("bar", fm.get("method"));
@@ -30,7 +30,7 @@ class BuildFrameMapTest {
 
     @Test
     void includesLineMetadata() {
-      Map<String, Object> fm = BackwardTracer.buildLightweightFrameMap(frame(10, 20));
+      Map<String, Object> fm = BackwardTracer.buildLightweightFrameMap(frame(10, 20), -1);
 
       assertEquals(10, fm.get("lineStart"));
       assertEquals(20, fm.get("lineEnd"));
@@ -39,7 +39,7 @@ class BuildFrameMapTest {
 
     @Test
     void doesNotIncludeBlocksOrSourceTrace() {
-      Map<String, Object> fm = BackwardTracer.buildLightweightFrameMap(frame(10, 20));
+      Map<String, Object> fm = BackwardTracer.buildLightweightFrameMap(frame(10, 20), -1);
 
       assertNull(fm.get("blocks"));
       assertNull(fm.get("sourceTrace"));
@@ -49,9 +49,34 @@ class BuildFrameMapTest {
 
     @Test
     void doesNotIncludeRefMarker() {
-      Map<String, Object> fm = BackwardTracer.buildLightweightFrameMap(frame(10, 20));
+      Map<String, Object> fm = BackwardTracer.buildLightweightFrameMap(frame(10, 20), -1);
 
       assertNull(fm.get("ref"));
+    }
+  }
+
+  @Nested
+  class CallSiteLine {
+
+    @Test
+    void callSiteLineIncludedWhenPositive() {
+      Map<String, Object> fm = BackwardTracer.buildLightweightFrameMap(frame(10, 20), 42);
+
+      assertEquals(42, fm.get("callSiteLine"));
+    }
+
+    @Test
+    void callSiteLineAbsentWhenNegative() {
+      Map<String, Object> fm = BackwardTracer.buildLightweightFrameMap(frame(10, 20), -1);
+
+      assertNull(fm.get("callSiteLine"));
+    }
+
+    @Test
+    void callSiteLineAbsentWhenZero() {
+      Map<String, Object> fm = BackwardTracer.buildLightweightFrameMap(frame(10, 20), 0);
+
+      assertNull(fm.get("callSiteLine"));
     }
   }
 

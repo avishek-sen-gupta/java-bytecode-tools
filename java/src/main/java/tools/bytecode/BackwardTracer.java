@@ -103,12 +103,17 @@ public class BackwardTracer {
         List<String> path = top.getValue();
 
         if (current.equals(targetSig)) {
+          List<BytecodeTracer.CallFrame> callFrames =
+              path.stream()
+                  .filter(sigToMethod::containsKey)
+                  .map(s -> tracer.buildFlatFrame(sigToMethod.get(s), s))
+                  .toList();
           List<Map<String, Object>> frames = new ArrayList<>();
-          for (String s : path) {
-            SootMethod method = sigToMethod.get(s);
-            if (method != null) {
-              frames.add(buildLightweightFrameMap(tracer.buildFlatFrame(method, s)));
-            }
+          for (int i = 0; i < callFrames.size(); i++) {
+            BytecodeTracer.CallFrame cf = callFrames.get(i);
+            int callSiteLine =
+                i == 0 ? -1 : BytecodeTracer.findCallSiteLine(callFrames.get(i - 1), cf);
+            frames.add(buildLightweightFrameMap(cf, callSiteLine));
           }
           if (!frames.isEmpty()) {
             chainTrees.add(nestFrames(frames));
@@ -177,8 +182,13 @@ public class BackwardTracer {
     return result;
   }
 
-  /** Builds a lightweight frame map: identity fields + line metadata only. No blocks, no ref. */
-  static Map<String, Object> buildLightweightFrameMap(BytecodeTracer.CallFrame f) {
+  /**
+   * Builds a lightweight frame map: identity fields + line metadata only. No blocks, no ref.
+   *
+   * @param callSiteLine line in the caller where this frame is invoked; omitted when ≤ 0
+   */
+  static Map<String, Object> buildLightweightFrameMap(
+      BytecodeTracer.CallFrame f, int callSiteLine) {
     Map<String, Object> fm = new LinkedHashMap<>();
     fm.put("class", f.className());
     fm.put("method", f.methodName());
@@ -186,6 +196,9 @@ public class BackwardTracer {
     fm.put("lineStart", f.entryLine());
     fm.put("lineEnd", f.exitLine());
     fm.put("sourceLineCount", f.exitLine() - f.entryLine() + 1);
+    if (callSiteLine > 0) {
+      fm.put("callSiteLine", callSiteLine);
+    }
     return fm;
   }
 

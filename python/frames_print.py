@@ -30,9 +30,11 @@ def _format_chain(index: int, chain_root: dict[str, Any]) -> str:
     frames = _flatten_chain(chain_root)
     lines = [f"Chain {index + 1}:"]
     for i, frame in enumerate(frames):
+        callsite = frame.get("callSiteLine", 0)
+        callsite_str = f"@L{callsite}  " if (i > 0 and callsite > 0) else ""
         prefix = _INDENT + (_BRANCH if i > 0 else "")
         extra_indent = _INDENT + _PIPE * (i - 1) if i > 1 else ""
-        lines.append(f"{extra_indent}{prefix}{_format_frame(frame)}")
+        lines.append(f"{extra_indent}{prefix}{callsite_str}{_format_frame(frame)}")
     lines.append("")
     return "\n".join(lines)
 

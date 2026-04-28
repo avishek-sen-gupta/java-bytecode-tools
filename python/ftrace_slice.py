@@ -9,10 +9,8 @@ The refIndex is scoped: only signatures referenced by ref nodes in the slice are
 
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
-
 from typing import cast
 
 from ftrace_types import MethodCFG
@@ -59,20 +57,85 @@ def _index_walk(
         _index_walk(child, signatures, acc)
 
 
+def matches(node: MethodCFG, class_name: str, line: int) -> bool:
+    """Return True if node matches the given class name and (if line > 0) contains that line.
+
+    line == 0 means not provided — matches any line range for the class.
+    lineStart/lineEnd are xtrace output fields present in JSON but not declared in TypedDict.
+    """
+    class_match = node.get("class", "") == class_name
+    if line == 0:
+        return class_match
+    return class_match and node.get("lineStart", 0) <= line <= node.get("lineEnd", 0)
+
+
+def find_subtree(tree: MethodCFG, class_name: str, line: int) -> list[MethodCFG]:
+    """DFS search for first node matching class_name (+line). Returns [node] or []."""
+    if matches(tree, class_name, line):
+        return [tree]
+    return next(
+        (
+            result
+            for child in tree.get("children", [])
+            for result in [find_subtree(child, class_name, line)]
+            if result
+        ),
+        [],
+    )
+
+
+def prune_to_target(node: MethodCFG, class_name: str, line: int) -> list[MethodCFG]:
+    """Return [node_with_pruned_children] if target is reachable, [] otherwise.
+
+    When node itself matches target: return [node with children stripped].
+    Multiple paths to target are preserved as a branching tree.
+    """
+    if matches(node, class_name, line):
+        return [{**node, "children": []}]
+    pruned_children = [
+        pruned
+        for child in node.get("children", [])
+        for pruned in prune_to_target(child, class_name, line)
+    ]
+    if not pruned_children:
+        return []
+    return [{**node, "children": pruned_children}]
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Slice a subtree using jq and bundle a ref index for expansion."
+        description="Slice a subtree from an ftrace and bundle a ref index for expansion."
     )
     parser.add_argument(
         "--input", type=Path, help="Full ftrace JSON file (default: stdin)"
     )
     parser.add_argument(
-        "--query",
-        required=True,
-        help="jq query to slice the subtree (e.g. '.children[0]')",
+        "--from", dest="from_class", metavar="CLASS", help="FQCN of start node"
+    )
+    parser.add_argument(
+        "--from-line",
+        dest="from_line",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Line within --from class to narrow match",
+    )
+    parser.add_argument(
+        "--to", dest="to_class", metavar="CLASS", help="FQCN of target node"
+    )
+    parser.add_argument(
+        "--to-line",
+        dest="to_line",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Line within --to class to narrow match",
     )
     parser.add_argument("--output", type=Path, help="Output file (default: stdout)")
     args = parser.parse_args()
+
+    if not args.from_class and not args.to_class:
+        parser.error("At least one of --from or --to must be provided.")
 
     # 1. Read the full tree (file or stdin)
     if args.input:
@@ -86,36 +149,49 @@ def main():
     full_tree = json.loads(raw_json)
 
     # Unwrap envelope if present (xtrace outputs {trace, refIndex})
-    trace_to_query = full_tree
-    if isinstance(full_tree, dict) and "trace" in full_tree and "refIndex" in full_tree:
-        trace_to_query = full_tree["trace"]
-        raw_json_for_query = json.dumps(trace_to_query)
+    is_envelope = (
+        isinstance(full_tree, dict) and "trace" in full_tree and "refIndex" in full_tree
+    )
+    trace = cast(MethodCFG, full_tree["trace"] if is_envelope else full_tree)
+
+    # 2. Navigate the trace tree according to mode
+    if args.from_class and args.to_class:
+        # --from + --to: find --from subtree, then prune to paths reaching --to
+        from_results = find_subtree(trace, args.from_class, args.from_line)
+        if not from_results:
+            print(
+                f"Error: no node found for --from {args.from_class} (line {args.from_line})",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        pruned = prune_to_target(from_results[0], args.to_class, args.to_line)
+        if not pruned:
+            print(
+                f"Error: no path from {args.from_class} to {args.to_class}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        target = pruned[0]
+    elif args.from_class:
+        # --from only: return subtree rooted at matching node
+        from_results = find_subtree(trace, args.from_class, args.from_line)
+        if not from_results:
+            print(
+                f"Error: no node found for --from {args.from_class} (line {args.from_line})",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        target = from_results[0]
     else:
-        raw_json_for_query = raw_json
-
-    # 2. Use jq to slice the target subtree
-    try:
-        result = subprocess.run(
-            ["jq", args.query],
-            input=raw_json_for_query,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        target = json.loads(result.stdout)
-    except subprocess.CalledProcessError as e:
-        print(f"jq failed: {e.stderr}", file=sys.stderr)
-        sys.exit(1)
-    except json.JSONDecodeError:
-        print("Error: jq query did not return valid JSON.", file=sys.stderr)
-        sys.exit(1)
-
-    if not isinstance(target, dict):
-        print(
-            "Error: jq query must return a single JSON object (node).",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        # --to only: prune from trace root to paths reaching --to
+        pruned = prune_to_target(trace, args.to_class, args.to_line)
+        if not pruned:
+            print(
+                f"Error: no path to --to {args.to_class} (line {args.to_line})",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        target = pruned[0]
 
     target = cast(MethodCFG, target)
     ref_sigs = collect_ref_signatures(target)

@@ -13,7 +13,7 @@ $B xtrace --call-graph "$OUT/callgraph.json" \
 # Slice out handleException (now outputs SlicedTrace)
 cd "$REPO_ROOT/python"
 uv run ftrace-slice --input "$OUT/complex.json" \
-  --query '.children[] | select(.method == "handleException")' \
+  --from com.example.app.ExceptionService \
   --output "$OUT/sliced.json"
 
 assert_json_contains "$OUT/sliced.json" \
@@ -57,7 +57,7 @@ assert_file_contains "$OUT/sliced-pipeline.dot" "digraph" \
 
 # Fully piped: cat | slice | expand-refs | semantic | to-dot (all stdin/stdout)
 cat "$OUT/complex.json" \
-  | uv run ftrace-slice --query '.children[] | select(.method == "handleException")' \
+  | uv run ftrace-slice --from com.example.app.ExceptionService \
   | uv run ftrace-expand-refs \
   | uv run ftrace-semantic \
   | uv run ftrace-to-dot > "$OUT/piped.dot"
@@ -71,7 +71,7 @@ assert_file_contains "$OUT/piped.dot" "handleException" \
 # End-to-end piped: xtrace | slice | expand-refs | semantic | to-dot (no intermediate files)
 $B xtrace --call-graph "$OUT/callgraph.json" \
   --from com.example.app.ComplexService --from-line "$COMPLEX_LINE" \
-  | uv run ftrace-slice --query '.children[] | select(.method == "handleException")' \
+  | uv run ftrace-slice --from com.example.app.ExceptionService \
   | uv run ftrace-expand-refs \
   | uv run ftrace-semantic \
   | uv run ftrace-to-dot > "$OUT/e2e-piped.dot"

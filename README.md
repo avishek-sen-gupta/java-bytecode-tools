@@ -205,10 +205,29 @@ Since every callee is a ref node, you can drill into any method by slicing and e
 ```bash
 cd python
 
-# Slice: extract subtree + bundle ref index
+# Slice: extract subtree rooted at a class (--from only)
 uv run ftrace-slice \
   --input ../trace.json \
-  --query ".trace.children[0]" \
+  --from com.example.service.PaymentService \
+  --output ../sliced.json
+
+# Narrow to a specific method by line number within the class
+uv run ftrace-slice \
+  --input ../trace.json \
+  --from com.example.service.OrderService --from-line 64 \
+  --output ../sliced.json
+
+# Extract all call paths from one class to another (--from + --to)
+uv run ftrace-slice \
+  --input ../trace.json \
+  --from com.example.service.OrderService --from-line 64 \
+  --to com.example.dao.OrderRepository \
+  --output ../sliced.json
+
+# Extract all paths from root to a target class (--to only)
+uv run ftrace-slice \
+  --input ../trace.json \
+  --to com.example.dao.OrderRepository \
   --output ../sliced.json
 
 # Expand refs: replace ref nodes with full method bodies
@@ -229,7 +248,7 @@ Or pipe the whole thing — all tools (including xtrace) support stdin/stdout:
 scripts/bytecode.sh --prefix com.example. /path/to/classes \
   xtrace --call-graph callgraph.json \
   --from com.example.service.OrderService --from-line 64 \
-  | cd python && uv run ftrace-slice --query ".trace.children[0]" \
+  | cd python && uv run ftrace-slice --from com.example.service.PaymentService \
   | uv run ftrace-expand-refs \
   | uv run ftrace-semantic \
   | uv run ftrace-to-dot > ../sliced.svg
@@ -329,12 +348,13 @@ cd python
 uv run frames-print --input ../backward.json          # pretty-print backward trace
 uv run ftrace-semantic --input ../out.json --output ../out-semantic.json
 uv run ftrace-to-dot --input ../out-semantic.json --output ../out.svg
-uv run ftrace-slice --input ../trace.json --query ".trace.children[0]" --output ../sliced.json
+uv run ftrace-slice --input ../trace.json --from com.example.service.PaymentService --output ../sliced.json
+uv run ftrace-slice --input ../trace.json --from com.example.service.OrderService --from-line 64 --to com.example.dao.OrderRepository --output ../sliced.json
 uv run ftrace-expand-refs --input ../sliced.json --output ../expanded.json
 
 # Or pipe the full pipeline end-to-end (xtrace writes JSON to stdout when --output is omitted):
 scripts/bytecode.sh --prefix com.example. /path/to/classes \
   xtrace --call-graph callgraph.json --from <class> --from-line <N> \
-  | cd python && uv run ftrace-slice --query ".trace.children[0]" \
+  | cd python && uv run ftrace-slice --from com.example.service.PaymentService \
   | uv run ftrace-expand-refs | uv run ftrace-semantic | uv run ftrace-to-dot > ../out.svg
 ```

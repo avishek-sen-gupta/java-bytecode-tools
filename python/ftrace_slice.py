@@ -2,7 +2,7 @@
 """Slice a subtree from an ftrace JSON and bundle a ref index for downstream expansion.
 
 Output format (SlicedTrace):
-  { "slice": <subtree>, "refIndex": { methodSignature -> full node } }
+  { "trace": <subtree>, "refIndex": { methodSignature -> full node } }
 
 The refIndex is scoped: only signatures referenced by ref nodes in the slice are included.
 """
@@ -206,7 +206,7 @@ def main():
         ref_index = index_full_tree(cast(MethodCFG, full_tree), ref_sigs)
 
     # 3. Output SlicedTrace
-    sliced_trace = {"slice": target, "refIndex": ref_index}
+    sliced_trace = {"trace": target, "refIndex": ref_index}
     output = json.dumps(sliced_trace, indent=2)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -119,12 +119,12 @@ class TestTypeConstructors:
         assert list(BranchLabel) == [BranchLabel.T, BranchLabel.F]
 
     def test_sliced_trace_type(self):
-        """SlicedTrace has slice and refIndex fields."""
+        """SlicedTrace has trace and refIndex fields."""
         st: SlicedTrace = {
-            "slice": {"method": "foo", "children": []},
+            "trace": {"method": "foo", "children": []},
             "refIndex": {"<Svc: void foo()>": {"method": "foo"}},
         }
-        assert st["slice"]["method"] == "foo"
+        assert st["trace"]["method"] == "foo"
         assert "<Svc: void foo()>" in st["refIndex"]
 
     def test_method_cfg_has_edges_field(self):

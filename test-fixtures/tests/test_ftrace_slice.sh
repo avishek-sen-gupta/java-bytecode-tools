@@ -17,8 +17,8 @@ uv run ftrace-slice --input "$OUT/complex.json" \
   --output "$OUT/sliced.json"
 
 assert_json_contains "$OUT/sliced.json" \
-    '.slice | .method == "handleException"' \
-    "sliced root method in .slice"
+    '.trace | .method == "handleException"' \
+    "sliced root method in .trace"
 
 assert_json_contains "$OUT/sliced.json" \
     '.refIndex | length >= 0' \
@@ -49,19 +49,19 @@ uv run ftrace-slice --input "$OUT/complex.json" \
   --output "$OUT/sliced-to.json"
 
 assert_json_contains "$OUT/sliced-to.json" \
-    '.slice | .class == "com.example.app.ComplexService"' \
-    "--to: slice root is ComplexService (trace root)"
+    '.trace | .class == "com.example.app.ComplexService"' \
+    "--to: trace root is ComplexService (trace root)"
 
 assert_json_contains "$OUT/sliced-to.json" \
-    '.slice.children | length == 1' \
+    '.trace.children | length == 1' \
     "--to: one path reaches ExceptionService"
 
 assert_json_contains "$OUT/sliced-to.json" \
-    '.slice.children[0] | .class == "com.example.app.ExceptionService"' \
+    '.trace.children[0] | .class == "com.example.app.ExceptionService"' \
     "--to: child is ExceptionService"
 
 assert_json_contains "$OUT/sliced-to.json" \
-    '.slice.children[0].children | length == 0' \
+    '.trace.children[0].children | length == 0' \
     "--to: ExceptionService is a leaf (children stripped)"
 
 assert_json_contains "$OUT/sliced-to.json" \
@@ -75,15 +75,15 @@ uv run ftrace-slice --input "$OUT/complex.json" \
   --output "$OUT/sliced-from-to.json"
 
 assert_json_contains "$OUT/sliced-from-to.json" \
-    '.slice | .class == "com.example.app.ComplexService"' \
-    "--from+--to: slice root is ComplexService"
+    '.trace | .class == "com.example.app.ComplexService"' \
+    "--from+--to: trace root is ComplexService"
 
 assert_json_contains "$OUT/sliced-from-to.json" \
-    '.slice.children[0] | .class == "com.example.app.ExceptionService"' \
+    '.trace.children[0] | .class == "com.example.app.ExceptionService"' \
     "--from+--to: child is ExceptionService"
 
 assert_json_contains "$OUT/sliced-from-to.json" \
-    '.slice.children[0].children | length == 0' \
+    '.trace.children[0].children | length == 0' \
     "--from+--to: ExceptionService is a leaf (children stripped)"
 
 assert_json_contains "$OUT/sliced-from-to.json" \

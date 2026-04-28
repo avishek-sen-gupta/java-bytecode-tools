@@ -152,6 +152,103 @@ def test_e2e_pipeline_with_cli():
         assert validated["class"] == "com.example.TestClass"
 
 
+def test_ftrace_slice_output_flows_directly_into_ftrace_semantic():
+    """Verify ftrace-slice output is directly consumable by ftrace-semantic."""
+    xtrace_envelope = {
+        "trace": {
+            "class": "com.example.Root",
+            "method": "entry",
+            "methodSignature": "<com.example.Root: void entry()>",
+            "lineStart": 10,
+            "lineEnd": 20,
+            "sourceLineCount": 11,
+            "blocks": [
+                {
+                    "id": "B0",
+                    "stmts": [{"line": 11, "call": "com.example.Dao.load"}],
+                }
+            ],
+            "edges": [],
+            "traps": [],
+            "children": [
+                {
+                    "class": "com.example.Dao",
+                    "method": "load",
+                    "methodSignature": "<com.example.Dao: void load()>",
+                    "callSiteLine": 11,
+                    "ref": True,
+                }
+            ],
+        },
+        "refIndex": {
+            "<com.example.Dao: void load()>": {
+                "class": "com.example.Dao",
+                "method": "load",
+                "methodSignature": "<com.example.Dao: void load()>",
+                "lineStart": 30,
+                "lineEnd": 35,
+                "sourceLineCount": 6,
+                "blocks": [{"id": "B1", "stmts": [{"line": 31}]}],
+                "edges": [],
+                "traps": [],
+                "children": [],
+            }
+        },
+    }
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+        xtrace_file = tmpdir / "xtrace.json"
+        slice_file = tmpdir / "slice.json"
+        semantic_file = tmpdir / "semantic.json"
+
+        xtrace_file.write_text(json.dumps(xtrace_envelope, indent=2))
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "ftrace_slice",
+                "--input",
+                str(xtrace_file),
+                "--to",
+                "com.example.Dao",
+                "--output",
+                str(slice_file),
+            ],
+            cwd="/Users/asgupta/code/java-bytecode-tools/python",
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"ftrace-slice failed: {result.stderr}"
+
+        sliced = json.loads(slice_file.read_text())
+        assert "trace" in sliced
+        assert sliced["trace"]["class"] == "com.example.Root"
+        assert "refIndex" in sliced
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "ftrace_semantic",
+                "--input",
+                str(slice_file),
+                "--output",
+                str(semantic_file),
+            ],
+            cwd="/Users/asgupta/code/java-bytecode-tools/python",
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"ftrace-semantic failed: {result.stderr}"
+
+        semantic = json.loads(semantic_file.read_text())
+        assert semantic["class"] == "com.example.Root"
+
+
 # --- Helper functions ---
 
 

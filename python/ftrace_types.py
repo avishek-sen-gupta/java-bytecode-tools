@@ -368,11 +368,11 @@ class SlicedTrace(TypedDict):
     """Output of ftrace-slice: a sliced subtree plus a ref index for expansion.
 
     Fields:
-    - slice: the sliced subtree (trace node)
+    - trace: the sliced subtree
     - refIndex: methodSignature -> full node, scoped to refs in the slice
     """
 
-    slice: MethodCFG
+    trace: MethodCFG
     refIndex: dict[str, MethodCFG]
 
 

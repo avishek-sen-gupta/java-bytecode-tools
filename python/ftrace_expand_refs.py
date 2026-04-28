@@ -78,8 +78,7 @@ def main():
 
     data = json.loads(args.input.read_text()) if args.input else json.load(sys.stdin)
 
-    root_key = "slice" if "slice" in data else "trace"
-    expanded = expand_refs(data[root_key], data["refIndex"])
+    expanded = expand_refs(data["trace"], data["refIndex"])
 
     output = json.dumps(expanded, indent=2)
     if args.output:

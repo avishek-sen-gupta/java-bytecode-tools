@@ -32,4 +32,18 @@ assert_json_contains "$OUT/backward-chains.json" \
     '.trace.children[0].blocks == null' \
     "lightweight frames have no blocks"
 
+echo ""
+echo "frames bridge deduplication (covariant return type)"
+
+$B frames --call-graph "$OUT/callgraph.json" \
+  --to com.example.app.CovConcreteDao --to-line "$COV_LOOKUP_LINE" \
+  --output "$OUT/backward-cov.json" 2>/dev/null
+
+assert_json_field "$OUT/backward-cov.json" '.found' 'true' \
+    "bridge dedup: found chains"
+
+assert_json_contains "$OUT/backward-cov.json" \
+    '.trace.children | length == 1' \
+    "bridge dedup: exactly 1 chain (bridge collapsed, not 2)"
+
 report

@@ -96,6 +96,7 @@ setup() {
     $B dump com.example.app.ComplexService > "$OUT/dump-complex.json"
     $B dump com.example.app.RecursionService > "$OUT/dump-rec.json"
     $B dump com.example.app.NestedExceptionService > "$OUT/dump-nested.json"
+    $B dump com.example.app.CovConcreteDao > "$OUT/dump-covdao.json"
 }
 
 # Extract line numbers from dumps (call after setup)
@@ -109,6 +110,8 @@ load_line_numbers() {
     COMPLEX_LINE=$(jq -r '.methods[] | select(.method == "entryMethod") | .lineStart' "$OUT/dump-complex.json")
     RECURSE_LINE=$(jq -r '.methods[] | select(.method == "recurse") | .lineStart' "$OUT/dump-rec.json")
     NESTED_LINE=$(jq -r '.methods[] | select(.method == "nestedHandle") | .lineStart' "$OUT/dump-nested.json")
+    # Bridge at class declaration line; real method has highest lineStart among same-name methods
+    COV_LOOKUP_LINE=$(jq -r '[.methods[] | select(.method == "lookup")] | max_by(.lineStart) | .lineStart' "$OUT/dump-covdao.json")
 }
 
 report() {

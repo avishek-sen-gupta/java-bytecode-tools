@@ -1,10 +1,12 @@
 package tools.bytecode;
 
 import java.util.*;
+import java.util.stream.Collectors;
 import sootup.core.jimple.common.expr.AbstractInvokeExpr;
 import sootup.core.jimple.common.expr.JSpecialInvokeExpr;
 import sootup.core.jimple.common.stmt.Stmt;
 import sootup.core.model.Body;
+import sootup.core.model.MethodModifier;
 import sootup.core.model.SootMethod;
 import sootup.core.signatures.MethodSignature;
 import sootup.core.types.ClassType;
@@ -32,6 +34,7 @@ public class CallGraphBuilder {
     Map<String, String> sigIndex = new LinkedHashMap<>();
     Map<String, List<String>> nameIndex = new LinkedHashMap<>();
 
+    Set<String> bridgeSigs = new LinkedHashSet<>();
     int indexed = 0;
     for (JavaSootClass cls : projectClasses) {
       String clsName = cls.getType().getFullyQualifiedName();
@@ -41,6 +44,9 @@ public class CallGraphBuilder {
         sigIndex.put(sig, sig);
         String key = clsName + "#" + method.getName() + "#" + method.getParameterCount();
         nameIndex.computeIfAbsent(key, k -> new ArrayList<>()).add(sig);
+        if (MethodModifier.isBridge(method.getModifiers())) {
+          bridgeSigs.add(sig);
+        }
         indexed++;
         if (indexed % 1000 == 0) System.err.println("  indexed " + indexed + " methods...");
       }
@@ -106,13 +112,52 @@ public class CallGraphBuilder {
     }
 
     // Convert sets to lists for JSON
-    Map<String, List<String>> result = new LinkedHashMap<>();
+    Map<String, List<String>> raw = new LinkedHashMap<>();
     for (var entry : callerToCallees.entrySet()) {
-      result.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+      raw.put(entry.getKey(), new ArrayList<>(entry.getValue()));
     }
 
+    Map<String, List<String>> result = collapseBridgeMethods(raw, bridgeSigs);
     int edges = result.values().stream().mapToInt(List::size).sum();
     System.err.println("Done. " + result.size() + " callers, " + edges + " edges.");
+    return result;
+  }
+
+  /**
+   * Removes compiler-generated bridge methods from the call graph and redirects their callers to
+   * the real target methods. Bridge sigs are identified by the caller (via {@code ACC_BRIDGE}).
+   *
+   * <p>For each bridge {@code B}: every entry whose callee list contains {@code B} has {@code B}
+   * replaced by {@code B}'s own callees (excluding any self-loop on {@code B}). {@code B}'s entry
+   * is then removed. Duplicate callee refs introduced by the redirect are deduplicated.
+   *
+   * @param graph raw call graph (caller → callees)
+   * @param bridgeSigs signatures of all bridge methods detected during class scanning
+   * @return new graph with bridge entries removed and callers redirected
+   */
+  static Map<String, List<String>> collapseBridgeMethods(
+      Map<String, List<String>> graph, Set<String> bridgeSigs) {
+    if (bridgeSigs.isEmpty()) return graph;
+
+    Map<String, List<String>> result = new LinkedHashMap<>();
+    for (var entry : graph.entrySet()) {
+      if (bridgeSigs.contains(entry.getKey())) continue;
+
+      List<String> redirected =
+          entry.getValue().stream()
+              .flatMap(
+                  callee ->
+                      bridgeSigs.contains(callee)
+                          ? graph.getOrDefault(callee, List.of()).stream()
+                              .filter(c -> !c.equals(callee)) // drop self-loop
+                          : java.util.stream.Stream.of(callee))
+              .distinct()
+              .collect(Collectors.toList());
+
+      result.put(entry.getKey(), redirected);
+    }
+
+    System.err.println("Collapsed " + bridgeSigs.size() + " bridge method(s).");
     return result;
   }
 }

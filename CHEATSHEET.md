@@ -2,9 +2,9 @@
 
 All Java commands go through `scripts/bytecode.sh`. Python tools run via `uv --directory python run <tool>`.
 
-```
-B="scripts/bytecode.sh --prefix com.example. path/to/classes"
-UV="uv --directory python run"
+```bash
+B() { scripts/bytecode.sh --prefix com.example. path/to/classes "$@"; }
+UV() { uv --directory python run "$@"; }
 ```
 
 ---

@@ -14,6 +14,7 @@ ftrace-slice = "ftrace_slice:main"
 ftrace-expand-refs = "ftrace_expand_refs:main"
 ftrace-semantic = "ftrace_semantic:main"
 ftrace-validate = "ftrace_validate:main"
+frames-print = "frames_print:main"
 
 [build-system]
 requires = ["hatchling"]

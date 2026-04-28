@@ -145,11 +145,42 @@ Output structure:
     "synthetic": true,
     "class": "END",
     "children": [
-      { "class": "com.example.service.OrderService", "method": "processOrder", "lineStart": 64, "lineEnd": 95, "sourceLineCount": 32,
-        "children": [{ "class": "com.example.dao.OrderDao", "method": "findById", "lineStart": 39, "lineEnd": 45, "sourceLineCount": 7 }] }
+      {
+        "class": "com.example.service.OrderService", "method": "processOrder",
+        "lineStart": 64, "lineEnd": 95, "sourceLineCount": 32,
+        "children": [{
+          "class": "com.example.dao.OrderDao", "method": "findById",
+          "lineStart": 39, "lineEnd": 45, "sourceLineCount": 7,
+          "callSiteLine": 73
+        }]
+      }
     ]
   }
 }
+```
+
+Each frame except the chain root includes `callSiteLine`: the line within the parent method where the call is made.
+
+To pretty-print the output:
+
+```bash
+cd python
+uv run frames-print --input ../backward-trace.json
+
+# or pipe directly:
+scripts/bytecode.sh ... frames --to com.example.dao.OrderDao --to-line 39 \
+  | cd python && uv run frames-print
+```
+
+Example output:
+
+```
+Target: com.example.dao.OrderDao  (line 39)
+Found:  1 chain
+
+Chain 1:
+  com.example.service.OrderService.processOrder  L64-95  (32 lines)
+  └─ @L73  com.example.dao.OrderDao.findById  L39-45  (7 lines)
 ```
 
 #### Bidirectional — constrain to a specific entry point
@@ -292,6 +323,7 @@ scripts/bytecode.sh --prefix com.example. /path/to/classes frames --call-graph c
 scripts/bytecode.sh --prefix com.example. /path/to/classes frames --call-graph callgraph.json --from <class> --from-line <N> --to <class> --to-line <N> --output bidirectional.json
 
 cd python
+uv run frames-print --input ../backward.json          # pretty-print backward trace
 uv run ftrace-semantic --input ../out.json --output ../out-semantic.json
 uv run ftrace-to-dot --input ../out-semantic.json --output ../out.svg
 uv run ftrace-slice --input ../trace.json --query ".trace.children[0]" --output ../sliced.json

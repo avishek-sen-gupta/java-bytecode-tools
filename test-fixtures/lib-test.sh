@@ -7,6 +7,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FIXTURE="$SCRIPT_DIR"
 CP="$FIXTURE/classes"
 B="$REPO_ROOT/scripts/bytecode.sh --prefix com.example. $CP"
+UV="uv --directory $REPO_ROOT/python run"
 OUT="$FIXTURE/target"
 
 PASS=0

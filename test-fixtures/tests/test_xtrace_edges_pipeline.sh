@@ -27,8 +27,7 @@ assert_json_contains "$OUT/edges_fwd.json" \
 
 # ── Forward trace: edges survive semantic transform ──
 
-cd "$REPO_ROOT/python"
-uv run ftrace-semantic --input "$OUT/edges_fwd.json" --output "$OUT/edges_semantic.json"
+$UV ftrace-semantic --input "$OUT/edges_fwd.json" --output "$OUT/edges_semantic.json"
 
 assert_json_contains "$OUT/edges_semantic.json" \
     '.edges | length > 0' \
@@ -40,7 +39,7 @@ assert_json_contains "$OUT/edges_semantic.json" \
 
 # ── Forward trace: edges appear in DOT output ──
 
-uv run ftrace-to-dot --input "$OUT/edges_semantic.json" --output "$OUT/edges.dot"
+$UV ftrace-to-dot --input "$OUT/edges_semantic.json" --output "$OUT/edges.dot"
 
 assert_file_contains "$OUT/edges.dot" 'n0' \
     "DOT: contains graph nodes"

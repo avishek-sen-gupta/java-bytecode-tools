@@ -476,5 +476,5 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
 
 - The Java launcher sets `-Xss4m -Xmx2g`
 - The CLI expects compiled bytecode (`.class` files), not source files
-- `frames` supports `--depth` to cap backward BFS depth
+- `frames` supports `--depth` to cap backward BFS depth and `--max-chains` to cap the number of returned call chains (default: 50)
 - Most JSON-writing commands create parent directories for `--output` automatically

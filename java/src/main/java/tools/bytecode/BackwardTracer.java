@@ -241,6 +241,30 @@ public class BackwardTracer {
     return chainMaps;
   }
 
+  /**
+   * Builds the identity + line metadata portion of a frame map, and marks it as a ref if the
+   * signature has already been visited (deduplicating heavy block data across chains). Line
+   * metadata is always included — only sourceTrace/blocks/edges/traps are suppressed on ref frames.
+   */
+  static Map<String, Object> buildRefAwareFrameMap(
+      BytecodeTracer.CallFrame f, Set<String> globalVisited, boolean includeSourceLineCount) {
+    Map<String, Object> fm = new LinkedHashMap<>();
+    fm.put("class", f.className());
+    fm.put("method", f.methodName());
+    fm.put("methodSignature", f.methodSignature());
+    fm.put("lineStart", f.entryLine());
+    fm.put("lineEnd", f.exitLine());
+    if (includeSourceLineCount) {
+      fm.put("sourceLineCount", f.exitLine() - f.entryLine() + 1);
+    }
+    if (globalVisited.contains(f.methodSignature())) {
+      fm.put("ref", true);
+    } else {
+      globalVisited.add(f.methodSignature());
+    }
+    return fm;
+  }
+
   private List<Map<String, Object>> buildFrameMaps(
       List<BytecodeTracer.CallFrame> chain,
       boolean flat,
@@ -249,36 +273,20 @@ public class BackwardTracer {
     List<Map<String, Object>> frameMaps = new ArrayList<>();
     for (int fi = 0; fi < chain.size(); fi++) {
       BytecodeTracer.CallFrame f = chain.get(fi);
-      String sig = f.methodSignature();
 
-      Map<String, Object> fm = new LinkedHashMap<>();
-      fm.put("class", f.className());
-      fm.put("method", f.methodName());
-      fm.put("methodSignature", sig);
+      Map<String, Object> fm = buildRefAwareFrameMap(f, globalVisited, !flat);
 
-      // Check for global ref (deduplication)
-      if (!flat && globalVisited.contains(sig)) {
-        fm.put("ref", true);
-        frameMaps.add(fm);
-        continue;
-      }
-      globalVisited.add(sig);
-
-      fm.put("lineStart", f.entryLine());
-      fm.put("lineEnd", f.exitLine());
-      if (!flat) {
-        fm.put("sourceLineCount", f.exitLine() - f.entryLine() + 1);
-      }
       if (fi < chain.size() - 1) {
         int csLine = BytecodeTracer.findCallSiteLine(f, chain.get(fi + 1));
         if (csLine > 0) fm.put("callSiteLine", csLine);
       }
-      if (!flat) {
+
+      if (!flat && fm.get("ref") == null) {
         fm.put("sourceTrace", f.sourceTrace());
 
         // Respect filter: only add blocks and traps if allowed
         if (filter == null || filter.shouldRecurse(f.className())) {
-          SootMethod method = sigToMethod.get(sig);
+          SootMethod method = sigToMethod.get(f.methodSignature());
           if (method != null) {
             Map<String, Object> blockInfo = new ForwardTracer(tracer).buildBlockTrace(method);
             fm.put("blocks", blockInfo.get("blocks"));

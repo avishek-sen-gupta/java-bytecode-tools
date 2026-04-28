@@ -9,9 +9,22 @@ import tools.bytecode.BackwardTracer;
 @Command(
     name = "frames",
     mixinStandardHelpOptions = true,
-    description =
-        "Backward interprocedural trace — find all call chains reaching a target method."
-            + " Output is a lightweight nested frame tree (no CFG data).")
+    description = {
+      "Backward interprocedural trace — BFS over the call graph to find all chains that reach",
+      "a target method.",
+      "",
+      "Output is a lightweight nested frame tree. Each frame records:",
+      "  class, method, lineStart, lineEnd, sourceLineCount",
+      "  callSiteLine — the line in the caller where this method is invoked (non-root frames)",
+      "No CFG block data is included.",
+      "",
+      "Pretty-print the result with:",
+      "  uv --directory python run frames-print --input <file>",
+      "  Output: Class.method @L<callSiteLine> → ... → TargetClass.targetMethod",
+      "",
+      "Use --from/--from-line to constrain the search to a known entry-point class.",
+      "Use --depth to cap the backward BFS depth (default: 50)."
+    })
 class FramesCommand extends BaseCommand {
 
   @Option(

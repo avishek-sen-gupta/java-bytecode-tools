@@ -9,7 +9,15 @@ import tools.bytecode.CallGraphBuilder;
 @Command(
     name = "buildcg",
     mixinStandardHelpOptions = true,
-    description = "Build the whole-program call graph from compiled .class files.")
+    description = {
+      "Build the whole-program call graph from compiled .class files.",
+      "",
+      "Output: JSON map of caller signature → list of callee signatures.",
+      "  {\"<Class: ReturnType method(Args)>\": [\"<callee-sig>\", ...], ...}",
+      "",
+      "The output file is consumed by xtrace (--call-graph) and frames (--call-graph).",
+      "Build it once and reuse; rebuild only when classes change."
+    })
 class BuildCgCommand extends BaseCommand {
 
   @Override

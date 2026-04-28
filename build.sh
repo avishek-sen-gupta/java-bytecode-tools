@@ -72,5 +72,14 @@ echo "Setting up Python environment…"
 (cd "$REPO_ROOT/python" && uv sync -q)
 echo "  Python environment ready."
 
+# ── Compile test fixtures ────────────────────────────────────────────
+
+echo ""
+echo "Compiling test fixtures…"
+mkdir -p "$REPO_ROOT/test-fixtures/classes"
+javac -g -d "$REPO_ROOT/test-fixtures/classes" \
+  "$REPO_ROOT"/test-fixtures/src/com/example/app/*.java
+echo "  Fixture classes compiled."
+
 echo ""
 echo "Build complete. Run analyses with: scripts/bytecode.sh"

@@ -5,7 +5,7 @@
 source "$(cd "$(dirname "$0")/.." && pwd)/lib-test.sh"
 setup; load_line_numbers
 
-echo "xtrace edges pipeline (forward + backward)"
+echo "xtrace edges pipeline (forward)"
 
 # ── Forward trace: edges in raw JSON ──
 
@@ -50,16 +50,5 @@ assert_file_contains "$OUT/edges.dot" 'label="T"' \
 
 assert_file_contains "$OUT/edges.dot" 'label="F"' \
     "DOT: has false-branch label"
-
-# ── Backward trace: edges in raw JSON ──
-
-cd "$REPO_ROOT"
-$B xtrace --call-graph "$OUT/callgraph.json" \
-  --to com.example.app.RecursionService --to-line "$RECURSE_LINE" \
-  --output "$OUT/edges_bwd.json" 2>/dev/null
-
-assert_json_contains "$OUT/edges_bwd.json" \
-    '.chains[0] | any(.[]; .edges | length > 0)' \
-    "backward: frames have edges"
 
 report

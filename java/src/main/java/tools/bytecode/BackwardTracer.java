@@ -4,13 +4,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.*;
-import java.util.stream.Collectors;
 import sootup.core.model.SootMethod;
 import sootup.java.core.JavaSootClass;
 
 /**
  * Backward (bottom-up) interprocedural tracer. BFS backward from a target method through the call
  * graph to find all entry points that can reach it, enumerating all distinct call chains.
+ *
+ * <p>Output is a lightweight tree: each chain is a nested list of frames (no CFG data), all chains
+ * wrapped under a synthetic {@code "END"} root so the result is compatible with the {@code
+ * ftrace-semantic} pipeline.
  */
 public class BackwardTracer {
 
@@ -22,15 +25,7 @@ public class BackwardTracer {
   }
 
   public Map<String, Object> traceInterprocedural(
-      String fromClass,
-      int fromLine,
-      String toClass,
-      int toLine,
-      int maxDepth,
-      boolean collapse,
-      boolean flat,
-      BytecodeTracer.FilterConfig filter)
-      throws IOException {
+      String fromClass, int fromLine, String toClass, int toLine, int maxDepth) throws IOException {
     SootMethod targetMethod = tracer.resolveMethod(toClass, toLine);
     String targetSig = targetMethod.getSignature().toString();
 
@@ -95,28 +90,28 @@ public class BackwardTracer {
     }
 
     // Enumerate ALL distinct paths from each entry → target via DFS
-    List<List<BytecodeTracer.CallFrame>> completedChains = new ArrayList<>();
+    List<Map<String, Object>> chainTrees = new ArrayList<>();
     int maxPaths = 50;
 
     for (String entrySig : reachedEntries) {
       Deque<Map.Entry<String, List<String>>> stack = new ArrayDeque<>();
       stack.push(Map.entry(entrySig, new ArrayList<>(List.of(entrySig))));
 
-      while (!stack.isEmpty() && completedChains.size() < maxPaths) {
+      while (!stack.isEmpty() && chainTrees.size() < maxPaths) {
         var top = stack.pop();
         String current = top.getKey();
         List<String> path = top.getValue();
 
         if (current.equals(targetSig)) {
-          List<BytecodeTracer.CallFrame> chain = new ArrayList<>();
+          List<Map<String, Object>> frames = new ArrayList<>();
           for (String s : path) {
             SootMethod method = sigToMethod.get(s);
             if (method != null) {
-              chain.add(flat ? tracer.buildFlatFrame(method, s) : tracer.buildFrame(method, s));
+              frames.add(buildLightweightFrameMap(tracer.buildFlatFrame(method, s)));
             }
           }
-          if (!chain.isEmpty()) {
-            completedChains.add(chain);
+          if (!frames.isEmpty()) {
+            chainTrees.add(nestFrames(frames));
           }
           continue;
         }
@@ -134,8 +129,7 @@ public class BackwardTracer {
       }
     }
 
-    return buildResult(
-        fromClass, fromLine, toClass, toLine, collapse, flat, filter, completedChains);
+    return buildResult(fromClass, fromLine, toClass, toLine, chainTrees);
   }
 
   private Map<String, List<String>> loadReverseCallGraph() throws IOException {
@@ -164,10 +158,7 @@ public class BackwardTracer {
       int fromLine,
       String toClass,
       int toLine,
-      boolean collapse,
-      boolean flat,
-      BytecodeTracer.FilterConfig filter,
-      List<List<BytecodeTracer.CallFrame>> completedChains) {
+      List<Map<String, Object>> chainTrees) {
     Map<String, Object> result = new LinkedHashMap<>();
     if (fromClass != null) {
       result.put("fromClass", fromClass);
@@ -175,130 +166,38 @@ public class BackwardTracer {
     }
     result.put("toClass", toClass);
     result.put("toLine", toLine);
-
-    Set<String> globalVisited = new HashSet<>();
-
-    if (completedChains.isEmpty()) {
-      result.put("found", false);
-      result.put("chains", Collections.emptyList());
-    } else if (collapse) {
-      result.put("found", true);
-      result.put("collapsed", true);
-      result.put("groups", buildCollapsedGroups(completedChains, flat, filter, globalVisited));
-    } else {
-      result.put("found", true);
-      result.put("chains", buildChainMaps(completedChains, flat, filter, globalVisited));
+    result.put("found", !chainTrees.isEmpty());
+    if (!chainTrees.isEmpty()) {
+      Map<String, Object> syntheticRoot = new LinkedHashMap<>();
+      syntheticRoot.put("synthetic", true);
+      syntheticRoot.put("class", "END");
+      syntheticRoot.put("children", chainTrees);
+      result.put("trace", syntheticRoot);
     }
     return result;
   }
 
-  private List<Map<String, Object>> buildCollapsedGroups(
-      List<List<BytecodeTracer.CallFrame>> completedChains,
-      boolean flat,
-      BytecodeTracer.FilterConfig filter,
-      Set<String> globalVisited) {
-    Map<String, List<BytecodeTracer.CallFrame>> suffixToChain = new LinkedHashMap<>();
-    Map<String, List<String>> suffixToEntries = new LinkedHashMap<>();
-
-    for (List<BytecodeTracer.CallFrame> chain : completedChains) {
-      String suffixKey;
-      if (chain.size() > 1) {
-        suffixKey =
-            chain.subList(1, chain.size()).stream()
-                .map(BytecodeTracer.CallFrame::methodSignature)
-                .collect(Collectors.joining(" -> "));
-      } else {
-        suffixKey = chain.get(0).methodSignature();
-      }
-      suffixToChain.putIfAbsent(
-          suffixKey, chain.size() > 1 ? chain.subList(1, chain.size()) : chain);
-      suffixToEntries
-          .computeIfAbsent(suffixKey, k -> new ArrayList<>())
-          .add(chain.get(0).className() + "." + chain.get(0).methodName());
-    }
-
-    List<Map<String, Object>> groups = new ArrayList<>();
-    for (var entry : suffixToChain.entrySet()) {
-      Map<String, Object> group = new LinkedHashMap<>();
-      List<String> entries = suffixToEntries.get(entry.getKey());
-      group.put("entryPoints", entries);
-      group.put("entryCount", entries.size());
-      group.put("chain", buildFrameMaps(entry.getValue(), flat, filter, globalVisited));
-      groups.add(group);
-    }
-    return groups;
-  }
-
-  private List<List<Map<String, Object>>> buildChainMaps(
-      List<List<BytecodeTracer.CallFrame>> completedChains,
-      boolean flat,
-      BytecodeTracer.FilterConfig filter,
-      Set<String> globalVisited) {
-    List<List<Map<String, Object>>> chainMaps = new ArrayList<>();
-    for (List<BytecodeTracer.CallFrame> chain : completedChains) {
-      chainMaps.add(buildFrameMaps(chain, flat, filter, globalVisited));
-    }
-    return chainMaps;
-  }
-
-  /**
-   * Builds the identity + line metadata portion of a frame map, and marks it as a ref if the
-   * signature has already been visited (deduplicating heavy block data across chains). Line
-   * metadata is always included — only sourceTrace/blocks/edges/traps are suppressed on ref frames.
-   */
-  static Map<String, Object> buildRefAwareFrameMap(
-      BytecodeTracer.CallFrame f, Set<String> globalVisited, boolean includeSourceLineCount) {
+  /** Builds a lightweight frame map: identity fields + line metadata only. No blocks, no ref. */
+  static Map<String, Object> buildLightweightFrameMap(BytecodeTracer.CallFrame f) {
     Map<String, Object> fm = new LinkedHashMap<>();
     fm.put("class", f.className());
     fm.put("method", f.methodName());
     fm.put("methodSignature", f.methodSignature());
     fm.put("lineStart", f.entryLine());
     fm.put("lineEnd", f.exitLine());
-    if (includeSourceLineCount) {
-      fm.put("sourceLineCount", f.exitLine() - f.entryLine() + 1);
-    }
-    if (globalVisited.contains(f.methodSignature())) {
-      fm.put("ref", true);
-    } else {
-      globalVisited.add(f.methodSignature());
-    }
+    fm.put("sourceLineCount", f.exitLine() - f.entryLine() + 1);
     return fm;
   }
 
-  private List<Map<String, Object>> buildFrameMaps(
-      List<BytecodeTracer.CallFrame> chain,
-      boolean flat,
-      BytecodeTracer.FilterConfig filter,
-      Set<String> globalVisited) {
-    List<Map<String, Object>> frameMaps = new ArrayList<>();
-    for (int fi = 0; fi < chain.size(); fi++) {
-      BytecodeTracer.CallFrame f = chain.get(fi);
-
-      Map<String, Object> fm = buildRefAwareFrameMap(f, globalVisited, !flat);
-
-      if (fi < chain.size() - 1) {
-        int csLine = BytecodeTracer.findCallSiteLine(f, chain.get(fi + 1));
-        if (csLine > 0) fm.put("callSiteLine", csLine);
-      }
-
-      if (!flat && fm.get("ref") == null) {
-        fm.put("sourceTrace", f.sourceTrace());
-
-        // Respect filter: only add blocks and traps if allowed
-        if (filter == null || filter.shouldRecurse(f.className())) {
-          SootMethod method = sigToMethod.get(f.methodSignature());
-          if (method != null) {
-            Map<String, Object> blockInfo = new ForwardTracer(tracer).buildBlockTrace(method);
-            fm.put("blocks", blockInfo.get("blocks"));
-            fm.put("edges", blockInfo.get("edges"));
-            fm.put("traps", blockInfo.get("traps"));
-          }
-        } else {
-          fm.put("filtered", true);
-        }
-      }
-      frameMaps.add(fm);
-    }
-    return frameMaps;
+  /**
+   * Converts a flat list of frame maps into a nested tree: each frame becomes the parent of the
+   * next via a single-element {@code children} list. Empty list returns empty map.
+   */
+  static Map<String, Object> nestFrames(List<Map<String, Object>> frames) {
+    if (frames.isEmpty()) return new LinkedHashMap<>();
+    Map<String, Object> head = new LinkedHashMap<>(frames.get(0));
+    if (frames.size() == 1) return head;
+    head.put("children", List.of(nestFrames(frames.subList(1, frames.size()))));
+    return head;
   }
 }

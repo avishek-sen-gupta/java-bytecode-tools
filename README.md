@@ -40,7 +40,7 @@ java-bytecode-tools/
 │       ├── CallGraphBuilder.java
 │       ├── Classification.java  # NORMAL / CYCLE / FILTERED enum
 │       ├── DiscoveryResult.java # Pass 1 output record
-│       └── cli/             # picocli CLI commands
+│       └── cli/             # picocli CLI commands (xtrace: forward, frames: backward)
 ├── python/                  # uv project — visualization tools
 │   ├── pyproject.toml
 │   ├── ftrace_types.py      # Shared type definitions (StrEnum, TypedDict)
@@ -125,33 +125,43 @@ scripts/bytecode.sh --prefix com.example. /path/to/classes \
 
 #### Backward trace — "what calls this method?"
 
-BFS backward through the call graph to find every entry point that reaches a target.
+BFS backward through the call graph to find every entry point that reaches a target. Output is a **lightweight nested frame tree**: each call chain is a tree of frames (class, method, line range) with no CFG data, all chains wrapped under a synthetic `"END"` root so the result is compatible with `ftrace-semantic`.
 
 ```bash
 scripts/bytecode.sh --prefix com.example. /path/to/classes \
-  xtrace --call-graph callgraph.json \
+  frames --call-graph callgraph.json \
   --to com.example.dao.OrderDao --to-line 39 \
-  --collapse \
   --output backward-trace.json
 ```
 
-Use `--flat` for lightweight stack-trace output (no sourceTrace/blocks, faster):
+Output structure:
 
-```bash
-scripts/bytecode.sh --prefix com.example. /path/to/classes \
-  xtrace --call-graph callgraph.json \
-  --to com.example.dao.OrderDao --to-line 39 \
-  --collapse --flat \
-  --output backward-trace-flat.json
+```json
+{
+  "toClass": "com.example.dao.OrderDao",
+  "toLine": 39,
+  "found": true,
+  "trace": {
+    "synthetic": true,
+    "class": "END",
+    "children": [
+      { "class": "com.example.service.OrderService", "method": "processOrder", "lineStart": 64, "lineEnd": 95, "sourceLineCount": 32,
+        "children": [{ "class": "com.example.dao.OrderDao", "method": "findById", "lineStart": 39, "lineEnd": 45, "sourceLineCount": 7 }] }
+    ]
+  }
+}
 ```
 
-#### Bidirectional — constrain to a specific path
+#### Bidirectional — constrain to a specific entry point
+
+Use `--from` + `--from-line` with `frames` to limit results to chains starting from a particular method:
 
 ```bash
 scripts/bytecode.sh --prefix com.example. /path/to/classes \
-  xtrace --call-graph callgraph.json \
+  frames --call-graph callgraph.json \
   --from com.example.service.OrderService --from-line 64 \
-  --to com.example.dao.OrderDao --to-line 39
+  --to com.example.dao.OrderDao --to-line 39 \
+  --output bidirectional.json
 ```
 
 ### Step 4 (optional): Slice and expand
@@ -278,8 +288,8 @@ E2E tests compile a small fixture project (`test-fixtures/src/`), exercise every
 scripts/bytecode.sh --prefix com.example. /path/to/classes buildcg --output callgraph.json   # or omit --output to write to stdout
 scripts/bytecode.sh --prefix com.example. /path/to/classes dump <class>
 scripts/bytecode.sh --prefix com.example. /path/to/classes xtrace --call-graph callgraph.json --from <class> --from-line <N> --output out.json
-scripts/bytecode.sh --prefix com.example. /path/to/classes xtrace --call-graph callgraph.json --to <class> --to-line <N> --collapse
-scripts/bytecode.sh --prefix com.example. /path/to/classes xtrace --call-graph callgraph.json --to <class> --to-line <N> --collapse --flat
+scripts/bytecode.sh --prefix com.example. /path/to/classes frames --call-graph callgraph.json --to <class> --to-line <N> --output backward.json
+scripts/bytecode.sh --prefix com.example. /path/to/classes frames --call-graph callgraph.json --from <class> --from-line <N> --to <class> --to-line <N> --output bidirectional.json
 
 cd python
 uv run ftrace-semantic --input ../out.json --output ../out-semantic.json

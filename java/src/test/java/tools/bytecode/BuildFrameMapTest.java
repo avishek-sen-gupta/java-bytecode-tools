@@ -2,10 +2,8 @@ package tools.bytecode;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -19,12 +17,20 @@ class BuildFrameMapTest {
   }
 
   @Nested
-  class FirstVisit {
+  class LightweightFrame {
+
+    @Test
+    void includesIdentityFields() {
+      Map<String, Object> fm = BackwardTracer.buildLightweightFrameMap(frame(10, 20));
+
+      assertEquals("com.example.Foo", fm.get("class"));
+      assertEquals("bar", fm.get("method"));
+      assertEquals(SIG, fm.get("methodSignature"));
+    }
 
     @Test
     void includesLineMetadata() {
-      Set<String> visited = new HashSet<>();
-      Map<String, Object> fm = BackwardTracer.buildRefAwareFrameMap(frame(10, 20), visited, true);
+      Map<String, Object> fm = BackwardTracer.buildLightweightFrameMap(frame(10, 20));
 
       assertEquals(10, fm.get("lineStart"));
       assertEquals(20, fm.get("lineEnd"));
@@ -32,74 +38,82 @@ class BuildFrameMapTest {
     }
 
     @Test
-    void addsSignatureToVisited() {
-      Set<String> visited = new HashSet<>();
-      BackwardTracer.buildRefAwareFrameMap(frame(10, 20), visited, true);
+    void doesNotIncludeBlocksOrSourceTrace() {
+      Map<String, Object> fm = BackwardTracer.buildLightweightFrameMap(frame(10, 20));
 
-      assertTrue(visited.contains(SIG));
+      assertNull(fm.get("blocks"));
+      assertNull(fm.get("sourceTrace"));
+      assertNull(fm.get("edges"));
+      assertNull(fm.get("traps"));
     }
 
     @Test
-    void doesNotMarkAsRef() {
-      Set<String> visited = new HashSet<>();
-      Map<String, Object> fm = BackwardTracer.buildRefAwareFrameMap(frame(10, 20), visited, true);
+    void doesNotIncludeRefMarker() {
+      Map<String, Object> fm = BackwardTracer.buildLightweightFrameMap(frame(10, 20));
 
       assertNull(fm.get("ref"));
     }
   }
 
   @Nested
-  class SubsequentVisit {
+  class NestFrames {
 
-    @Test
-    void includesLineMetadataEvenWhenAlreadySeen() {
-      Set<String> visited = new HashSet<>();
-      visited.add(SIG);
-      Map<String, Object> fm = BackwardTracer.buildRefAwareFrameMap(frame(10, 20), visited, true);
-
-      assertEquals(10, fm.get("lineStart"));
-      assertEquals(20, fm.get("lineEnd"));
-      assertEquals(11, fm.get("sourceLineCount"));
+    private static Map<String, Object> simpleFrame(String name) {
+      return Map.of("method", name);
     }
 
     @Test
-    void marksAsRef() {
-      Set<String> visited = new HashSet<>();
-      visited.add(SIG);
-      Map<String, Object> fm = BackwardTracer.buildRefAwareFrameMap(frame(10, 20), visited, true);
+    void emptyListReturnsEmptyMap() {
+      Map<String, Object> result = BackwardTracer.nestFrames(List.of());
 
-      assertEquals(true, fm.get("ref"));
+      assertTrue(result.isEmpty());
     }
 
     @Test
-    void doesNotAddSignatureAgain() {
-      Set<String> visited = new HashSet<>();
-      visited.add(SIG);
-      int sizeBefore = visited.size();
-      BackwardTracer.buildRefAwareFrameMap(frame(10, 20), visited, true);
+    void singleFrameHasNoChildrenKey() {
+      Map<String, Object> result = BackwardTracer.nestFrames(List.of(simpleFrame("A")));
 
-      assertEquals(sizeBefore, visited.size());
-    }
-  }
-
-  @Nested
-  class FlatMode {
-
-    @Test
-    void omitsSourceLineCountInFlatMode() {
-      Set<String> visited = new HashSet<>();
-      Map<String, Object> fm = BackwardTracer.buildRefAwareFrameMap(frame(10, 20), visited, false);
-
-      assertNull(fm.get("sourceLineCount"));
+      assertEquals("A", result.get("method"));
+      assertNull(result.get("children"));
     }
 
     @Test
-    void stillIncludesLineStartAndEndInFlatMode() {
-      Set<String> visited = new HashSet<>();
-      Map<String, Object> fm = BackwardTracer.buildRefAwareFrameMap(frame(10, 20), visited, false);
+    void twoFramesNestedCorrectly() {
+      Map<String, Object> result =
+          BackwardTracer.nestFrames(List.of(simpleFrame("A"), simpleFrame("B")));
 
-      assertEquals(10, fm.get("lineStart"));
-      assertEquals(20, fm.get("lineEnd"));
+      assertEquals("A", result.get("method"));
+      @SuppressWarnings("unchecked")
+      List<Map<String, Object>> children = (List<Map<String, Object>>) result.get("children");
+      assertNotNull(children);
+      assertEquals(1, children.size());
+      assertEquals("B", children.get(0).get("method"));
+      assertNull(children.get(0).get("children"));
+    }
+
+    @Test
+    void threeFramesNestedCorrectly() {
+      Map<String, Object> result =
+          BackwardTracer.nestFrames(List.of(simpleFrame("A"), simpleFrame("B"), simpleFrame("C")));
+
+      assertEquals("A", result.get("method"));
+      @SuppressWarnings("unchecked")
+      List<Map<String, Object>> childrenA = (List<Map<String, Object>>) result.get("children");
+      assertEquals("B", childrenA.get(0).get("method"));
+      @SuppressWarnings("unchecked")
+      List<Map<String, Object>> childrenB =
+          (List<Map<String, Object>>) childrenA.get(0).get("children");
+      assertEquals("C", childrenB.get(0).get("method"));
+      assertNull(childrenB.get(0).get("children"));
+    }
+
+    @Test
+    void preservesAllFrameFields() {
+      Map<String, Object> frameA = Map.of("method", "A", "lineStart", 10, "lineEnd", 20);
+      Map<String, Object> result = BackwardTracer.nestFrames(List.of(frameA));
+
+      assertEquals(10, result.get("lineStart"));
+      assertEquals(20, result.get("lineEnd"));
     }
   }
 }

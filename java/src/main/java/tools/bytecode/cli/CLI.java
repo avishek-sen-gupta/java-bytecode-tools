@@ -8,8 +8,11 @@ import picocli.CommandLine.*;
     mixinStandardHelpOptions = true,
     description = "Bytecode analysis tools (SootUp).",
     subcommands = {
-      DumpCommand.class, TraceCommand.class,
-      BuildCgCommand.class, XtraceCommand.class
+      DumpCommand.class,
+      TraceCommand.class,
+      BuildCgCommand.class,
+      XtraceCommand.class,
+      FramesCommand.class
     })
 public class CLI implements Runnable {
 

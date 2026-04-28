@@ -74,7 +74,9 @@ Notes:
 
 - `--prefix` limits analysis to classes whose fully qualified name starts with the given prefix
 - `<classpath>` is a colon-separated classpath of compiled classes and jars
-- JSON-producing commands write to stdout by default; use `--output <file>` to write a file instead
+- Java JSON-producing commands write to stdout by default; use `--output <file>` to write a file instead
+- Python tools that accept `--input` also read from stdin when `--input` is omitted
+- Python tools that accept `--output` write to stdout when `--output` is omitted
 
 Example shape:
 
@@ -211,6 +213,53 @@ This command stays within a single method and reports paths between two source l
 
 The Python tools operate on `xtrace` output or on derivatives of that output.
 
+### Piping And Streaming
+
+The post-processing tools are designed to compose as Unix filters.
+
+- `ftrace-slice`, `ftrace-expand-refs`, `ftrace-semantic`, `ftrace-validate`, `ftrace-to-dot`, and `frames-print` read stdin if `--input` is omitted
+- Those same tools write stdout if `--output` is omitted
+- Java CLI commands such as `buildcg`, `dump`, `xtrace`, `frames`, and `trace` write JSON to stdout when `--output` is omitted
+
+Examples:
+
+```bash
+scripts/bytecode.sh --prefix com.example. "$CP" \
+  xtrace --call-graph callgraph.json \
+  --from com.example.app.OrderService --from-line 17 \
+  > forward.json
+```
+
+```bash
+scripts/bytecode.sh --prefix com.example. "$CP" \
+  frames --call-graph callgraph.json \
+  --to com.example.app.JdbcOrderRepository --to-line 7 \
+  | (cd python && uv run frames-print)
+```
+
+```bash
+scripts/bytecode.sh --prefix com.example. "$CP" \
+  xtrace --call-graph callgraph.json \
+  --from com.example.app.OrderService --from-line 17 \
+  | (cd python && uv run ftrace-slice --to com.example.app.JdbcOrderRepository) \
+  | (cd python && uv run ftrace-expand-refs) \
+  | (cd python && uv run ftrace-semantic) \
+  | (cd python && uv run ftrace-to-dot) \
+  > trace.dot
+```
+
+If you want a rendered SVG directly, keep the upstream stages on stdout and give only the final renderer an output path:
+
+```bash
+scripts/bytecode.sh --prefix com.example. "$CP" \
+  xtrace --call-graph callgraph.json \
+  --from com.example.app.OrderService --from-line 17 \
+  | (cd python && uv run ftrace-slice --to com.example.app.JdbcOrderRepository) \
+  | (cd python && uv run ftrace-expand-refs) \
+  | (cd python && uv run ftrace-semantic) \
+  | (cd python && uv run ftrace-to-dot --output ../trace.svg)
+```
+
 ### Slice A Trace
 
 From the repository root:
@@ -234,8 +283,35 @@ The sliced output is:
 
 ```json
 {
-  "slice": {},
-  "refIndex": {}
+  "slice": {
+    "class": "com.example.app.OrderService",
+    "method": "processOrder",
+    "methodSignature": "<com.example.app.OrderService: java.lang.String processOrder(int)>",
+    "lineStart": 16,
+    "lineEnd": 24,
+    "children": [
+      {
+        "class": "com.example.app.JdbcOrderRepository",
+        "method": "findById",
+        "methodSignature": "<com.example.app.JdbcOrderRepository: java.lang.String findById(int)>",
+        "callSiteLine": 17,
+        "ref": true
+      }
+    ]
+  },
+  "refIndex": {
+    "<com.example.app.JdbcOrderRepository: java.lang.String findById(int)>": {
+      "class": "com.example.app.JdbcOrderRepository",
+      "method": "findById",
+      "methodSignature": "<com.example.app.JdbcOrderRepository: java.lang.String findById(int)>",
+      "lineStart": 6,
+      "lineEnd": 11,
+      "blocks": [],
+      "edges": [],
+      "traps": [],
+      "children": []
+    }
+  }
 }
 ```
 

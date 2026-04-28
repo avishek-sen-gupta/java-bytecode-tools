@@ -179,9 +179,12 @@ Target: com.example.dao.OrderDao  (line 39)
 Found:  1 chain
 
 Chain 1:
-  com.example.service.OrderService.processOrder  L64-95  (32 lines)
-  └─ @L73  com.example.dao.OrderDao.findById  L39-45  (7 lines)
+  com.example.app.OrderController.handleRequest  L10-30  (21 lines)
+  └─ @L18  com.example.service.OrderService.processOrder  L64-95  (32 lines)
+     └─ @L73  com.example.dao.OrderDao.findById  L39-45  (7 lines)
 ```
+
+`@L18` means `OrderController.handleRequest` calls `OrderService.processOrder` at line 18. `@L73` means `OrderService.processOrder` calls `OrderDao.findById` at line 73.
 
 #### Bidirectional — constrain to a specific entry point
 

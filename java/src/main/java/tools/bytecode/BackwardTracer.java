@@ -25,7 +25,8 @@ public class BackwardTracer {
   }
 
   public Map<String, Object> traceInterprocedural(
-      String fromClass, int fromLine, String toClass, int toLine, int maxDepth) throws IOException {
+      String fromClass, int fromLine, String toClass, int toLine, int maxDepth, int maxChains)
+      throws IOException {
     SootMethod targetMethod = tracer.resolveMethod(toClass, toLine);
     String targetSig = targetMethod.getSignature().toString();
 
@@ -91,7 +92,7 @@ public class BackwardTracer {
 
     // Enumerate ALL distinct paths from each entry → target via DFS
     List<Map<String, Object>> chainTrees = new ArrayList<>();
-    int maxPaths = 50;
+    int maxPaths = maxChains;
 
     for (String entrySig : reachedEntries) {
       Deque<Map.Entry<String, List<String>>> stack = new ArrayDeque<>();

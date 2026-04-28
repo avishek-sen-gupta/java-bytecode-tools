@@ -45,6 +45,12 @@ class FramesCommand extends BaseCommand {
   @Option(names = "--depth", description = "Max backward BFS depth", defaultValue = "50")
   int maxDepth;
 
+  @Option(
+      names = "--max-chains",
+      description = "Max number of call chains to return",
+      defaultValue = "50")
+  int maxChains;
+
   @Option(names = "--call-graph", required = true, description = "Path to call graph JSON file")
   Path callGraphFile;
 
@@ -60,7 +66,7 @@ class FramesCommand extends BaseCommand {
       int fLine = fromLine != null ? fromLine : -1;
       Map<String, Object> result =
           new BackwardTracer(tracer)
-              .traceInterprocedural(fromClass, fLine, toClass, toLine, maxDepth);
+              .traceInterprocedural(fromClass, fLine, toClass, toLine, maxDepth, maxChains);
       writeOutput(result);
 
       boolean found = Boolean.TRUE.equals(result.get("found"));

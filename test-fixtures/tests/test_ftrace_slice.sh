@@ -43,6 +43,53 @@ assert_json_contains "$OUT/expanded.json" \
     '.traps[] | select(.type | contains("RuntimeException")) | .handlerBlocks | length == 4' \
     "RuntimeException handler has 4 blocks (no normal-flow leakage)"
 
+# --to only: prune from trace root to target class
+uv run ftrace-slice --input "$OUT/complex.json" \
+  --to com.example.app.ExceptionService \
+  --output "$OUT/sliced-to.json"
+
+assert_json_contains "$OUT/sliced-to.json" \
+    '.slice | .class == "com.example.app.ComplexService"' \
+    "--to: slice root is ComplexService (trace root)"
+
+assert_json_contains "$OUT/sliced-to.json" \
+    '.slice.children | length == 1' \
+    "--to: one path reaches ExceptionService"
+
+assert_json_contains "$OUT/sliced-to.json" \
+    '.slice.children[0] | .class == "com.example.app.ExceptionService"' \
+    "--to: child is ExceptionService"
+
+assert_json_contains "$OUT/sliced-to.json" \
+    '.slice.children[0].children | length == 0' \
+    "--to: ExceptionService is a leaf (children stripped)"
+
+assert_json_contains "$OUT/sliced-to.json" \
+    '.refIndex | length == 1' \
+    "--to: refIndex populated for ref node"
+
+# --from + --to: find subtree at --from, prune to paths reaching --to
+uv run ftrace-slice --input "$OUT/complex.json" \
+  --from com.example.app.ComplexService \
+  --to com.example.app.ExceptionService \
+  --output "$OUT/sliced-from-to.json"
+
+assert_json_contains "$OUT/sliced-from-to.json" \
+    '.slice | .class == "com.example.app.ComplexService"' \
+    "--from+--to: slice root is ComplexService"
+
+assert_json_contains "$OUT/sliced-from-to.json" \
+    '.slice.children[0] | .class == "com.example.app.ExceptionService"' \
+    "--from+--to: child is ExceptionService"
+
+assert_json_contains "$OUT/sliced-from-to.json" \
+    '.slice.children[0].children | length == 0' \
+    "--from+--to: ExceptionService is a leaf (children stripped)"
+
+assert_json_contains "$OUT/sliced-from-to.json" \
+    '.refIndex | length == 1' \
+    "--from+--to: refIndex populated for ref node"
+
 # Full pipeline: expanded → semantic → dot
 uv run ftrace-semantic --input "$OUT/expanded.json" --output "$OUT/sliced-semantic.json"
 

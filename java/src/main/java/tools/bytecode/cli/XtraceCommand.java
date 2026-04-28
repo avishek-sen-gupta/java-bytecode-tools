@@ -27,7 +27,7 @@ class XtraceCommand extends BaseCommand {
   @Option(names = "--to-line", description = "Target line in --to class")
   Integer toLine;
 
-  @Option(names = "--depth", description = "Max backward trace depth", defaultValue = "5")
+  @Option(names = "--depth", description = "Max backward trace depth", defaultValue = "50")
   int maxDepth;
 
   @Option(names = "--collapse", description = "Group paths sharing the same intermediate chain")

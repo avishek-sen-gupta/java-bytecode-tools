@@ -3,8 +3,13 @@ package tools.bytecode;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import sootup.core.jimple.common.expr.AbstractInvokeExpr;
 import sootup.core.jimple.common.expr.JSpecialInvokeExpr;
 import sootup.core.jimple.common.stmt.Stmt;
@@ -25,6 +30,8 @@ import sootup.java.core.JavaSootClass;
  */
 public class CallGraphBuilder {
 
+  private static final Logger log = LoggerFactory.getLogger(CallGraphBuilder.class);
+
   private final BytecodeTracer tracer;
 
   public CallGraphBuilder(BytecodeTracer tracer) {
@@ -40,11 +47,11 @@ public class CallGraphBuilder {
   public Map<String, List<String>> buildCallGraph() {
     long totalStart = System.currentTimeMillis();
 
-    System.err.println("[buildcg] Loading project classes...");
+    log.info("[buildcg] Loading project classes...");
     List<JavaSootClass> projectClasses = tracer.getProjectClasses();
-    System.err.printf("[buildcg] Loaded %d classes.%n", projectClasses.size());
+    log.info("[buildcg] Loaded {} classes.", projectClasses.size());
 
-    System.err.println("[Phase 1+2] Indexing methods and building dispatch map (concurrent)...");
+    log.info("[Phase 1+2] Indexing methods and building dispatch map (concurrent)...");
     long phase12Start = System.currentTimeMillis();
     CompletableFuture<IndexResult> indexFuture =
         CompletableFuture.supplyAsync(() -> buildMethodIndex(projectClasses));
@@ -53,59 +60,89 @@ public class CallGraphBuilder {
     CompletableFuture.allOf(indexFuture, ifaceFuture).join();
     IndexResult index = indexFuture.join();
     Map<String, List<String>> ifaceToImpls = ifaceFuture.join();
-    System.err.printf(
-        "[Phase 1] %d methods indexed, %d bridge sigs.%n",
-        index.sigIndex().size(), index.bridgeSigs().size());
-    System.err.printf("[Phase 2] %d interface→impl mappings.%n", ifaceToImpls.size());
-    System.err.printf(
-        "[Phase 1+2] Done in %.1fs.%n", (System.currentTimeMillis() - phase12Start) / 1000.0);
+    log.info(
+        "[Phase 1] {} methods indexed, {} bridge sigs.",
+        index.sigIndex().size(),
+        index.bridgeSigs().size());
+    log.info("[Phase 2] {} interface\u2192impl mappings.", ifaceToImpls.size());
+    log.info("[Phase 1+2] Done in {}", elapsedSecs(phase12Start));
 
     int totalClasses = projectClasses.size();
-    System.err.printf(
-        "[Phase 3] Scanning %d classes (%d methods with bodies, parallelStream)...%n",
-        totalClasses, index.methodsWithBodies());
+    int totalMethods = index.methodsWithBodies();
+    log.info(
+        "[Phase 3] Scanning {} classes / {} methods (sequential)...", totalClasses, totalMethods);
     long phase3Start = System.currentTimeMillis();
     Map<String, Set<String>> callerToCallees = new ConcurrentHashMap<>();
     AtomicInteger classesScanned = new AtomicInteger(0);
+    AtomicInteger methodsScanned = new AtomicInteger(0);
 
-    projectClasses.parallelStream()
-        .forEach(
-            cls -> {
-              for (SootMethod method : cls.getMethods()) {
-                if (!method.hasBody()) continue;
-                String mSig = method.getSignature().toString();
-                Body body = method.getBody();
-                for (Stmt stmt : body.getStmtGraph().getNodes()) {
-                  Optional<AbstractInvokeExpr> invokeOpt = BytecodeTracer.extractInvoke(stmt);
-                  if (invokeOpt.isEmpty()) continue;
-                  AbstractInvokeExpr invoke = invokeOpt.get();
-                  if (invoke instanceof JSpecialInvokeExpr) continue;
-                  MethodSignature callSig = invoke.getMethodSignature();
-                  String declClass = callSig.getDeclClassType().getFullyQualifiedName();
-                  String methodName = callSig.getName();
-                  int paramCount = callSig.getParameterTypes().size();
-                  Set<String> targetClasses = new LinkedHashSet<>();
-                  targetClasses.add(declClass);
-                  List<String> impls = ifaceToImpls.get(declClass);
-                  if (impls != null) targetClasses.addAll(impls);
-                  for (String targetClass : targetClasses) {
-                    String key = targetClass + "#" + methodName + "#" + paramCount;
-                    List<String> candidates = index.nameIndex().get(key);
-                    if (candidates != null) {
-                      callerToCallees
-                          .computeIfAbsent(mSig, k -> ConcurrentHashMap.newKeySet())
-                          .addAll(candidates);
-                    }
-                  }
-                }
+    ScheduledExecutorService ticker = Executors.newSingleThreadScheduledExecutor();
+    ticker.scheduleAtFixedRate(
+        () -> {
+          int mDone = methodsScanned.get();
+          int cDone = classesScanned.get();
+          int mPct = totalMethods > 0 ? mDone * 100 / totalMethods : 0;
+          long elapsed = System.currentTimeMillis() - phase3Start;
+          String eta =
+              (mDone > 0 && mDone < totalMethods)
+                  ? String.format(
+                      "~%.1fs remaining", elapsed * (totalMethods - mDone) / (1000.0 * mDone))
+                  : "";
+          log.info(
+              "[Phase 3]  {}/{} methods ({}%) | {}/{} classes | {}s elapsed {}",
+              mDone,
+              totalMethods,
+              mPct,
+              cDone,
+              totalClasses,
+              String.format("%.1f", elapsed / 1000.0),
+              eta);
+        },
+        1,
+        1,
+        TimeUnit.SECONDS);
+
+    try {
+      for (JavaSootClass cls : projectClasses) {
+        for (SootMethod method : cls.getMethods()) {
+          if (!method.hasBody()) continue;
+          String mSig = method.getSignature().toString();
+          Body body = method.getBody();
+          for (Stmt stmt : body.getStmtGraph().getNodes()) {
+            Optional<AbstractInvokeExpr> invokeOpt = BytecodeTracer.extractInvoke(stmt);
+            if (invokeOpt.isEmpty()) continue;
+            AbstractInvokeExpr invoke = invokeOpt.get();
+            if (invoke instanceof JSpecialInvokeExpr) continue;
+            MethodSignature callSig = invoke.getMethodSignature();
+            String declClass = callSig.getDeclClassType().getFullyQualifiedName();
+            String methodName = callSig.getName();
+            int paramCount = callSig.getParameterTypes().size();
+            Set<String> targetClasses = new LinkedHashSet<>();
+            targetClasses.add(declClass);
+            List<String> impls = ifaceToImpls.get(declClass);
+            if (impls != null) targetClasses.addAll(impls);
+            for (String targetClass : targetClasses) {
+              String key = targetClass + "#" + methodName + "#" + paramCount;
+              List<String> candidates = index.nameIndex().get(key);
+              if (candidates != null) {
+                callerToCallees
+                    .computeIfAbsent(mSig, k -> ConcurrentHashMap.newKeySet())
+                    .addAll(candidates);
               }
-              logPhase3Progress(classesScanned.incrementAndGet(), totalClasses, phase3Start);
-            });
+            }
+            methodsScanned.incrementAndGet();
+          }
+        }
+        classesScanned.incrementAndGet();
+      }
+    } finally {
+      ticker.shutdown();
+    }
 
     int totalEdgesFound = callerToCallees.values().stream().mapToInt(Set::size).sum();
-    System.err.printf(
-        "[Phase 3] Done in %.1fs. %d callers, %d call edges found.%n",
-        (System.currentTimeMillis() - phase3Start) / 1000.0,
+    log.info(
+        "[Phase 3] Done in {}. {} callers, {} call edges found.",
+        elapsedSecs(phase3Start),
         callerToCallees.size(),
         totalEdgesFound);
 
@@ -115,42 +152,67 @@ public class CallGraphBuilder {
       raw.put(entry.getKey(), new ArrayList<>(entry.getValue()));
     }
 
-    System.err.printf("[Phase 4] Collapsing %d bridge method(s)...%n", index.bridgeSigs().size());
+    log.info("[Phase 4] Collapsing {} bridge method(s)...", index.bridgeSigs().size());
     Map<String, List<String>> result = collapseBridgeMethods(raw, index.bridgeSigs());
     int edges = result.values().stream().mapToInt(List::size).sum();
-    System.err.printf(
-        "[buildcg] Complete: %d callers, %d edges. Total: %.1fs.%n",
-        result.size(), edges, (System.currentTimeMillis() - totalStart) / 1000.0);
+    log.info(
+        "[buildcg] Complete: {} callers, {} edges. Total: {}",
+        result.size(),
+        edges,
+        elapsedSecs(totalStart));
     return result;
   }
 
-  /**
-   * Phase 1: Iterates all class methods to build the signature index and name lookup map. Also
-   * pre-warms SootUp's lazy body cache by calling {@code method.getBody()} for every method that
-   * has a body, so that Phase 3's {@code parallelStream} reads from a stable, fully-populated
-   * cache.
-   */
+  /** Phase 1: Iterates all class methods to build the signature index and name lookup map. */
   private IndexResult buildMethodIndex(List<JavaSootClass> classes) {
     Map<String, String> sigIndex = new LinkedHashMap<>();
     Map<String, List<String>> nameIndex = new LinkedHashMap<>();
     Set<String> bridgeSigs = new LinkedHashSet<>();
-    int bodiesLoaded = 0;
-    for (JavaSootClass cls : classes) {
-      String clsName = cls.getType().getFullyQualifiedName();
-      for (SootMethod method : cls.getMethods()) {
-        if (!method.hasBody()) continue;
-        method.getBody(); // pre-warm SootUp's lazy cache so Phase 3 parallelStream is safe
-        String sig = method.getSignature().toString();
-        sigIndex.put(sig, sig);
-        String key = clsName + "#" + method.getName() + "#" + method.getParameterCount();
-        nameIndex.computeIfAbsent(key, k -> new ArrayList<>()).add(sig);
-        if (MethodModifier.isBridge(method.getModifiers())) {
-          bridgeSigs.add(sig);
+    int total = classes.size();
+    long startMs = System.currentTimeMillis();
+    AtomicInteger classesIndexed = new AtomicInteger(0);
+    AtomicInteger methodsIndexed = new AtomicInteger(0);
+
+    ScheduledExecutorService ticker = Executors.newSingleThreadScheduledExecutor();
+    ticker.scheduleAtFixedRate(
+        () -> {
+          int cDone = classesIndexed.get();
+          int mDone = methodsIndexed.get();
+          int pct = cDone * 100 / total;
+          long elapsed = System.currentTimeMillis() - startMs;
+          String eta =
+              (cDone > 0 && cDone < total)
+                  ? String.format("~%.1fs remaining", elapsed * (total - cDone) / (1000.0 * cDone))
+                  : "";
+          log.info(
+              "[Phase 1]  {}/{} classes ({}%) | {} methods indexed | {}s elapsed {}",
+              cDone, total, pct, mDone, String.format("%.1f", elapsed / 1000.0), eta);
+        },
+        1,
+        1,
+        TimeUnit.SECONDS);
+
+    try {
+      for (JavaSootClass cls : classes) {
+        String clsName = cls.getType().getFullyQualifiedName();
+        for (SootMethod method : cls.getMethods()) {
+          if (!method.hasBody()) continue;
+          method.getBody(); // pre-warm SootUp's lazy body cache
+          String sig = method.getSignature().toString();
+          sigIndex.put(sig, sig);
+          String key = clsName + "#" + method.getName() + "#" + method.getParameterCount();
+          nameIndex.computeIfAbsent(key, k -> new ArrayList<>()).add(sig);
+          if (MethodModifier.isBridge(method.getModifiers())) {
+            bridgeSigs.add(sig);
+          }
+          methodsIndexed.incrementAndGet();
         }
-        bodiesLoaded++;
+        classesIndexed.incrementAndGet();
       }
+    } finally {
+      ticker.shutdown();
     }
-    return new IndexResult(sigIndex, nameIndex, bridgeSigs, bodiesLoaded);
+    return new IndexResult(sigIndex, nameIndex, bridgeSigs, methodsIndexed.get());
   }
 
   /**
@@ -159,35 +221,60 @@ public class CallGraphBuilder {
    */
   private Map<String, List<String>> buildIfaceMap(List<JavaSootClass> classes) {
     Map<String, List<String>> ifaceToImpls = new LinkedHashMap<>();
-    for (JavaSootClass cls : classes) {
-      if (cls.isInterface()) continue;
-      String clsName = cls.getType().getFullyQualifiedName();
-      for (ClassType iface : cls.getInterfaces()) {
-        ifaceToImpls
-            .computeIfAbsent(iface.getFullyQualifiedName(), k -> new ArrayList<>())
-            .add(clsName);
+    int total = classes.size();
+    long startMs = System.currentTimeMillis();
+    AtomicInteger classesScanned = new AtomicInteger(0);
+    AtomicInteger mappingsFound = new AtomicInteger(0);
+
+    ScheduledExecutorService ticker = Executors.newSingleThreadScheduledExecutor();
+    ticker.scheduleAtFixedRate(
+        () -> {
+          int cDone = classesScanned.get();
+          int pct = cDone * 100 / total;
+          long elapsed = System.currentTimeMillis() - startMs;
+          String eta =
+              (cDone > 0 && cDone < total)
+                  ? String.format("~%.1fs remaining", elapsed * (total - cDone) / (1000.0 * cDone))
+                  : "";
+          log.info(
+              "[Phase 2]  {}/{} classes ({}%) | {} mappings | {}s elapsed {}",
+              cDone, total, pct, mappingsFound.get(), String.format("%.1f", elapsed / 1000.0), eta);
+        },
+        1,
+        1,
+        TimeUnit.SECONDS);
+
+    try {
+      for (JavaSootClass cls : classes) {
+        if (cls.isInterface()) {
+          classesScanned.incrementAndGet();
+          continue;
+        }
+        String clsName = cls.getType().getFullyQualifiedName();
+        for (ClassType iface : cls.getInterfaces()) {
+          ifaceToImpls
+              .computeIfAbsent(iface.getFullyQualifiedName(), k -> new ArrayList<>())
+              .add(clsName);
+          mappingsFound.incrementAndGet();
+        }
+        cls.getSuperclass()
+            .map(ClassType::getFullyQualifiedName)
+            .filter(name -> !name.equals("java.lang.Object"))
+            .ifPresent(
+                name -> {
+                  ifaceToImpls.computeIfAbsent(name, k -> new ArrayList<>()).add(clsName);
+                  mappingsFound.incrementAndGet();
+                });
+        classesScanned.incrementAndGet();
       }
-      cls.getSuperclass()
-          .map(ClassType::getFullyQualifiedName)
-          .filter(name -> !name.equals("java.lang.Object"))
-          .ifPresent(
-              name -> ifaceToImpls.computeIfAbsent(name, k -> new ArrayList<>()).add(clsName));
+    } finally {
+      ticker.shutdown();
     }
     return ifaceToImpls;
   }
 
-  private static void logPhase3Progress(int done, int total, long startMs) {
-    if (done % 50 != 0 && done != total) return;
-    long elapsed = System.currentTimeMillis() - startMs;
-    int pct = done * 100 / total;
-    if (done < total) {
-      long remaining = elapsed * (total - done) / done;
-      System.err.printf(
-          "[Phase 3]  %d/%d classes (%d%%) — %.1fs elapsed, ~%.1fs remaining%n",
-          done, total, pct, elapsed / 1000.0, remaining / 1000.0);
-    } else {
-      System.err.printf("[Phase 3]  %d/%d — done in %.1fs.%n", done, total, elapsed / 1000.0);
-    }
+  private static String elapsedSecs(long startMs) {
+    return String.format("%.1fs", (System.currentTimeMillis() - startMs) / 1000.0);
   }
 
   /**
@@ -224,7 +311,7 @@ public class CallGraphBuilder {
       result.put(entry.getKey(), redirected);
     }
 
-    System.err.println("Collapsed " + bridgeSigs.size() + " bridge method(s).");
+    log.info("Collapsed {} bridge method(s).", bridgeSigs.size());
     return result;
   }
 }

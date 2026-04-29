@@ -1,5 +1,6 @@
 """Parse JSP/XHTML files and extract EL expressions with source context."""
 
+import logging
 import re
 import sys
 from dataclasses import dataclass
@@ -7,6 +8,8 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup, Tag
 from bs4.element import NavigableString
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -93,16 +96,20 @@ def _actions_from_value(jsp: str, tag: str, attr: str, value: str) -> list[ELAct
 
 def parse_jsps(jsps_root: Path, extensions: list[str]) -> list[ELAction]:
     """Walk jsps_root recursively for files matching extensions. Return all ELActions."""
-    return [
-        action
-        for ext in extensions
-        for path in sorted(jsps_root.rglob(f"*.{ext.lstrip('.')}"))
-        for action in _parse_file(jsps_root, path)
-    ]
+    paths = sorted(
+        path for ext in extensions for path in jsps_root.rglob(f"*.{ext.lstrip('.')}")
+    )
+    log.info(
+        "Scanning %d files in %s (extensions: %s)", len(paths), jsps_root, extensions
+    )
+    actions = [action for path in paths for action in _parse_file(jsps_root, path)]
+    log.info("Extracted %d EL actions from %d files", len(actions), len(paths))
+    return actions
 
 
 def _parse_file(root: Path, path: Path) -> list[ELAction]:
     rel = str(path.relative_to(root))
+    log.debug("Parsing %s", rel)
     try:
         soup = BeautifulSoup(
             path.read_text(encoding="utf-8", errors="replace"), "html.parser"

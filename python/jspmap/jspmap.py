@@ -2,9 +2,12 @@
 
 import argparse
 import json
+import logging
 import re
 import sys
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 _INCLUDE_RE = [
     re.compile(
@@ -195,16 +198,33 @@ def run(
             f"Unknown resolver '{resolver_name}'. Known: {list(_RESOLVERS)}"
         )
 
+    log.info("jspmap starting: jsps=%s extensions=%s", jsps, exts)
     el_actions = parse_jsps(jsps, exts)
+    log.info("parse_jsps: %d EL actions", len(el_actions))
+
     jsp_set: frozenset[str] = frozenset()
     if jsp_filter:
         if recurse:
             jsp_set = _collect_jsp_set(jsps, jsp_filter)
+            log.info(
+                "jsp_filter=%s recurse=True: JSP set has %d files",
+                jsp_filter,
+                len(jsp_set),
+            )
             el_actions = [a for a in el_actions if a.jsp in jsp_set]
         else:
             el_actions = [a for a in el_actions if a.jsp == jsp_filter]
+        log.info("After filter: %d EL actions", len(el_actions))
+
+    log.info(
+        "Resolving beans from %s using %s resolver...", faces_config, resolver_name
+    )
     bean_map = resolver_cls().resolve(faces_config)
+    log.info("Bean map: %d beans resolved", len(bean_map))
+
+    log.info("Loading call graph from %s...", call_graph_path)
     call_graph: dict[str, list[str]] = json.loads(call_graph_path.read_text())
+    log.info("Call graph loaded: %d callers", len(call_graph))
 
     meta: dict = {
         "jsps_root": str(jsps),
@@ -220,18 +240,31 @@ def run(
             k: v for k, v in _collect_jsp_includes(jsps, jsp_set).items()
         }
 
+    log.info(
+        "Building action chains for %d EL actions (max_depth=%d)...",
+        len(el_actions),
+        max_depth,
+    )
+    actions_out = [
+        _action_to_dict(action, bean_map, call_graph, dao_pat, layer_pats, max_depth)
+        for action in el_actions
+    ]
+    chains_total = sum(len(a["chains"]) for a in actions_out)
+    log.info("Done: %d actions, %d chains found", len(actions_out), chains_total)
+
     return {
         "meta": meta,
-        "actions": [
-            _action_to_dict(
-                action, bean_map, call_graph, dao_pat, layer_pats, max_depth
-            )
-            for action in el_actions
-        ],
+        "actions": actions_out,
     }
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stderr,
+    )
     parser = argparse.ArgumentParser(
         description="Trace JSP EL actions through a call graph to DAO methods."
     )

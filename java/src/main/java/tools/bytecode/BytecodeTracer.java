@@ -5,6 +5,8 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import sootup.core.graph.StmtGraph;
 import sootup.core.inputlocation.AnalysisInputLocation;
 import sootup.core.jimple.basic.StmtPositionInfo;
@@ -29,6 +31,8 @@ import sootup.java.core.views.JavaView;
  */
 public class BytecodeTracer {
 
+  private static final Logger log = LoggerFactory.getLogger(BytecodeTracer.class);
+
   private final JavaView view;
   private Path callGraphCache;
   private String projectPrefix;
@@ -37,10 +41,15 @@ public class BytecodeTracer {
     List<AnalysisInputLocation> locations = new ArrayList<>();
     for (String path : classPath.split(":")) {
       if (!path.isBlank()) {
+        System.err.println("[init] Registering classpath entry: " + path);
         locations.add(new JavaClassPathAnalysisInputLocation(path));
+        System.err.println("[init] Registered.");
       }
     }
+    System.err.println("[init] Building JavaView from " + locations.size() + " location(s)...");
+    long t = System.currentTimeMillis();
     this.view = new JavaView(locations);
+    System.err.println("[init] JavaView ready in " + (System.currentTimeMillis() - t) + "ms");
   }
 
   // ------------------------------------------------------------------
@@ -60,11 +69,16 @@ public class BytecodeTracer {
   }
 
   public List<JavaSootClass> getProjectClasses() {
+    System.err.println("[init] Enumerating classes (prefix=" + projectPrefix + ")...");
+    long t = System.currentTimeMillis();
     var stream = view.getClasses();
     if (projectPrefix != null && !projectPrefix.isEmpty()) {
       stream = stream.filter(c -> c.getType().getFullyQualifiedName().startsWith(projectPrefix));
     }
-    return stream.collect(Collectors.toList());
+    List<JavaSootClass> result = stream.collect(Collectors.toList());
+    System.err.println(
+        "[init] Found " + result.size() + " classes in " + (System.currentTimeMillis() - t) + "ms");
+    return result;
   }
 
   // ------------------------------------------------------------------

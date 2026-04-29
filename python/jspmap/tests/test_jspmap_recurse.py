@@ -6,6 +6,7 @@ import textwrap
 import pytest
 
 from jspmap.jspmap import (
+    _collect_jsp_includes,
     _collect_jsp_set,
     _extract_include_paths,
     _resolve_includes,
@@ -237,3 +238,81 @@ class TestRunRecurse:
         assert "jsp_set" in result["meta"]
         assert "main.jsp" in result["meta"]["jsp_set"]
         assert "child.jsp" in result["meta"]["jsp_set"]
+
+
+# ---------------------------------------------------------------------------
+# _collect_jsp_includes
+# ---------------------------------------------------------------------------
+
+
+class TestCollectJspIncludes:
+    def test_direct_include_recorded(self, tmp_path):
+        (tmp_path / "main.jsp").write_text('<jsp:include page="child.jsp" />')
+        (tmp_path / "child.jsp").write_text("<html/>")
+        result = _collect_jsp_includes(tmp_path, frozenset(["main.jsp", "child.jsp"]))
+        assert "child.jsp" in result["main.jsp"]
+
+    def test_leaf_has_empty_children(self, tmp_path):
+        (tmp_path / "main.jsp").write_text('<jsp:include page="child.jsp" />')
+        (tmp_path / "child.jsp").write_text("<html/>")
+        result = _collect_jsp_includes(tmp_path, frozenset(["main.jsp", "child.jsp"]))
+        assert result["child.jsp"] == []
+
+    def test_include_outside_set_not_recorded(self, tmp_path):
+        # child2.jsp exists but is NOT in the jsp_set
+        (tmp_path / "main.jsp").write_text(
+            '<jsp:include page="child.jsp" /><jsp:include page="child2.jsp" />'
+        )
+        (tmp_path / "child.jsp").write_text("<html/>")
+        (tmp_path / "child2.jsp").write_text("<html/>")
+        result = _collect_jsp_includes(tmp_path, frozenset(["main.jsp", "child.jsp"]))
+        assert "child2.jsp" not in result.get("main.jsp", [])
+
+    def test_all_jsps_in_set_have_key(self, tmp_path):
+        (tmp_path / "main.jsp").write_text('<jsp:include page="child.jsp" />')
+        (tmp_path / "child.jsp").write_text("<html/>")
+        result = _collect_jsp_includes(tmp_path, frozenset(["main.jsp", "child.jsp"]))
+        assert set(result.keys()) == {"main.jsp", "child.jsp"}
+
+    def test_does_not_mutate_input(self, tmp_path):
+        (tmp_path / "main.jsp").write_text('<jsp:include page="child.jsp" />')
+        (tmp_path / "child.jsp").write_text("<html/>")
+        jsp_set = frozenset(["main.jsp", "child.jsp"])
+        _collect_jsp_includes(tmp_path, jsp_set)
+        assert jsp_set == frozenset(["main.jsp", "child.jsp"])
+
+
+# ---------------------------------------------------------------------------
+# run() integration: jsp_includes in meta
+# ---------------------------------------------------------------------------
+
+
+class TestRunRecurseIncludes:
+    def test_meta_contains_jsp_includes(self, workspace):
+        jsp_dir = workspace["jsp_dir"]
+        (jsp_dir / "main.jsp").write_text('<jsp:include page="child.jsp" />')
+        (jsp_dir / "child.jsp").write_text("<html/>")
+        result = run(
+            jsps=jsp_dir,
+            faces_config=workspace["faces"],
+            call_graph_path=workspace["cg"],
+            dao_pattern=r"com\.example\.dao",
+            jsp_filter="main.jsp",
+            recurse=True,
+        )
+        assert "jsp_includes" in result["meta"]
+        assert "child.jsp" in result["meta"]["jsp_includes"]["main.jsp"]
+
+    def test_meta_jsp_includes_absent_without_recurse(self, workspace):
+        jsp_dir = workspace["jsp_dir"]
+        (jsp_dir / "main.jsp").write_text('<jsp:include page="child.jsp" />')
+        (jsp_dir / "child.jsp").write_text("<html/>")
+        result = run(
+            jsps=jsp_dir,
+            faces_config=workspace["faces"],
+            call_graph_path=workspace["cg"],
+            dao_pattern=r"com\.example\.dao",
+            jsp_filter="main.jsp",
+            recurse=False,
+        )
+        assert "jsp_includes" not in result["meta"]

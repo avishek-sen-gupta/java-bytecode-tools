@@ -47,6 +47,25 @@ def _resolve_includes(jsps_root: Path, jsp_rel: str, raw_paths: list[str]) -> li
     return resolved
 
 
+def _collect_jsp_includes(
+    jsps_root: Path, jsp_set: frozenset[str]
+) -> dict[str, list[str]]:
+    return {
+        jsp: [
+            rel
+            for rel in _resolve_includes(
+                jsps_root,
+                jsp,
+                _extract_include_paths(
+                    (jsps_root / jsp).read_text(encoding="utf-8", errors="replace")
+                ),
+            )
+            if rel in jsp_set
+        ]
+        for jsp in jsp_set
+    }
+
+
 def _collect_jsp_set(jsps_root: Path, start: str) -> frozenset[str]:
     visited: set[str] = {start}
     queue = [start]
@@ -197,6 +216,9 @@ def run(
         meta["jsp_filter"] = jsp_filter
     if recurse and jsp_set:
         meta["jsp_set"] = sorted(jsp_set)
+        meta["jsp_includes"] = {
+            k: v for k, v in _collect_jsp_includes(jsps, jsp_set).items()
+        }
 
     return {
         "meta": meta,

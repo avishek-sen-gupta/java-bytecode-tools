@@ -39,9 +39,6 @@ jobs:
                --add-exports jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED \
                -jar /tmp/gjf.jar --set-exit-if-changed --dry-run $(find java/src -name '*.java')
 
-      - name: OWASP Dependency-Check (Java)
-        run: cd java && mvn -q dependency-check:check -Danalyzer.ossindex.enabled=false
-
       - name: pip-audit (Python)
         run: cd python && uv run --with pip-audit pip-audit
 

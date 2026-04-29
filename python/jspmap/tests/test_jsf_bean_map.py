@@ -1,7 +1,6 @@
 """Tests for JsfBeanResolver."""
 
 import textwrap
-from pathlib import Path
 
 import pytest
 

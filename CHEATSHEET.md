@@ -250,6 +250,26 @@ $B frames --call-graph callgraph.json --to com.example.app.JdbcOrderRepository -
 
 ---
 
+### `jspmap-to-dot` — Render jspmap output as DOT / SVG / PNG
+
+```bash
+$UV jspmap-to-dot --input semantic-map.json --output map.svg
+$UV jspmap-to-dot --input semantic-map.json --output map.dot
+$UV jspmap-to-dot --input semantic-map.json                     # DOT to stdout
+# or piped directly from jspmap:
+$UV jspmap ... | $UV jspmap-to-dot --output map.svg
+```
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `--input <file>` | No | jspmap JSON (default: stdin) |
+| `--output <file>` | No | `.dot`, `.svg`, or `.png` (default: DOT to stdout) |
+| `--splines <style>` | No | Edge routing: `spline`, `ortho`, `curved`, `line`, `polyline` |
+
+Nodes are coloured by layer (JSP=blue, EL=purple, action=green, service=beige, dao=orange). Duplicate chains and shared hops are automatically de-duplicated.
+
+---
+
 ### `jspmap` — JSP-to-DAO semantic map
 
 ```bash
@@ -272,6 +292,8 @@ $UV jspmap \
 | `--layers <file>` | No | JSON mapping layer name → FQCN regex |
 | `--max-depth <N>` | No | BFS depth cap (default: 50) |
 | `--extensions <list>` | No | Comma-separated extensions (default: `jsp,jspf,xhtml`) |
+| `--jsp <relative-path>` | No | Restrict to a single JSP (relative path from `--jsps` root) |
+| `--recurse` | No | Also include JSPs transitively included by `--jsp` |
 | `--output <file>` | No | Output file (default: stdout) |
 
 **`--layers` file format:**

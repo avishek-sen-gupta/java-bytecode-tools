@@ -259,3 +259,7 @@ All test fixtures are synthetic — no strings from any real target application.
 - Aggregation views (by JSP, by DAO, by layer)
 - Incremental / cached map updates
 - Struts, Spring MVC, or other web framework support — JSF faces-config.xml only
+
+## Extensibility Note
+
+The only framework-specific component is `jsf_bean_map.py`, which resolves bean names to FQCNs via `faces-config.xml`. This covers JSF 1.x apps using pure XML managed bean registration. Apps using CDI annotations (`@Named`), Spring annotations (`@Component`, `@Controller`), or Struts action mappings would need a different resolver module. The natural extension point is to make bean resolution a pluggable interface — `jsf_bean_map` becomes one implementation, others can be added without touching `chain_builder` or `jspmap.py`.

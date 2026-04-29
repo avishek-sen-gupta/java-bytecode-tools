@@ -16,7 +16,7 @@ else
 fi
 
 section "Python unit tests"
-if (cd "$ROOT/python" && python3 -m pytest tests/ -q); then
+if (cd "$ROOT/python" && uv run pytest tests/ jspmap/tests/ -q); then
   echo "  ✓ Python unit tests passed"
 else
   echo "  ✗ Python unit tests failed"

@@ -35,7 +35,13 @@ java-bytecode-tools/
 │   ├── ftrace_semantic.py   Transform raw trace → semantic graph
 │   ├── ftrace_to_dot.py     Render semantic graph as DOT/SVG
 │   ├── ftrace_validate.py   Validate semantic graph structure
-│   └── frames_print.py      Pretty-print backward trace chains
+│   ├── frames_print.py      Pretty-print backward trace chains
+│   ├── jspmap/              jspmap package — JSP-to-DAO semantic map tool
+│   │   ├── protocols.py     BeanInfo + BeanResolver plugin protocol
+│   │   ├── jsf_bean_map.py  JsfBeanResolver — reads faces-config.xml
+│   │   ├── jsp_parser.py    EL tokenizer, DOM walk, ELAction
+│   │   ├── chain_builder.py BFS chain builder, ChainHop
+│   │   └── jspmap.py        CLI entry point + resolver registry
 ├── scripts/bytecode.sh      Thin launcher for the Java CLI
 ├── test-fixtures/           Fixture classes and end-to-end tests
 │   ├── src/                 Small fixture Java project
@@ -62,6 +68,7 @@ Key Python commands:
 - `ftrace-to-dot`: render semantic graph JSON as DOT/SVG
 - `ftrace-validate`: validate semantic graph output
 - `frames-print`: pretty-print backward trace chains
+- `jspmap`: map JSP EL actions through call graph to DAO methods; outputs JSON semantic map
 
 ## Setup
 

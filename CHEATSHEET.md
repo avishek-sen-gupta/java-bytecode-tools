@@ -250,6 +250,41 @@ $B frames --call-graph callgraph.json --to com.example.app.JdbcOrderRepository -
 
 ---
 
+### `jspmap` — JSP-to-DAO semantic map
+
+```bash
+$UV jspmap \
+  --jsps path/to/jsps \
+  --faces-config path/to/faces-config.xml \
+  --call-graph callgraph.json \
+  --dao-pattern "<dao-fqcn-regex>" \
+  --layers layers.json \
+  --output semantic-map.json
+```
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `--jsps <dir>` | Yes | Root directory to walk for JSP files |
+| `--faces-config <file>` | Yes | Resolver config file (e.g. faces-config.xml for `--resolver jsf`) |
+| `--call-graph <file>` | Yes | Call graph JSON from `buildcg` |
+| `--dao-pattern <regex>` | Yes | Regex matched against FQCN to identify DAO leaf nodes |
+| `--resolver <name>` | No | Bean resolver (default: `jsf`) |
+| `--layers <file>` | No | JSON mapping layer name → FQCN regex |
+| `--max-depth <N>` | No | BFS depth cap (default: 50) |
+| `--extensions <list>` | No | Comma-separated extensions (default: `jsp,jspf,xhtml`) |
+| `--output <file>` | No | Output file (default: stdout) |
+
+**`--layers` file format:**
+```json
+{
+  "action":  "<regex matching action class FQCNs>",
+  "service": "<regex matching service FQCNs>",
+  "dao":     "<regex matching DAO FQCNs>"
+}
+```
+
+---
+
 ## Full Pipelines
 
 ### Forward trace → SVG

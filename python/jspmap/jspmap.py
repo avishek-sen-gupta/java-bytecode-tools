@@ -6,6 +6,65 @@ import re
 import sys
 from pathlib import Path
 
+_INCLUDE_RE = [
+    re.compile(
+        r'<jsp:include\s+[^>]*?page=["\']([^"\']+)["\']', re.IGNORECASE | re.DOTALL
+    ),
+    re.compile(r'<c:import\s+[^>]*?url=["\']([^"\']+)["\']', re.IGNORECASE | re.DOTALL),
+    re.compile(
+        r'<ui:include\s+[^>]*?src=["\']([^"\']+)["\']', re.IGNORECASE | re.DOTALL
+    ),
+    re.compile(r"<%@\s*include\s+file=[\"']([^\"']+)[\"']", re.IGNORECASE),
+]
+
+
+def _extract_include_paths(content: str) -> list[str]:
+    return [
+        m.group(1)
+        for pat in _INCLUDE_RE
+        for m in pat.finditer(content)
+        if "${" not in m.group(1) and "#{" not in m.group(1)
+    ]
+
+
+def _resolve_includes(jsps_root: Path, jsp_rel: str, raw_paths: list[str]) -> list[str]:
+    base = (jsps_root / jsp_rel).parent
+    resolved = []
+    for raw in raw_paths:
+        if raw.startswith("http://") or raw.startswith("https://"):
+            continue
+        candidate = (
+            (jsps_root / raw.lstrip("/")).resolve()
+            if raw.startswith("/")
+            else (base / raw).resolve()
+        )
+        try:
+            rel = str(candidate.relative_to(jsps_root.resolve()))
+            if (jsps_root / rel).exists():
+                resolved.append(rel)
+        except ValueError:
+            pass
+    return resolved
+
+
+def _collect_jsp_set(jsps_root: Path, start: str) -> frozenset[str]:
+    visited: set[str] = {start}
+    queue = [start]
+    while queue:
+        current = queue.pop()
+        path = jsps_root / current
+        if not path.exists():
+            continue
+        content = path.read_text(encoding="utf-8", errors="replace")
+        for rel in _resolve_includes(
+            jsps_root, current, _extract_include_paths(content)
+        ):
+            if rel not in visited:
+                visited.add(rel)
+                queue.append(rel)
+    return frozenset(visited)
+
+
 from jspmap.chain_builder import ChainHop, build_chains
 from jspmap.jsf_bean_map import JsfBeanResolver
 from jspmap.jsp_parser import ELAction, parse_jsps
@@ -103,6 +162,8 @@ def run(
     layers_path: Path | None = None,
     max_depth: int = 50,
     extensions: list[str] | None = None,
+    jsp_filter: str = "",
+    recurse: bool = False,
 ) -> dict:
     """Core pipeline. Returns the semantic map as a plain dict (JSON-serialisable)."""
     exts = extensions or ["jsp", "jspf", "xhtml"]
@@ -116,16 +177,29 @@ def run(
         )
 
     el_actions = parse_jsps(jsps, exts)
+    jsp_set: frozenset[str] = frozenset()
+    if jsp_filter:
+        if recurse:
+            jsp_set = _collect_jsp_set(jsps, jsp_filter)
+            el_actions = [a for a in el_actions if a.jsp in jsp_set]
+        else:
+            el_actions = [a for a in el_actions if a.jsp == jsp_filter]
     bean_map = resolver_cls().resolve(faces_config)
     call_graph: dict[str, list[str]] = json.loads(call_graph_path.read_text())
 
+    meta: dict = {
+        "jsps_root": str(jsps),
+        "faces_config": str(faces_config),
+        "call_graph": str(call_graph_path),
+        "dao_pattern": dao_pattern,
+    }
+    if jsp_filter:
+        meta["jsp_filter"] = jsp_filter
+    if recurse and jsp_set:
+        meta["jsp_set"] = sorted(jsp_set)
+
     return {
-        "meta": {
-            "jsps_root": str(jsps),
-            "faces_config": str(faces_config),
-            "call_graph": str(call_graph_path),
-            "dao_pattern": dao_pattern,
-        },
+        "meta": meta,
         "actions": [
             _action_to_dict(
                 action, bean_map, call_graph, dao_pat, layer_pats, max_depth
@@ -182,6 +256,18 @@ def main() -> None:
         default="jsp,jspf,xhtml",
         help="Comma-separated file extensions (default: jsp,jspf,xhtml)",
     )
+    parser.add_argument(
+        "--jsp",
+        dest="jsp_filter",
+        default="",
+        help="Restrict analysis to a single JSP (relative path from --jsps root)",
+    )
+    parser.add_argument(
+        "--recurse",
+        action="store_true",
+        default=False,
+        help="Also include JSPs transitively included by --jsp",
+    )
     parser.add_argument("--output", type=Path, help="Output file (default: stdout)")
     args = parser.parse_args()
 
@@ -195,6 +281,8 @@ def main() -> None:
         layers_path=args.layers,
         max_depth=args.max_depth,
         extensions=exts,
+        jsp_filter=args.jsp_filter,
+        recurse=args.recurse,
     )
 
     out_json = json.dumps(result, indent=2)

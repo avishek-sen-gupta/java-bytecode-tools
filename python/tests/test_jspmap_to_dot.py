@@ -223,6 +223,14 @@ class TestBuildDot:
         dot = build_dot(self.nodes, self.edges, splines="")
         assert "splines" not in dot
 
+    def test_default_rankdir_is_lr(self):
+        dot = build_dot(self.nodes, self.edges)
+        assert "rankdir=LR" in dot
+
+    def test_rankdir_tb_when_specified(self):
+        dot = build_dot(self.nodes, self.edges, rankdir="TB")
+        assert "rankdir=TB" in dot
+
     def test_empty_graph_produces_valid_dot(self):
         dot = build_dot(frozenset(), frozenset())
         assert "digraph" in dot

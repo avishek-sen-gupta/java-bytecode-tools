@@ -157,11 +157,12 @@ def build_dot(
     nodes: frozenset[Node],
     edges: frozenset[Edge],
     splines: str = "",
+    rankdir: str = "LR",
 ) -> str:
     """Render node/edge sets as a Graphviz DOT string."""
     header = [
         "digraph jspmap {",
-        "  rankdir=TB;",
+        f"  rankdir={rankdir};",
         *([f'  splines="{splines}";'] if splines else []),
         '  node [fontname="Helvetica", fontsize=10];',
         '  edge [fontname="Helvetica", fontsize=9];',
@@ -194,11 +195,17 @@ def main() -> None:
         choices=["", "spline", "ortho", "curved", "line", "polyline"],
         help="Graphviz edge routing style (default: Graphviz default)",
     )
+    parser.add_argument(
+        "--rankdir",
+        default="LR",
+        choices=["LR", "TB", "RL", "BT"],
+        help="Graph layout direction (default: LR)",
+    )
     args = parser.parse_args()
 
     data = json.loads(Path(args.input).read_text() if args.input else sys.stdin.read())
     nodes, edges = build_graph(data)
-    dot = build_dot(nodes, edges, splines=args.splines)
+    dot = build_dot(nodes, edges, splines=args.splines, rankdir=args.rankdir)
 
     if not args.output:
         print(dot)

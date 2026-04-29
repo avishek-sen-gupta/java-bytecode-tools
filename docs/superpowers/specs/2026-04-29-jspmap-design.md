@@ -19,27 +19,39 @@ scope for this iteration.
 
 ## Architecture
 
-Three focused modules plus a CLI entry point:
+An in-process pipeline of pluggable stages. Each stage is a pure function or class satisfying a protocol; the CLI wires them together. New implementations of any stage can be added without touching the pipeline.
 
 ```
 python/jspmap/
     __init__.py
-    jsp_parser.py      — parse JSP files, extract EL expressions with source context
-    jsf_bean_map.py    — parse faces-config.xml, build bean-name → FQCN + scope map
-    chain_builder.py   — BFS over call graph from action entry points, enumerate full chains
-    jspmap.py          — CLI entry point: orchestrate, assemble semantic map, write JSON
+    protocols.py       — BeanInfo dataclass + BeanResolver Protocol (the plugin interface)
+    jsp_parser.py      — parse JSP files, extract EL expressions with source context; ELAction
+    jsf_bean_map.py    — JsfBeanResolver: reads faces-config.xml (one implementation of BeanResolver)
+    chain_builder.py   — BFS over call graph from action entry points; ChainHop
+    jspmap.py          — CLI entry point: selects resolver, orchestrates pipeline, writes JSON
 ```
+
+### Plugin interface
+
+`BeanResolver` is a Protocol defined in `protocols.py`:
+
+```python
+class BeanResolver(Protocol):
+    def resolve(self, config_path: Path) -> dict[str, BeanInfo]: ...
+```
+
+`JsfBeanResolver` (in `jsf_bean_map.py`) is the default implementation. Future resolvers (e.g. for JBoss deployment descriptors, CDI `beans.xml`, Spring `applicationContext.xml`) implement the same protocol and are selected via `--resolver <name>` at runtime. No existing code changes when a new resolver is added.
 
 ### Data flow
 
 ```
-JSP files         ──► jsp_parser     ──► List[ELAction]
-faces-config.xml  ──► jsf_bean_map   ──► Dict[str, BeanInfo]
-callgraph.json    ──►                    (loaded directly in chain_builder)
-                                               │
-                                         chain_builder
-                                               │
-                                         SemanticMap (JSON)
+JSP files         ──► jsp_parser       ──► List[ELAction]
+config file       ──► BeanResolver     ──► Dict[str, BeanInfo]   (pluggable)
+callgraph.json    ──►                      (loaded in jspmap.py)
+                                                │
+                                          chain_builder
+                                                │
+                                          SemanticMap (JSON)
 ```
 
 ## Module Designs
@@ -80,22 +92,31 @@ class ELAction:
     member: str | None  # first member access, or None
 ```
 
+### `protocols.py`
+
+Defines the shared types and the `BeanResolver` plugin interface:
+
+```python
+@dataclass(frozen=True)
+class BeanInfo:
+    name: str       # logical bean name
+    fqcn: str       # fully qualified class name
+    scope: str      # scope string (request / session / application / none / ...)
+
+class BeanResolver(Protocol):
+    def resolve(self, config_path: Path) -> dict[str, BeanInfo]: ...
+```
+
 ### `jsf_bean_map.py`
 
 **Input**: path to `faces-config.xml`
 
 **Parsing**: `xml.etree.ElementTree` — standard library, no extra dependencies
 
-**Output**:
-```python
-@dataclass(frozen=True)
-class BeanInfo:
-    name: str       # managed-bean-name
-    fqcn: str       # managed-bean-class
-    scope: str      # managed-bean-scope (request / session / application / none)
-```
+**Class**: `JsfBeanResolver` — implements `BeanResolver`. Parses managed-bean entries in
+`faces-config.xml` regardless of JSF namespace version (namespace-agnostic tag lookup).
 
-Returns `Dict[str, BeanInfo]` keyed by bean name.
+Returns `dict[str, BeanInfo]` keyed by bean name.
 
 Beans whose class element is empty or missing are skipped with a warning to stderr.
 
@@ -134,7 +155,8 @@ user-supplied layer pattern map. `chain_builder` itself has no layer knowledge.
 | Flag | Required | Description |
 |------|----------|-------------|
 | `--jsps <dir>` | Yes | Root directory to walk for JSP files |
-| `--faces-config <file>` | Yes | Path to `faces-config.xml` |
+| `--resolver <name>` | No | Bean resolver to use (default: `jsf`; selects `JsfBeanResolver`) |
+| `--faces-config <file>` | Yes | Path to the resolver's config file (e.g. `faces-config.xml` for `jsf`) |
 | `--call-graph <file>` | Yes | Path to call graph JSON from `buildcg` |
 | `--dao-pattern <regex>` | Yes | Regex matched against FQCN to identify DAO leaf nodes |
 | `--layers <file>` | No | JSON file mapping layer name → FQCN regex (see below) |
@@ -262,4 +284,10 @@ All test fixtures are synthetic — no strings from any real target application.
 
 ## Extensibility Note
 
-The only framework-specific component is `jsf_bean_map.py`, which resolves bean names to FQCNs via `faces-config.xml`. This covers JSF 1.x apps using pure XML managed bean registration. Apps using CDI annotations (`@Named`), Spring annotations (`@Component`, `@Controller`), or Struts action mappings would need a different resolver module. The natural extension point is to make bean resolution a pluggable interface — `jsf_bean_map` becomes one implementation, others can be added without touching `chain_builder` or `jspmap.py`.
+The pipeline is designed for pluggability. The primary extension point is `BeanResolver`:
+
+- `JsfBeanResolver` (default) reads `faces-config.xml` — covers JSF 1.x XML-registered managed beans
+- Future resolvers: CDI `beans.xml`, Spring `applicationContext.xml`, JBoss/Wildfly deployment descriptors, Struts `struts-config.xml`
+- New resolvers implement `BeanResolver` and register their name in `jspmap.py`'s resolver registry — no other files change
+
+The JSP extractor and chain tracer are not currently pluggable (EL syntax is standardised; BFS is application-agnostic). If custom extraction logic is needed in future, the same Protocol pattern applies.

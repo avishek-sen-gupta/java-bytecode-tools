@@ -47,3 +47,4 @@ scripts/target/
 *.db
 .beads-credential-key
 .beads/
+.worktrees/

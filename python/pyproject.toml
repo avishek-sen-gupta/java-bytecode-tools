@@ -16,6 +16,7 @@ ftrace-semantic = "ftrace_semantic:main"
 ftrace-validate = "ftrace_validate:main"
 frames-print = "frames_print:main"
 jspmap = "jspmap.jspmap:main"
+jspmap-to-dot = "jspmap_to_dot:main"
 
 [build-system]
 requires = ["hatchling"]

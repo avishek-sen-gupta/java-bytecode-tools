@@ -120,9 +120,21 @@ Both emit `node_type: "java_method"` on every node and `edge_info: {}` on every 
 | `python/tests/test_frames.py` | Same |
 | `README.md` | Update Tool Combinations diagram: jspmap feeds into flat schema consumers |
 
+## calltree-to-dot Rendering
+
+`calltree-to-dot` renders all node types uniformly — rectangular nodes, no visual distinction by `node_type`. No changes to `calltree_to_dot.py` rendering logic are required.
+
+Tests must cover DOT generation for all three producer use cases:
+
+| Test scenario | Input source | Key assertions |
+|---|---|---|
+| Java-only graph | calltree output | nodes present, edges present, `node_type`/`edge_info` fields ignored cleanly |
+| Backward trace | frames output | same |
+| JSP+EL+Java graph | jspmap output | JSP and EL nodes rendered as rectangles alongside Java method nodes |
+
 ## What Stays Unchanged
 
 - `calltree.build_graph()` signature — no changes to the function itself
 - `jspmap` CLI flags — all existing flags preserved; `--pattern` is additive
-- `calltree-print`, `frames-print`, `calltree-to-dot` — no changes needed; they already consume `{nodes, calls}` and ignore unknown fields
+- `calltree-print`, `frames-print`, `calltree-to-dot` rendering logic — no changes needed; they already consume `{nodes, calls}` and ignore unknown fields
 - jspmap's JSP parsing, bean resolution, and EL extraction logic

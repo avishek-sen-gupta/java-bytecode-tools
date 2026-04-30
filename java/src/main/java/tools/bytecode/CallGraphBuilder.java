@@ -42,10 +42,15 @@ public class CallGraphBuilder {
       Map<String, String> sigIndex,
       Map<String, List<String>> nameIndex,
       Set<String> bridgeSigs,
-      int methodsWithBodies) {}
+      int methodsWithBodies,
+      Map<String, MethodLineRange> methodLines) {}
+
+  public record MethodLineRange(int lineStart, int lineEnd) {}
 
   public record CallGraphResult(
-      Map<String, List<String>> graph, Map<String, Map<String, Integer>> callsites) {}
+      Map<String, List<String>> graph,
+      Map<String, Map<String, Integer>> callsites,
+      Map<String, MethodLineRange> methodLines) {}
 
   public CallGraphResult buildCallGraph() {
     long totalStart = System.currentTimeMillis();
@@ -174,7 +179,10 @@ public class CallGraphBuilder {
         result.size(),
         edges,
         elapsedSecs(totalStart));
-    return new CallGraphResult(result, Collections.unmodifiableMap(callsites));
+    return new CallGraphResult(
+        result,
+        Collections.unmodifiableMap(callsites),
+        Collections.unmodifiableMap(index.methodLines()));
   }
 
   /** Phase 1: Iterates all class methods to build the signature index and name lookup map. */
@@ -182,6 +190,7 @@ public class CallGraphBuilder {
     Map<String, String> sigIndex = new LinkedHashMap<>();
     Map<String, List<String>> nameIndex = new LinkedHashMap<>();
     Set<String> bridgeSigs = new LinkedHashSet<>();
+    Map<String, MethodLineRange> methodLines = new LinkedHashMap<>();
     int total = classes.size();
     long startMs = System.currentTimeMillis();
     AtomicInteger classesIndexed = new AtomicInteger(0);
@@ -211,13 +220,21 @@ public class CallGraphBuilder {
         String clsName = cls.getType().getFullyQualifiedName();
         for (SootMethod method : cls.getMethods()) {
           if (!method.hasBody()) continue;
-          method.getBody(); // pre-warm SootUp's lazy body cache
+          Body body = method.getBody(); // pre-warm SootUp's lazy body cache
           String sig = method.getSignature().toString();
           sigIndex.put(sig, sig);
           String key = clsName + "#" + method.getName() + "#" + method.getParameterCount();
           nameIndex.computeIfAbsent(key, k -> new ArrayList<>()).add(sig);
           if (MethodModifier.isBridge(method.getModifiers())) {
             bridgeSigs.add(sig);
+          }
+          List<sootup.core.jimple.common.stmt.Stmt> stmts =
+              new java.util.ArrayList<>(body.getStmtGraph().getNodes());
+          int minL =
+              stmts.stream().mapToInt(BytecodeTracer::stmtLine).filter(l -> l > 0).min().orElse(-1);
+          int maxL = stmts.stream().mapToInt(BytecodeTracer::stmtLine).max().orElse(-1);
+          if (minL > 0 && maxL > 0) {
+            methodLines.put(sig, new MethodLineRange(minL, maxL));
           }
           methodsIndexed.incrementAndGet();
         }
@@ -226,7 +243,7 @@ public class CallGraphBuilder {
     } finally {
       ticker.shutdown();
     }
-    return new IndexResult(sigIndex, nameIndex, bridgeSigs, methodsIndexed.get());
+    return new IndexResult(sigIndex, nameIndex, bridgeSigs, methodsIndexed.get(), methodLines);
   }
 
   /**

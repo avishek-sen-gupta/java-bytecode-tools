@@ -27,6 +27,7 @@ class BuildCgCommand extends BaseCommand {
       Map<String, Object> out = new java.util.LinkedHashMap<>();
       out.put("callees", result.graph());
       out.put("callsites", result.callsites());
+      out.put("methodLines", result.methodLines());
       if (output != null) {
         Files.createDirectories(output.getParent());
         mapper.writeValue(output.toFile(), out);

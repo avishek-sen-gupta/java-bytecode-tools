@@ -343,6 +343,61 @@ class TestCheckLeafFields:
         assert len(violations) >= 1
 
 
+class TestValidateTreeGlobalEdgeRefs:
+    def test_drilldown_to_child_entry_no_violation(self):
+        """Drilldown edge pointing to a child method's entry node is not dangling."""
+        from ftrace_validate import validate_tree
+
+        child = _make_method(
+            nodes=[_node("n99")],
+            entry_node_id="n99",
+            cls="com.example.Child",
+            method="run",
+        )
+        parent = _make_method(
+            nodes=[_node("n0"), _node("n1")],
+            edges=[
+                {"from": "n0", "to": "n1"},
+                {"from": "n1", "to": "n99", "kind": "drilldown"},
+            ],
+            entry_node_id="n0",
+        )
+        parent["children"] = [child]
+        assert [
+            v
+            for v in validate_tree(parent)
+            if v["kind"] == ViolationKind.DANGLING_EDGE_REF
+        ] == []
+
+    def test_genuinely_absent_node_violation(self):
+        """Edge pointing to a node that exists nowhere in the tree is dangling."""
+        from ftrace_validate import validate_tree
+
+        m = _make_method(
+            nodes=[_node("n0")],
+            edges=[{"from": "n0", "to": "n999"}],
+            entry_node_id="n0",
+        )
+        violations = [
+            v for v in validate_tree(m) if v["kind"] == ViolationKind.DANGLING_EDGE_REF
+        ]
+        assert len(violations) == 1
+        assert "n999" in violations[0]["message"]
+
+    def test_collect_all_node_ids_does_not_mutate(self):
+        """_collect_all_node_ids is a pure function and does not mutate its input."""
+        from ftrace_validate import _collect_all_node_ids
+
+        child = _make_method(nodes=[_node("n5")], entry_node_id="n5")
+        parent = _make_method(nodes=[_node("n0")], entry_node_id="n0")
+        parent["children"] = [child]
+        original_children = list(parent["children"])
+        original_nodes = list(parent["nodes"])
+        _collect_all_node_ids(parent)
+        assert parent["children"] == original_children
+        assert parent["nodes"] == original_nodes
+
+
 class TestCheckReachability:
     def test_all_nodes_reachable_valid(self):
         """All nodes with incoming edges are valid."""

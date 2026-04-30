@@ -227,8 +227,25 @@ def _check_leaf_fields(method: MethodSemanticCFG) -> list[Violation]:
     ]
 
 
-def validate_method(method: MethodSemanticCFG) -> list[Violation]:
-    """Validate a single method's semantic graph. Does not recurse into children."""
+def _collect_all_node_ids(tree: MethodSemanticCFG) -> frozenset[str]:
+    """Collect every node ID from the tree recursively."""
+    own = frozenset(n["id"] for n in tree.get("nodes", []))
+    return own | frozenset(
+        nid
+        for child in tree.get("children", [])
+        for nid in _collect_all_node_ids(child)
+    )
+
+
+def validate_method(
+    method: MethodSemanticCFG, global_node_ids: frozenset[str] = frozenset()
+) -> list[Violation]:
+    """Validate a single method's semantic graph. Does not recurse into children.
+
+    global_node_ids: all node IDs in the full tree. When provided, edge ref checks
+    use this global scope (so cross-scope drilldown edges are not false-positive).
+    When omitted, falls back to the method's own node set.
+    """
     # Leaf nodes: check separately
     if (
         method.get("ref", False)
@@ -244,10 +261,11 @@ def validate_method(method: MethodSemanticCFG) -> list[Violation]:
     entry_nid = method.get("entryNodeId", "")
     label = _method_label(method)
     node_ids = frozenset(n["id"] for n in nodes)
+    edge_scope = global_node_ids or node_ids
 
     return [
         *_check_unique_ids(nodes, label),
-        *_check_edge_refs(edges, node_ids, label),
+        *_check_edge_refs(edges, edge_scope, label),
         *_check_cluster_refs(clusters, node_ids, label),
         *_check_entry_node(entry_nid, node_ids, label),
         *_check_branch_edges(nodes, edges, label),
@@ -255,13 +273,23 @@ def validate_method(method: MethodSemanticCFG) -> list[Violation]:
     ]
 
 
-def validate_tree(root: MethodSemanticCFG) -> list[Violation]:
-    """Validate entire tree recursively. Returns all violations."""
-    own = validate_method(root)
-    child_violations = [
-        v for child in root.get("children", []) for v in validate_tree(child)
+def _validate_subtree(
+    root: MethodSemanticCFG, all_node_ids: frozenset[str]
+) -> list[Violation]:
+    own = validate_method(root, all_node_ids)
+    return [
+        *own,
+        *(
+            v
+            for child in root.get("children", [])
+            for v in _validate_subtree(child, all_node_ids)
+        ),
     ]
-    return [*own, *child_violations]
+
+
+def validate_tree(root: MethodSemanticCFG) -> list[Violation]:
+    """Validate entire tree recursively. Edge refs checked against all nodes in the tree."""
+    return _validate_subtree(root, _collect_all_node_ids(root))
 
 
 def main():

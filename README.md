@@ -249,10 +249,10 @@ uv --directory python run frames \
 ```json
 {
   "nodes": {
-    "<signature>": {
+    "<com.example.app.OrderController: void handleGet(javax.servlet.http.HttpServletRequest)>": {
       "class": "com.example.app.OrderController",
       "method": "handleGet",
-      "methodSignature": "<com.example.app.OrderController: void handleGet()>",
+      "methodSignature": "<com.example.app.OrderController: void handleGet(javax.servlet.http.HttpServletRequest)>",
       "lineStart": 15,
       "lineEnd": 20,
       "sourceLineCount": 6
@@ -260,8 +260,8 @@ uv --directory python run frames \
   },
   "calls": [
     {
-      "from": "<com.example.app.OrderController: void handleGet()>",
-      "to": "<com.example.app.OrderService: void processOrder()>",
+      "from": "<com.example.app.OrderController: void handleGet(javax.servlet.http.HttpServletRequest)>",
+      "to": "<com.example.app.OrderService: java.lang.String processOrder(int)>",
       "callSiteLine": 17
     }
   ],
@@ -360,7 +360,8 @@ The post-processing tools are designed to compose as Unix filters.
 
 - `calltree`, `calltree-to-dot`, `ftrace-slice`, `ftrace-expand-refs`, `ftrace-semantic`, `ftrace-validate`, `ftrace-semantic-to-dot`, and `frames-print` read stdin if `--input` is omitted
 - Those same tools write stdout if `--output` is omitted
-- Java CLI commands such as `buildcg`, `dump`, `xtrace`, `frames`, and `trace` write JSON to stdout when `--output` is omitted
+- Java CLI commands such as `buildcg`, `dump`, `xtrace`, and `trace` write JSON to stdout when `--output` is omitted
+- The Python `frames` command writes JSON to stdout (pipe-friendly)
 
 Examples:
 
@@ -562,8 +563,10 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
   xtrace --call-graph callgraph.json --from com.example.app.OrderService --from-method processOrder
 
 # Backward trace
-scripts/bytecode.sh --prefix com.example. "$CP" \
-  frames --call-graph callgraph.json --to com.example.app.JdbcOrderRepository --to-line 7
+uv --directory python run frames \
+  --call-graph callgraph.json \
+  --to-class com.example.app.JdbcOrderRepository \
+  --to-line 7
 
 # Intraprocedural trace
 scripts/bytecode.sh --prefix com.example. "$CP" trace com.example.app.OrderService 17 23

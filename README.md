@@ -174,15 +174,24 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
   buildcg --output callgraph.json
 ```
 
-The result is a JSON map:
+The result is a JSON object with two keys:
 
 ```json
 {
-  "<com.example.app.OrderController: void handleGet()>": [
-    "<com.example.app.OrderService: void processOrder()>"
-  ]
+  "callees": {
+    "<com.example.app.OrderController: void handleGet()>": [
+      "<com.example.app.OrderService: void processOrder()>"
+    ]
+  },
+  "callsites": {
+    "<com.example.app.OrderController: void handleGet()>": {
+      "<com.example.app.OrderService: void processOrder()>": 42
+    }
+  }
 }
 ```
+
+`callees` maps each caller to the list of methods it calls. `callsites` maps each caller to a `{callee: line}` map recording the source line where each call is made.
 
 ### 2. Find A Method And Its Source Lines
 
@@ -464,7 +473,7 @@ cd python && uv run calltree \
   > calltree.json
 ```
 
-The output is an envelope `{trace, refIndex}` where each node carries `class`, `method`, `methodSignature`, and `children`. Leaf types:
+The output is an envelope `{trace, refIndex}` where each node carries `class`, `method`, `methodSignature`, `children`, and `callSiteLine` (the source line in the parent where this method is called). Leaf types:
 
 - **`ref: true`** — method already appeared elsewhere in the tree; full body is in `refIndex`
 - **`cycle: true`** — recursive call; not expanded further

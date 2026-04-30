@@ -63,7 +63,7 @@ assert_json_contains "$OUT/exception-semantic.json" \
     '.clusters | length == 4' \
     "semantic graph has 4 clusters (2 traps x try+handler)"
 
-$UV ftrace-to-dot --input "$OUT/exception-semantic.json" --output "$OUT/exception.dot" 2>/dev/null
+$UV ftrace-semantic-to-dot --input "$OUT/exception-semantic.json" --output "$OUT/exception.dot" 2>/dev/null
 
 assert_file_contains "$OUT/exception.dot" "digraph" \
     "DOT output is a digraph"

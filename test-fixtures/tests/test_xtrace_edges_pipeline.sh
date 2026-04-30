@@ -39,7 +39,7 @@ assert_json_contains "$OUT/edges_semantic.json" \
 
 # ── Forward trace: edges appear in DOT output ──
 
-$UV ftrace-to-dot --input "$OUT/edges_semantic.json" --output "$OUT/edges.dot"
+$UV ftrace-semantic-to-dot --input "$OUT/edges_semantic.json" --output "$OUT/edges.dot"
 
 assert_file_contains "$OUT/edges.dot" 'n0' \
     "DOT: contains graph nodes"

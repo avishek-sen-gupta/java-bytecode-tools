@@ -1,4 +1,4 @@
-"""Tests for the rewritten ftrace_to_dot — dumb semantic JSON → DOT renderer."""
+"""Tests for the rewritten ftrace_semantic_to_dot — dumb semantic JSON → DOT renderer."""
 
 
 def _make_semantic_method(nodes, edges, clusters=(), exception_edges=(), children=()):
@@ -17,7 +17,7 @@ def _make_semantic_method(nodes, edges, clusters=(), exception_edges=(), childre
 
 class TestNodeRendering:
     def test_plain_node(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}],
@@ -28,7 +28,7 @@ class TestNodeRendering:
         assert 'fillcolor="white"' in dot
 
     def test_call_node_green(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[
@@ -40,7 +40,7 @@ class TestNodeRendering:
         assert "#d4edda" in dot
 
     def test_branch_node_diamond(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[
@@ -53,7 +53,7 @@ class TestNodeRendering:
         assert "#cce5ff" in dot
 
     def test_assign_node_beige(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[
@@ -65,7 +65,7 @@ class TestNodeRendering:
         assert "#f5f5dc" in dot
 
     def test_ref_node(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = {
             "class": "com.example.Svc",
@@ -78,7 +78,7 @@ class TestNodeRendering:
         assert "#e8e8e8" in dot
 
     def test_cycle_node(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = {
             "class": "com.example.Svc",
@@ -91,7 +91,7 @@ class TestNodeRendering:
         assert "#ffcccc" in dot
 
     def test_filtered_node(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = {
             "class": "com.example.Svc",
@@ -104,7 +104,7 @@ class TestNodeRendering:
         assert "#fff3cd" in dot
 
     def test_multiline_label(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[
@@ -123,7 +123,7 @@ class TestNodeRendering:
 
 class TestEdgeRendering:
     def test_normal_edge(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[
@@ -136,7 +136,7 @@ class TestEdgeRendering:
         assert "n0 -> n1;" in dot
 
     def test_branch_true_edge(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[
@@ -150,7 +150,7 @@ class TestEdgeRendering:
         assert 'label="T"' in dot
 
     def test_branch_false_edge(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[
@@ -166,7 +166,7 @@ class TestEdgeRendering:
 
 class TestClusterRendering:
     def test_try_cluster_orange(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}],
@@ -180,7 +180,7 @@ class TestClusterRendering:
         assert "try (RuntimeException)" in dot
 
     def test_handler_cluster_catch(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[{"id": "n0", "lines": [11], "kind": "plain", "label": ["L11"]}],
@@ -199,7 +199,7 @@ class TestClusterRendering:
         assert "catch (RuntimeException)" in dot
 
     def test_handler_cluster_finally(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[{"id": "n0", "lines": [14], "kind": "plain", "label": ["L14"]}],
@@ -219,7 +219,7 @@ class TestClusterRendering:
 
 class TestExceptionEdgeRendering:
     def test_exception_edge_dashed_orange(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[
@@ -255,7 +255,7 @@ class TestExceptionEdgeRendering:
 
 class TestMethodCluster:
     def test_method_label(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}],
@@ -268,7 +268,7 @@ class TestMethodCluster:
 
 class TestCrossClusterEdges:
     def test_child_call_edge(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         child = {
             "class": "com.example.Other",
@@ -303,7 +303,7 @@ class TestCrossClusterEdges:
 
 class TestRenderLeaf:
     def test_ref_leaf(self):
-        from ftrace_to_dot import _render_leaf
+        from ftrace_semantic_to_dot import _render_leaf
 
         node = {"class": "com.example.Svc", "method": "run", "ref": True}
         lines, nid, next_counter = _render_leaf(node, 5)
@@ -315,7 +315,7 @@ class TestRenderLeaf:
         assert next_counter == 6
 
     def test_cycle_leaf(self):
-        from ftrace_to_dot import _render_leaf
+        from ftrace_semantic_to_dot import _render_leaf
 
         node = {"class": "com.example.Svc", "method": "run", "cycle": True}
         lines, nid, next_counter = _render_leaf(node, 0)
@@ -327,7 +327,7 @@ class TestRenderLeaf:
         assert next_counter == 1
 
     def test_filtered_leaf(self):
-        from ftrace_to_dot import _render_leaf
+        from ftrace_semantic_to_dot import _render_leaf
 
         node = {"class": "com.example.Svc", "method": "run", "filtered": True}
         lines, nid, next_counter = _render_leaf(node, 3)
@@ -338,7 +338,7 @@ class TestRenderLeaf:
         assert next_counter == 4
 
     def test_non_leaf_returns_empty(self):
-        from ftrace_to_dot import _render_leaf
+        from ftrace_semantic_to_dot import _render_leaf
 
         node = {"class": "com.example.Svc", "method": "run"}
         lines, nid, next_counter = _render_leaf(node, 7)
@@ -349,7 +349,7 @@ class TestRenderLeaf:
 
 class TestRenderTrapCluster:
     def test_try_cluster(self):
-        from ftrace_to_dot import _render_trap_cluster
+        from ftrace_semantic_to_dot import _render_trap_cluster
 
         cluster = {
             "trapType": "RuntimeException",
@@ -365,7 +365,7 @@ class TestRenderTrapCluster:
         assert lines[-1] == "    }"
 
     def test_handler_catch(self):
-        from ftrace_to_dot import _render_trap_cluster
+        from ftrace_semantic_to_dot import _render_trap_cluster
 
         cluster = {
             "trapType": "RuntimeException",
@@ -381,7 +381,7 @@ class TestRenderTrapCluster:
         assert lines[-1] == "    }"
 
     def test_handler_finally_throwable(self):
-        from ftrace_to_dot import _render_trap_cluster
+        from ftrace_semantic_to_dot import _render_trap_cluster
 
         cluster = {
             "trapType": "Throwable",
@@ -395,7 +395,7 @@ class TestRenderTrapCluster:
         assert "#007bff" in lines[2]
 
     def test_handler_finally_any(self):
-        from ftrace_to_dot import _render_trap_cluster
+        from ftrace_semantic_to_dot import _render_trap_cluster
 
         cluster = {
             "trapType": "any",
@@ -407,7 +407,7 @@ class TestRenderTrapCluster:
         assert "finally" in lines[1]
 
     def test_empty_node_ids(self):
-        from ftrace_to_dot import _render_trap_cluster
+        from ftrace_semantic_to_dot import _render_trap_cluster
 
         cluster = {"trapType": "IOException", "role": "try", "nodeIds": []}
         lines = _render_trap_cluster(0, cluster, method_counter=5)
@@ -422,7 +422,7 @@ class TestTrapClusterNamespacing:
 
     def test_child_methods_get_unique_trap_cluster_ids(self):
         """Two methods each with cluster_trap index 0 must not collide."""
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         child = {
             "class": "com.example.Other",
@@ -501,7 +501,7 @@ class TestTrapClusterNamespacing:
 
     def test_exception_edge_references_namespaced_clusters(self):
         """ltail/lhead must reference the namespaced cluster IDs."""
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[
@@ -535,7 +535,7 @@ class TestTrapClusterNamespacing:
 
 class TestRenderCrossEdges:
     def test_matching_call_site_line(self):
-        from ftrace_to_dot import _render_fallback_cross_edges
+        from ftrace_semantic_to_dot import _render_fallback_cross_edges
 
         nodes = [
             {"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]},
@@ -552,7 +552,7 @@ class TestRenderCrossEdges:
         assert "bold" in result[0]
 
     def test_fallback_to_entry_nid(self):
-        from ftrace_to_dot import _render_fallback_cross_edges
+        from ftrace_semantic_to_dot import _render_fallback_cross_edges
 
         nodes = [
             {"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]},
@@ -566,7 +566,7 @@ class TestRenderCrossEdges:
         assert "n0 -> n5" in result[0]
 
     def test_empty_child_entry_skipped(self):
-        from ftrace_to_dot import _render_fallback_cross_edges
+        from ftrace_semantic_to_dot import _render_fallback_cross_edges
 
         nodes = [{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}]
         children = [{"callSiteLine": 5, "method": "run"}]
@@ -577,14 +577,14 @@ class TestRenderCrossEdges:
         assert result == []
 
     def test_no_children(self):
-        from ftrace_to_dot import _render_fallback_cross_edges
+        from ftrace_semantic_to_dot import _render_fallback_cross_edges
 
         nodes = [{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}]
         result = _render_fallback_cross_edges(nodes, [], [], "n0", frozenset())
         assert result == []
 
     def test_no_entry_nid_no_match(self):
-        from ftrace_to_dot import _render_fallback_cross_edges
+        from ftrace_semantic_to_dot import _render_fallback_cross_edges
 
         nodes = [{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}]
         children = [{"callSiteLine": 99, "method": "run"}]
@@ -595,7 +595,7 @@ class TestRenderCrossEdges:
         assert result == []
 
     def test_covered_entry_skipped(self):
-        from ftrace_to_dot import _render_fallback_cross_edges
+        from ftrace_semantic_to_dot import _render_fallback_cross_edges
 
         nodes = [{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}]
         children = [{"callSiteLine": 5, "method": "run"}]
@@ -608,7 +608,7 @@ class TestRenderCrossEdges:
 
 class TestSplinesOption:
     def test_default_no_splines_attr(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}],
@@ -618,7 +618,7 @@ class TestSplinesOption:
         assert "splines=" not in dot
 
     def test_ortho_splines(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}],
@@ -628,7 +628,7 @@ class TestSplinesOption:
         assert '  splines="ortho";' in dot
 
     def test_polyline_splines(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}],
@@ -638,7 +638,7 @@ class TestSplinesOption:
         assert '  splines="polyline";' in dot
 
     def test_spline_splines(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}],
@@ -648,7 +648,7 @@ class TestSplinesOption:
         assert '  splines="spline";' in dot
 
     def test_line_splines(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}],
@@ -658,7 +658,7 @@ class TestSplinesOption:
         assert '  splines="line";' in dot
 
     def test_curved_splines(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}],
@@ -668,7 +668,7 @@ class TestSplinesOption:
         assert '  splines="curved";' in dot
 
     def test_none_splines(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         method = _make_semantic_method(
             nodes=[{"id": "n0", "lines": [5], "kind": "plain", "label": ["L5"]}],
@@ -680,31 +680,31 @@ class TestSplinesOption:
 
 class TestEscape:
     def test_plain_string(self):
-        from ftrace_to_dot import escape
+        from ftrace_semantic_to_dot import escape
 
         assert escape("hello") == "hello"
 
     def test_backslash(self):
-        from ftrace_to_dot import escape
+        from ftrace_semantic_to_dot import escape
 
         assert escape("a\\b") == "a\\\\b"
 
     def test_double_quote(self):
-        from ftrace_to_dot import escape
+        from ftrace_semantic_to_dot import escape
 
         assert escape('say "hi"') == 'say \\"hi\\"'
 
     def test_newline(self):
-        from ftrace_to_dot import escape
+        from ftrace_semantic_to_dot import escape
 
         assert escape("line1\nline2") == "line1\\nline2"
 
     def test_combined(self):
-        from ftrace_to_dot import escape
+        from ftrace_semantic_to_dot import escape
 
         assert escape('"a\\b\n"') == '\\"a\\\\b\\n\\"'
 
     def test_empty_string(self):
-        from ftrace_to_dot import escape
+        from ftrace_semantic_to_dot import escape
 
         assert escape("") == ""

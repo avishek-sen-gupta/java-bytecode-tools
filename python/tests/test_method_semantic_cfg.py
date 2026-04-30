@@ -86,7 +86,7 @@ class TestBuildSemanticGraphReturnsNewType:
 
 class TestDotAcceptsNewType:
     def test_build_dot_parameter_type(self):
-        from ftrace_to_dot import build_dot
+        from ftrace_semantic_to_dot import build_dot
 
         hints = typing.get_type_hints(build_dot)
         assert hints["root"].__name__ == "MethodSemanticCFG"

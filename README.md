@@ -46,10 +46,11 @@ java-bytecode-tools/
 │   ├── ftrace_slice.py      Slice subtree + bundle ref index
 │   ├── ftrace_expand_refs.py Expand ref nodes using ref index
 │   ├── ftrace_semantic.py   Transform raw trace → semantic graph
-│   ├── ftrace_to_dot.py     Render semantic graph as DOT/SVG
+│   ├── ftrace_semantic_to_dot.py  Render semantic graph as DOT/SVG
 │   ├── ftrace_validate.py   Validate semantic graph structure
 │   ├── frames_print.py      Pretty-print backward trace chains
-│   ├── find_called_methods.py  Filter call-graph JSON to methods called by a target
+│   ├── calltree.py          Walk call-graph JSON; emit recursive call tree from a method
+│   ├── calltree_to_dot.py   Render calltree output as DOT/SVG (no CFG, methods only)
 │   ├── reindex.py           Regenerate test-fixtures/index.scip via scip-java
 │   ├── reindex.conf.example Sample reindex config file
 │   └── jspmap/              jspmap package — JSP-to-DAO semantic map tool
@@ -84,15 +85,16 @@ Key Java commands:
 
 Key Python commands:
 
-- `ftrace-slice`: extract a subtree or path-constrained slice
+- `calltree`: walk call-graph JSON and emit a recursive call tree from a named method (methods only, no CFG)
+- `calltree-to-dot`: render `calltree` output as a DOT/SVG call-tree diagram
+- `ftrace-slice`: extract a subtree or path-constrained slice from `xtrace` output
 - `ftrace-expand-refs`: replace `ref` leaves with full method bodies
-- `ftrace-semantic`: normalize raw trace JSON into a semantic graph
-- `ftrace-to-dot`: render semantic graph JSON as DOT/SVG
+- `ftrace-semantic`: normalize raw `xtrace` JSON into a semantic graph (CFG-level)
+- `ftrace-semantic-to-dot`: render semantic graph JSON as DOT/SVG
 - `ftrace-validate`: validate semantic graph output
 - `frames-print`: pretty-print backward trace chains
 - `jspmap`: map JSP EL actions through call graph to DAO methods; outputs JSON semantic map
 - `jspmap-to-dot`: render jspmap JSON output as DOT/SVG
-- `find-called-methods`: filter call-graph JSON to methods reachable from a target
 - `reindex`: regenerate `index.scip` from Java source trees via scip-java
 
 ## Setup
@@ -412,6 +414,55 @@ cd python && uv run reindex \
 
 The first `--classes` entry is used as the `javac -d` output directory; all entries are joined as `-cp` so cross-module type references resolve correctly.
 
+## Call Tree (Methods Only)
+
+`calltree` walks a call-graph JSON file and emits the recursive tree of methods reachable from a named entry point — method nodes and caller→callee edges only, no CFG blocks or source lines. `calltree-to-dot` renders that tree directly to DOT/SVG without any intermediate semantic-graph step.
+
+This is the right tool when you want to answer "what does this method transitively call?" as a clean method-level diagram.
+
+### 1. Build The Call Graph
+
+```bash
+scripts/bytecode.sh --prefix com.example. "$CP" \
+  buildcg --output callgraph.json
+```
+
+### 2. Emit The Call Tree
+
+```bash
+cd python && uv run calltree \
+  --callgraph ../callgraph.json \
+  --class com.example.app.OrderService \
+  --method processOrder \
+  > calltree.json
+```
+
+The output is an envelope `{trace, refIndex}` where each node carries `class`, `method`, `methodSignature`, and `children`. Leaf types:
+
+- **`ref: true`** — method already appeared elsewhere in the tree; full body is in `refIndex`
+- **`cycle: true`** — recursive call; not expanded further
+
+### 3. Render The Call Tree
+
+```bash
+# To SVG
+cd python && uv run calltree-to-dot --input calltree.json --svg -o calltree.svg
+
+# To DOT
+cd python && uv run calltree-to-dot --input calltree.json > calltree.dot
+
+# Piped end-to-end
+cd python && uv run calltree \
+  --callgraph ../callgraph.json \
+  --class com.example.app.OrderService \
+  --method processOrder \
+  | uv run calltree-to-dot --svg -o calltree.svg
+```
+
+`calltree-to-dot` resolves `ref` nodes via the bundled `refIndex` so the diagram shows the full reachable call graph, with each method appearing exactly once regardless of how many callers it has.
+
+> **Note:** Do not pipe `calltree` output through `ftrace-semantic`. That pipeline is for CFG-level (`xtrace`) output; `calltree` nodes have no `blocks` or `sourceTrace`, so `ftrace-semantic` produces empty graphs.
+
 ## Post-Processing Pipeline
 
 The Python tools operate on `xtrace` output or on derivatives of that output.
@@ -420,7 +471,7 @@ The Python tools operate on `xtrace` output or on derivatives of that output.
 
 The post-processing tools are designed to compose as Unix filters.
 
-- `ftrace-slice`, `ftrace-expand-refs`, `ftrace-semantic`, `ftrace-validate`, `ftrace-to-dot`, and `frames-print` read stdin if `--input` is omitted
+- `calltree`, `calltree-to-dot`, `ftrace-slice`, `ftrace-expand-refs`, `ftrace-semantic`, `ftrace-validate`, `ftrace-semantic-to-dot`, and `frames-print` read stdin if `--input` is omitted
 - Those same tools write stdout if `--output` is omitted
 - Java CLI commands such as `buildcg`, `dump`, `xtrace`, `frames`, and `trace` write JSON to stdout when `--output` is omitted
 
@@ -447,7 +498,7 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
   | uv --directory python run ftrace-slice --to com.example.app.JdbcOrderRepository \
   | uv --directory python run ftrace-expand-refs \
   | uv --directory python run ftrace-semantic \
-  | uv --directory python run ftrace-to-dot \
+  | uv --directory python run ftrace-semantic-to-dot \
   > trace.dot
 ```
 
@@ -460,7 +511,7 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
   | uv --directory python run ftrace-slice --to com.example.app.JdbcOrderRepository \
   | uv --directory python run ftrace-expand-refs \
   | uv --directory python run ftrace-semantic \
-  | uv --directory python run ftrace-to-dot --output trace.svg
+  | uv --directory python run ftrace-semantic-to-dot --output trace.svg
 ```
 
 ### Slice A Trace
@@ -531,7 +582,7 @@ uv --directory python run ftrace-expand-refs --input forward.json --output expan
 
 ```bash
 uv --directory python run ftrace-semantic --input expanded.json --output semantic.json
-uv --directory python run ftrace-to-dot --input semantic.json --output trace.svg
+uv --directory python run ftrace-semantic-to-dot --input semantic.json --output trace.svg
 ```
 
 The semantic pass merges duplicate source-line statements, assigns exception clusters, and emits graph-friendly nodes and edges. The renderer maps that JSON into DOT/SVG with:
@@ -642,23 +693,27 @@ cd python && uv run reindex \
   --src test-fixtures/src --classes test-fixtures/classes \
   --output test-fixtures/index.scip
 
-# Python post-processing
-uv --directory python run ftrace-slice        --input forward.json --from com.example.app.OrderService --output slice.json
-uv --directory python run ftrace-expand-refs  --input slice.json --output expanded.json
-uv --directory python run ftrace-semantic     --input expanded.json --output semantic.json
-uv --directory python run ftrace-to-dot       --input semantic.json --output trace.svg
-uv --directory python run ftrace-validate     --input semantic.json
-uv --directory python run frames-print        --input backward.json
-uv --directory python run jspmap-to-dot       --input jspmap.json --output jspmap.svg
-uv --directory python run find-called-methods --input callgraph.json --method processOrder
+# Call tree (methods only, no CFG)
+uv --directory python run calltree \
+  --callgraph callgraph.json --class com.example.app.OrderService --method processOrder \
+  | uv --directory python run calltree-to-dot --svg -o calltree.svg
 
-# Full pipeline piped end-to-end
+# Python CFG post-processing pipeline
+uv --directory python run ftrace-slice            --input forward.json --from com.example.app.OrderService --output slice.json
+uv --directory python run ftrace-expand-refs      --input slice.json --output expanded.json
+uv --directory python run ftrace-semantic         --input expanded.json --output semantic.json
+uv --directory python run ftrace-semantic-to-dot  --input semantic.json --output trace.svg
+uv --directory python run ftrace-validate         --input semantic.json
+uv --directory python run frames-print            --input backward.json
+uv --directory python run jspmap-to-dot           --input jspmap.json --output jspmap.svg
+
+# Full CFG pipeline piped end-to-end
 scripts/bytecode.sh --prefix com.example. "$CP" \
   xtrace --call-graph callgraph.json --from com.example.app.OrderService --from-line 17 \
   | uv --directory python run ftrace-slice --to com.example.app.JdbcOrderRepository \
   | uv --directory python run ftrace-expand-refs \
   | uv --directory python run ftrace-semantic \
-  | uv --directory python run ftrace-to-dot --output trace.svg
+  | uv --directory python run ftrace-semantic-to-dot --output trace.svg
 ```
 
 ## Practical Notes

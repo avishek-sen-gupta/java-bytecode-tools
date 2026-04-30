@@ -9,7 +9,7 @@ dependencies = ["beautifulsoup4>=4.12"]
 dev = ["black>=25.1", "pytest>=8.0"]
 
 [project.scripts]
-ftrace-to-dot = "ftrace_to_dot:main"
+ftrace-semantic-to-dot = "ftrace_semantic_to_dot:main"
 ftrace-slice = "ftrace_slice:main"
 ftrace-expand-refs = "ftrace_expand_refs:main"
 ftrace-semantic = "ftrace_semantic:main"
@@ -17,8 +17,9 @@ ftrace-validate = "ftrace_validate:main"
 frames-print = "frames_print:main"
 jspmap = "jspmap.jspmap:main"
 jspmap-to-dot = "jspmap_to_dot:main"
-find-called-methods = "find_called_methods:main"
+calltree = "calltree:main"
 reindex = "reindex:main"
+calltree-to-dot = "calltree_to_dot:main"
 
 [build-system]
 requires = ["hatchling"]

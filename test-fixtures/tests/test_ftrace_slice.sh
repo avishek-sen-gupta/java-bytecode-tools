@@ -96,7 +96,7 @@ assert_json_contains "$OUT/sliced-semantic.json" \
     '.nodes | length > 0' \
     "sliced semantic graph has nodes"
 
-$UV ftrace-to-dot --input "$OUT/sliced-semantic.json" --output "$OUT/sliced-pipeline.dot"
+$UV ftrace-semantic-to-dot --input "$OUT/sliced-semantic.json" --output "$OUT/sliced-pipeline.dot"
 
 assert_file_contains "$OUT/sliced-pipeline.dot" "digraph" \
     "sliced DOT output is a digraph"
@@ -106,7 +106,7 @@ cat "$OUT/complex.json" \
   | $UV ftrace-slice --from com.example.app.ExceptionService \
   | $UV ftrace-expand-refs \
   | $UV ftrace-semantic \
-  | $UV ftrace-to-dot > "$OUT/piped.dot"
+  | $UV ftrace-semantic-to-dot > "$OUT/piped.dot"
 
 assert_file_contains "$OUT/piped.dot" "digraph" \
     "piped pipeline produces a digraph"
@@ -120,7 +120,7 @@ $B xtrace --call-graph "$OUT/callgraph.json" \
   | $UV ftrace-slice --from com.example.app.ExceptionService \
   | $UV ftrace-expand-refs \
   | $UV ftrace-semantic \
-  | $UV ftrace-to-dot > "$OUT/e2e-piped.dot"
+  | $UV ftrace-semantic-to-dot > "$OUT/e2e-piped.dot"
 
 assert_file_contains "$OUT/e2e-piped.dot" "digraph" \
     "e2e piped from xtrace produces a digraph"

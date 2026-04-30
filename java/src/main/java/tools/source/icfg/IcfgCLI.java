@@ -71,6 +71,7 @@ public class IcfgCLI implements Runnable {
       }
     } catch (Exception e) {
       System.err.println("Error: " + e.getMessage());
+      e.printStackTrace(System.err);
       exitCode = 1;
     }
   }
@@ -95,7 +96,7 @@ public class IcfgCLI implements Runnable {
       int exit = p.waitFor();
       if (exit != 0) {
         String out = new String(p.getInputStream().readAllBytes());
-        System.err.println("[dot failed exit=" + exit + "]: " + out);
+        throw new IOException("[dot failed exit=" + exit + "]: " + out);
       }
     } finally {
       Files.deleteIfExists(tmpDot);

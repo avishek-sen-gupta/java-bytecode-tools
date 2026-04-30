@@ -30,15 +30,15 @@ public class IcfgJsonExporter {
       }
 
       return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(root);
-    } catch (Exception ex) {
+    } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
       throw new RuntimeException("Failed to serialize ICFG to JSON", ex);
     }
   }
 
   private String nodeLabel(IcfgNode node) {
     var cfn = node.cfgNode();
-    if (cfn.getStatement() == null) {
-      return cfn.getKind().name();
+    if (cfn == null || cfn.getStatement() == null) {
+      return cfn != null ? cfn.getKind().name() : "UNKNOWN";
     }
     var position = cfn.getStatement().getPosition();
     int line = (position != null && position.isValidPosition()) ? position.getLine() : -1;

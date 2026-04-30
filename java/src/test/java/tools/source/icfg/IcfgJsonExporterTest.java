@@ -80,4 +80,25 @@ class IcfgJsonExporterTest {
         root.get("edges").size(),
         "JSON edge count should match ICFG edge count");
   }
+
+  @Test
+  void nodeLabelStartsWithBracketL() {
+    // At least one node with a real statement should have label starting with [L
+    boolean found = false;
+    for (JsonNode node : root.get("nodes")) {
+      if (node.get("label").asText().startsWith("[L")) {
+        found = true;
+        break;
+      }
+    }
+    assertTrue(found, "At least one node should have label starting with '[L'");
+  }
+
+  @Test
+  void nodeDepthIsNonNegative() {
+    for (JsonNode node : root.get("nodes")) {
+      int depth = node.get("depth").asInt();
+      assertTrue(depth >= 0, "Node depth should be non-negative, got: " + depth);
+    }
+  }
 }

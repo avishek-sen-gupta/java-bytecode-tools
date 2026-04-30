@@ -26,7 +26,8 @@ Key Java commands:
 
 Key Python commands:
 
-- `calltree`: walk call-graph JSON and emit a recursive call tree from a named method (methods only, no CFG)
+- `calltree`: walk call-graph JSON and emit a flat `{nodes, calls, metadata}` call graph reachable from a named method (methods only, no CFG)
+- `calltree-print`: render `calltree` output as an ASCII call tree
 - `calltree-to-dot`: render `calltree` output as a DOT/SVG call-tree diagram
 - `frames`: backward interprocedural trace to a target method; emits flat `{nodes, calls, metadata}` graph
 - `frames-print`: pretty-print backward trace chains
@@ -53,11 +54,12 @@ classpath
                 |                       |                  |                        |
              calltree               frames*             jspmap                   xtrace*
                 |                       |                  |                        |
-          call tree JSON           frame JSON         jspmap JSON             envelope JSON
+       flat {nodes,calls}       flat {nodes,calls}    jspmap JSON             envelope JSON
                 |                       |                  |                        |
-         calltree-to-dot          frames-print       jspmap-to-dot          [ftrace-slice]
-                |                       |                  |             [ftrace-expand-refs]
-             SVG/DOT                  text              SVG/DOT                     |
+      calltree-print              frames-print       jspmap-to-dot          [ftrace-slice]
+      calltree-to-dot                                                   [ftrace-expand-refs]
+                |                       |                  |                        |
+           text/SVG/DOT               text              SVG/DOT                    |
                                                                            ftrace-semantic
                                                                                     |
                                                                    +----------------+----------------+
@@ -303,7 +305,7 @@ This command stays within a single method and reports paths between two source l
 
 ## Call Tree (Methods Only)
 
-`calltree` walks a call-graph JSON file and emits the recursive tree of methods reachable from a named entry point — method nodes and caller→callee edges only, no CFG blocks or source lines. `calltree-to-dot` renders that tree directly to DOT/SVG without any intermediate semantic-graph step.
+`calltree` walks a call-graph JSON file and emits a flat `{nodes, calls, metadata}` graph of all methods transitively reachable from a named entry point — method nodes and caller→callee edges only, no CFG blocks or source lines. `calltree-to-dot` renders that graph as DOT/SVG; `calltree-print` renders it as an ASCII tree.
 
 This is the right tool when you want to answer "what does this method transitively call?" as a clean method-level diagram.
 
@@ -321,17 +323,18 @@ cd python && uv run calltree \
   --callgraph ../callgraph.json \
   --class com.example.app.OrderService \
   --method processOrder \
+  --pattern 'com\.example' \
   > calltree.json
 ```
 
-The output is an envelope `{trace, refIndex}` where each node carries `class`, `method`, `methodSignature`, `children`, and `callSiteLine` (the source line in the parent where this method is called). Leaf types:
-
-- **`ref: true`** — method already appeared elsewhere in the tree; full body is in `refIndex`
-- **`cycle: true`** — recursive call; not expanded further
+The output is a flat `{nodes, calls, metadata}` graph where each node carries `class`, `method`, `methodSignature`, and (when available) `lineStart`, `lineEnd`, `sourceLineCount`. Each call edge carries `from`, `to`, and optionally `callSiteLine`. Out-of-scope callees appear as `filtered: true` edges; recursive calls appear as `cycle: true` edges and are not expanded further.
 
 ### 3. Render The Call Tree
 
 ```bash
+# ASCII tree (stdout)
+cd python && uv run calltree-print --input calltree.json
+
 # To SVG
 cd python && uv run calltree-to-dot --input calltree.json --svg -o calltree.svg
 
@@ -343,10 +346,9 @@ cd python && uv run calltree \
   --callgraph ../callgraph.json \
   --class com.example.app.OrderService \
   --method processOrder \
+  --pattern 'com\.example' \
   | uv run calltree-to-dot --svg -o calltree.svg
 ```
-
-`calltree-to-dot` resolves `ref` nodes via the bundled `refIndex` so the diagram shows the full reachable call graph, with each method appearing exactly once regardless of how many callers it has.
 
 > **Note:** Do not pipe `calltree` output through `ftrace-semantic`. That pipeline is for CFG-level (`xtrace`) output; `calltree` nodes have no `blocks` or `sourceTrace`, so `ftrace-semantic` produces empty graphs.
 
@@ -358,7 +360,7 @@ The Python tools operate on `xtrace` output or on derivatives of that output.
 
 The post-processing tools are designed to compose as Unix filters.
 
-- `calltree`, `calltree-to-dot`, `ftrace-slice`, `ftrace-expand-refs`, `ftrace-semantic`, `ftrace-validate`, `ftrace-semantic-to-dot`, and `frames-print` read stdin if `--input` is omitted
+- `calltree`, `calltree-print`, `calltree-to-dot`, `ftrace-slice`, `ftrace-expand-refs`, `ftrace-semantic`, `ftrace-validate`, `ftrace-semantic-to-dot`, and `frames-print` read stdin if `--input` is omitted
 - Those same tools write stdout if `--output` is omitted
 - Java CLI commands such as `buildcg`, `dump`, `xtrace`, and `trace` write JSON to stdout when `--output` is omitted
 - The Python `frames` command writes JSON to stdout (pipe-friendly)
@@ -574,7 +576,12 @@ scripts/bytecode.sh --prefix com.example. "$CP" trace com.example.app.OrderServi
 # Call tree (methods only, no CFG)
 uv --directory python run calltree \
   --callgraph callgraph.json --class com.example.app.OrderService --method processOrder \
+  --pattern 'com\.example' \
   | uv --directory python run calltree-to-dot --svg -o calltree.svg
+uv --directory python run calltree \
+  --callgraph callgraph.json --class com.example.app.OrderService --method processOrder \
+  --pattern 'com\.example' \
+  | uv --directory python run calltree-print
 
 # Python CFG post-processing pipeline
 uv --directory python run ftrace-slice            --input forward.json --from com.example.app.OrderService --output slice.json

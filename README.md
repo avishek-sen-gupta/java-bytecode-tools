@@ -8,7 +8,6 @@ Interprocedural call tracing and control-flow graph construction from Java sourc
 The repository combines:
 
 - A Java CLI built on SootUp for call-graph construction and interprocedural tracing
-- A source-level interprocedural CFG builder powered by [Spoon](https://spoon.gforge.inria.fr/) + [SCIP](https://sourcegraph.com/blog/announcing-scip) cross-references
 - A small Python toolchain for slicing, ref expansion, validation, semantic graph building, and DOT/SVG rendering
 - A fixture project plus end-to-end tests that exercise the full pipeline
 
@@ -18,62 +17,6 @@ The repository combines:
   <img src="docs/forward-trace-example.svg" alt="Forward trace visualization" width="700">
 </p>
 
-## What Is In The Repo
-
-```text
-java-bytecode-tools/
-├── java/                    Maven project — SootUp + Spoon analysis
-│   ├── pom.xml
-│   └── src/main/java/tools/
-│       ├── bytecode/             SootUp-based bytecode analysis
-│       │   ├── ForwardTracer.java    Two-pass ref-by-default tracer
-│       │   ├── BackwardTracer.java   BFS over call graph for backward traces
-│       │   ├── CallGraphBuilder.java Scans bytecode, resolves dispatch
-│       │   └── cli/                 picocli subcommands (xtrace, frames, …)
-│       └── source/icfg/          Source-level interprocedural CFG (ICFG)
-│           ├── ScipIndex.java        Parses index.scip; resolves symbols ↔ locations
-│           ├── SpoonMethodCfgCache.java  Builds + caches per-method CFGs via Spoon
-│           ├── IcfgBuilder.java      Recursive ICFG assembler
-│           ├── InterproceduralCfg.java   Top-level ICFG data structure
-│           ├── IcfgNode.java / IcfgEdge.java  Node/edge with depth + kind
-│           ├── IcfgConfig.java       maxDepth + stop condition
-│           ├── StopCondition.java    exact(), prefix(), any(), none() factories
-│           ├── IcfgDotExporter.java  Renders ICFG as DOT with subgraph clusters
-│           ├── IcfgJsonExporter.java Emits node/edge JSON
-│           └── IcfgCLI.java          Standalone picocli entry point
-├── python/                  uv-managed post-processing and rendering tools
-│   ├── ftrace_types.py      Shared type definitions (StrEnum, TypedDict)
-│   ├── ftrace_slice.py      Slice subtree + bundle ref index
-│   ├── ftrace_expand_refs.py Expand ref nodes using ref index
-│   ├── ftrace_semantic.py   Transform raw trace → semantic graph
-│   ├── ftrace_semantic_to_dot.py  Render semantic graph as DOT/SVG
-│   ├── ftrace_validate.py   Validate semantic graph structure
-│   ├── frames_print.py      Pretty-print backward trace chains
-│   ├── calltree.py          Walk call-graph JSON; emit recursive call tree from a method
-│   ├── calltree_to_dot.py   Render calltree output as DOT/SVG (no CFG, methods only)
-│   ├── reindex.py           Regenerate test-fixtures/index.scip via scip-java
-│   ├── reindex.conf.example Sample reindex config file
-│   └── jspmap/              jspmap package — JSP-to-DAO semantic map tool
-│       ├── protocols.py     BeanInfo + BeanResolver plugin protocol
-│       ├── jsf_bean_map.py  JsfBeanResolver — reads faces-config.xml
-│       ├── jsp_parser.py    EL tokenizer, DOM walk, ELAction
-│       ├── chain_builder.py BFS chain builder, ChainHop
-│       └── jspmap.py        CLI entry point + resolver registry
-├── scripts/
-│   ├── bytecode.sh          Thin launcher for the Java bytecode CLI
-│   ├── icfg.sh              Thin launcher for the ICFG CLI
-│   └── reindex.sh           Shell wrapper for scip-java indexing (see reindex.py)
-├── test-fixtures/           Fixture classes and end-to-end tests
-│   ├── src/                 Small fixture Java project
-│   ├── classes/             Compiled fixture classes
-│   ├── index.scip           SCIP index of the fixture sources (committed)
-│   ├── tests/               One test script per feature area
-│   ├── lib-test.sh          Shared helpers, setup, and assertions
-│   └── run-e2e.sh           E2E test runner
-├── build.sh                 Prereq check + Java/Python setup
-└── run-all-tests.sh         Java, Python, and E2E test runner
-```
-
 Key Java commands:
 
 - `buildcg`: build caller → callee edges for project classes
@@ -81,7 +24,6 @@ Key Java commands:
 - `trace`: intraprocedural trace between two lines in one class
 - `xtrace`: forward interprocedural trace from an entry point
 - `frames`: backward interprocedural trace to a target method
-- `icfg`: source-level interprocedural CFG with recursive call expansion
 
 Key Python commands:
 
@@ -95,7 +37,6 @@ Key Python commands:
 - `frames-print`: pretty-print backward trace chains
 - `jspmap`: map JSP EL actions through call graph to DAO methods; outputs JSON semantic map
 - `jspmap-to-dot`: render jspmap JSON output as DOT/SVG
-- `reindex`: regenerate `index.scip` from Java source trees via scip-java
 
 ## Setup
 
@@ -293,162 +234,6 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
 ```
 
 This command stays within a single method and reports paths between two source lines.
-
-## Source-Level Interprocedural CFG (ICFG)
-
-The `icfg` command builds a source-level interprocedural control-flow graph by combining Spoon intra-procedural CFGs with SCIP cross-reference data. Unlike `xtrace` (which traces via bytecode call graphs), `icfg` works directly from source and expands call sites recursively, stitching together per-method CFGs with explicit CALL and RETURN edges.
-
-### How It Works
-
-- **Spoon** builds an intra-procedural CFG for each method on demand, with `simplifyConvergenceNodes()` applied
-- **SCIP** resolves call-site tokens (file + line + column) to callee symbol definitions
-- **`IcfgBuilder`** expands call sites recursively up to `--depth`, skipping types matched by `--stop` / `--stop-exact`
-- Edge kinds: `INTRA` (within a method), `CALL` (call-site → callee BEGIN), `RETURN` (callee EXIT → post-call-site node in caller)
-- Interface calls resolve to the interface method definition; expansion into concrete implementations is not performed
-
-### Pre-Requisite: `index.scip`
-
-`icfg` requires a SCIP index of the source tree. The fixture index is committed at `test-fixtures/index.scip`. To regenerate it after source changes:
-
-```bash
-# Via the Python tool (recommended)
-cd python && uv run reindex --config reindex.conf.example
-
-# Or via the shell wrapper
-scripts/reindex.sh \
-  --src test-fixtures/src \
-  --classes test-fixtures/classes \
-  --output test-fixtures/index.scip
-```
-
-Requires `scip-java` on your PATH (install via `brew install scip-java` or [coursier](https://get-coursier.io/)).
-
-### Running `icfg`
-
-```bash
-scripts/icfg.sh \
-  --from   com.example.app.OrderService \
-  --method processOrder \
-  --depth  3 \
-  --stop   java. \
-  --stop   javax. \
-  --index  test-fixtures/index.scip \
-  --source test-fixtures/src \
-  --dot    target/icfg.dot \
-  --svg    target/icfg.svg \
-  --json   target/icfg.json
-```
-
-Flags:
-
-| Flag | Required | Default | Description |
-|------|----------|---------|-------------|
-| `--from` | yes | — | Entry class FQN |
-| `--method` | yes | — | Entry method name |
-| `--depth` | no | `3` | Maximum call expansion depth |
-| `--stop` | no | — | Repeatable namespace prefix; matching types are not expanded |
-| `--stop-exact` | no | — | Repeatable exact FQN stop condition |
-| `--index` | yes | — | Path to `index.scip` |
-| `--source` | yes | — | Source root directory |
-| `--dot` | no | — | Write DOT to this path |
-| `--svg` | no | — | Write SVG to this path (requires Graphviz `dot`) |
-| `--json` | no | — | Write node/edge JSON to this path |
-
-At least one output flag (`--dot`, `--svg`, or `--json`) must be provided.
-
-### DOT/SVG Output
-
-Each method appears as a `subgraph cluster_<symbol>` labelled with the simple method name and expansion depth. Node labels include source line numbers. Edge styles:
-
-- **Solid black** — `INTRA` (normal control flow within a method)
-- **Dashed blue, labelled "call"** — `CALL` edge from call-site to callee entry
-- **Dashed gray, labelled "return"** — `RETURN` edge from callee exit back to post-call-site node
-
-### JSON Output
-
-The JSON output follows the same node/edge shape as the call-graph format so downstream Python tools can consume it:
-
-```json
-{
-  "nodes": [
-    { "id": "...", "label": "[L17] order = repo.findById(id)", "method": "...", "depth": 0 }
-  ],
-  "edges": [
-    { "from": "...", "to": "...", "kind": "INTRA" }
-  ]
-}
-```
-
-## Regenerating The SCIP Index (`reindex`)
-
-`reindex` is a Python tool (and `uv` entry point) that recompiles Java sources and regenerates an `index.scip` file using `scip-java`.
-
-### Config-file mode
-
-Create a config file (copy from `python/reindex.conf.example`):
-
-```
-# reindex.conf
-src=test-fixtures/src
-classes=test-fixtures/classes
-output=test-fixtures/index.scip
-```
-
-Keys may repeat for multi-module projects:
-
-```
-src=module-a/src/main/java
-src=module-b/src/main/java
-classes=module-a/target/classes
-classes=module-b/target/classes
-output=target/index.scip
-```
-
-All config keys and their purpose:
-
-| Key | Repeatable | Description |
-|-----|-----------|-------------|
-| `src` | yes | Source root directory |
-| `classes` | yes | Classes directory; first entry is `javac -d` output, all are added to `-cp` |
-| `output` | no | Output path for `index.scip` |
-| `encoding` | no | javac `-encoding` value (e.g. `ISO-8859-1`) — omit flag if absent |
-| `lib_dir` | yes | Directory whose `*.jar` files are all added to `-cp` |
-| `add_exports` | yes | `module/package=ALL-UNNAMED` pair passed as `--add-exports` to javac |
-
-`encoding` is useful for legacy codebases with non-UTF-8 source files. `ISO-8859-1` accepts every byte value and is the safest choice for mixed-encoding files.
-
-`lib_dir` is useful when dependencies are not already on the classes path — for example, after running `mvn dependency:copy-dependencies`.
-
-`add_exports` is needed when legacy code imports internal JDK packages that Java 9+ encapsulates via JPMS. For example:
-
-```
-add_exports=java.xml/com.sun.org.apache.xerces.internal.impl.dv.util=ALL-UNNAMED
-add_exports=java.base/sun.net.www.protocol.https=ALL-UNNAMED
-```
-
-If two source roots contain a class with the same fully-qualified name, `reindex` keeps the first and skips subsequent duplicates (useful for multi-module Maven projects where a class is defined in more than one module).
-
-Run:
-
-```bash
-cd python && uv run reindex --config reindex.conf
-```
-
-### Explicit-flags mode
-
-`--config` and the individual flags are mutually exclusive:
-
-```bash
-cd python && uv run reindex \
-  --src test-fixtures/src \
-  --classes test-fixtures/classes \
-  --output test-fixtures/index.scip \
-  --encoding ISO-8859-1 \
-  --lib-dir /path/to/deps \
-  --add-exports java.base/sun.net.www.protocol.https=ALL-UNNAMED
-```
-
-The first `--classes` entry is used as the `javac -d` output directory; all entries are joined as `-cp` so cross-module type references resolve correctly.
 
 ## Call Tree (Methods Only)
 
@@ -716,19 +501,6 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
 # Intraprocedural trace
 scripts/bytecode.sh --prefix com.example. "$CP" trace com.example.app.OrderService 17 23
 
-# Source-level interprocedural CFG
-scripts/icfg.sh \
-  --from com.example.app.OrderService --method processOrder \
-  --depth 3 --stop java. --stop javax. \
-  --index test-fixtures/index.scip --source test-fixtures/src \
-  --svg target/icfg.svg --json target/icfg.json
-
-# Regenerate SCIP index after source changes
-cd python && uv run reindex --config reindex.conf
-cd python && uv run reindex \
-  --src test-fixtures/src --classes test-fixtures/classes \
-  --output test-fixtures/index.scip
-
 # Call tree (methods only, no CFG)
 uv --directory python run calltree \
   --callgraph callgraph.json --class com.example.app.OrderService --method processOrder \
@@ -758,5 +530,3 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
 - The CLI expects compiled bytecode (`.class` files), not source files
 - `frames` supports `--depth` to cap backward BFS depth and `--max-chains` to cap the number of returned call chains (default: 50)
 - Most JSON-writing commands create parent directories for `--output` automatically
-- `icfg` requires Graphviz `dot` for SVG output; it must be on your PATH
-- `reindex` requires `scip-java` on your PATH; the committed `test-fixtures/index.scip` only needs regenerating when fixture sources change

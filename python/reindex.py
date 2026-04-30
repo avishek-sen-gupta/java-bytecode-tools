@@ -27,6 +27,7 @@ class ReindexConfig:
     classes: tuple[Path, ...]
     output: Path
     encoding: str  # empty string = omit -encoding flag
+    lib_dirs: tuple[Path, ...]  # directories whose *.jar files are added to -cp
 
 
 def parse_config_file(path: Path) -> dict[str, list[str]]:
@@ -35,6 +36,7 @@ def parse_config_file(path: Path) -> dict[str, list[str]]:
         "classes": [],
         "output": [],
         "encoding": [],
+        "lib_dir": [],
     }
     for raw in path.read_text().splitlines():
         line = raw.strip()
@@ -53,11 +55,13 @@ def build_config(args: argparse.Namespace) -> ReindexConfig:
         classes = [Path(p) for p in cfg["classes"]]
         output_str = cfg["output"][0] if cfg["output"] else ""
         encoding = cfg["encoding"][0] if cfg["encoding"] else ""
+        lib_dirs = [Path(p) for p in cfg["lib_dir"]]
     else:
         srcs = [Path(p) for p in args.src]
         classes = [Path(p) for p in args.classes]
         output_str = args.output or ""
         encoding = args.encoding
+        lib_dirs = [Path(p) for p in (args.lib_dir or [])]
 
     if not srcs or not classes or not output_str:
         print(
@@ -71,7 +75,12 @@ def build_config(args: argparse.Namespace) -> ReindexConfig:
         classes=tuple(classes),
         output=Path(output_str),
         encoding=encoding,
+        lib_dirs=tuple(lib_dirs),
     )
+
+
+def lib_dir_jars(lib_dirs: tuple[Path, ...]) -> list[Path]:
+    return [jar for d in lib_dirs for jar in sorted(d.glob("*.jar"))]
 
 
 def collect_java_files(srcs: tuple[Path, ...]) -> list[Path]:
@@ -84,6 +93,10 @@ def sourcepath(srcs: tuple[Path, ...]) -> str:
 
 def classpath(classes: tuple[Path, ...]) -> str:
     return ":".join(str(c) for c in classes)
+
+
+def full_classpath(config: ReindexConfig) -> str:
+    return classpath(config.classes + tuple(lib_dir_jars(config.lib_dirs)))
 
 
 def run(cmd: list[str]) -> None:
@@ -105,7 +118,7 @@ def compile_sources(config: ReindexConfig, java_files: list[Path]) -> None:
             "-sourcepath",
             sourcepath(config.srcs),
             "-cp",
-            classpath(config.classes),
+            full_classpath(config),
             "-d",
             str(out_dir),
             *[str(f) for f in java_files],
@@ -130,7 +143,7 @@ def index_sources(config: ReindexConfig, java_files: list[Path]) -> None:
             "-sourcepath",
             sourcepath(config.srcs),
             "-cp",
-            classpath(config.classes),
+            full_classpath(config),
             "-d",
             str(out_dir),
             *[str(f) for f in java_files],
@@ -171,6 +184,14 @@ def main() -> None:
         metavar="CHARSET",
         default="",
         help="javac -encoding value (e.g. windows-874); overrides config file",
+    )
+    parser.add_argument(
+        "--lib-dir",
+        metavar="DIR",
+        action="append",
+        dest="lib_dir",
+        default=None,
+        help="directory of *.jar files to add to -cp (repeatable)",
     )
 
     args = parser.parse_args()

@@ -20,38 +20,40 @@ def find_roots(node_sigs: set[str], calls: list[dict]) -> set[str]:
 
 def _build_adjacency(calls: list[dict]) -> dict[str, list[tuple[str, int]]]:
     """caller → [(callee_sig, callsite_line)] for normal edges only."""
-    adj: dict[str, list[tuple[str, int]]] = {}
-    for c in calls:
-        if c.get("filtered") or c.get("cycle"):
-            continue
-        adj.setdefault(c["from"], []).append((c["to"], c.get("callSiteLine", 0)))
-    return adj
+    normal = [c for c in calls if not c.get("filtered") and not c.get("cycle")]
+    callers = dict.fromkeys(c["from"] for c in normal)
+    return {
+        caller: [
+            (c["to"], c.get("callSiteLine", 0)) for c in normal if c["from"] == caller
+        ]
+        for caller in callers
+    }
 
 
 def _dfs_paths(
     sig: str,
     target: str,
     adj: dict[str, list[tuple[str, int]]],
-    path: list[str],
-    results: list[list[str]],
-) -> None:
+    path: tuple[str, ...],
+) -> list[list[str]]:
     if sig == target and len(path) > 1:
-        results.append(list(path))
-        return
-    for callee, _ in adj.get(sig, []):
-        if callee not in path:  # avoid cycles
-            path.append(callee)
-            _dfs_paths(callee, target, adj, path, results)
-            path.pop()
+        return [list(path)]
+    return [
+        chain
+        for callee, _ in adj.get(sig, [])
+        if callee not in path
+        for chain in _dfs_paths(callee, target, adj, path + (callee,))
+    ]
 
 
 def collect_paths(roots: set[str], target: str, calls: list[dict]) -> list[list[str]]:
     """DFS from each root to target; return list of sig-chains."""
     adj = _build_adjacency(calls)
-    results: list[list[str]] = []
-    for root in sorted(roots):
-        _dfs_paths(root, target, adj, [root], results)
-    return results
+    return [
+        path
+        for root in sorted(roots)
+        for path in _dfs_paths(root, target, adj, (root,))
+    ]
 
 
 def format_frame(node: dict) -> str:

@@ -20,16 +20,16 @@ def _build_adjacency(
     calls: list[dict],
 ) -> dict[str, list[tuple[str, int, bool]]]:
     """caller → [(callee_sig, callsite_line, is_cycle)]."""
-    adj: dict[str, list[tuple[str, int, bool]]] = {}
-    for c in calls:
-        if c.get("filtered"):
-            continue
-        caller = c["from"]
-        callee = c["to"]
-        callsite = c.get("callSiteLine", 0)
-        is_cycle = bool(c.get("cycle"))
-        adj.setdefault(caller, []).append((callee, callsite, is_cycle))
-    return adj
+    normal = [c for c in calls if not c.get("filtered")]
+    callers = dict.fromkeys(c["from"] for c in normal)
+    return {
+        caller: [
+            (c["to"], c.get("callSiteLine", 0), bool(c.get("cycle")))
+            for c in normal
+            if c["from"] == caller
+        ]
+        for caller in callers
+    }
 
 
 def _find_roots(node_sigs: set[str], calls: list[dict]) -> list[str]:
@@ -78,29 +78,34 @@ def _render_subtree(
     return [own_line, *child_lines]
 
 
+def _render_root(
+    root_sig: str,
+    adj: dict[str, list[tuple[str, int, bool]]],
+    nodes: dict[str, dict],
+) -> list[str]:
+    """Render a single root node and its entire subtree."""
+    node = nodes.get(root_sig, {"class": "?", "method": "?"})
+    children = adj.get(root_sig, [])
+    return [_make_label(node)] + [
+        line
+        for i, (child_sig, child_callsite, child_cycle) in enumerate(children)
+        for line in _render_subtree(
+            child_sig,
+            adj,
+            nodes,
+            "",
+            i == len(children) - 1,
+            {root_sig},
+            child_callsite,
+            child_cycle,
+        )
+    ]
+
+
 def render_flat(nodes: dict[str, dict], calls: list[dict]) -> list[str]:
     adj = _build_adjacency(calls)
     roots = _find_roots(set(nodes.keys()), calls)
-    result: list[str] = []
-    for root_sig in roots:
-        node = nodes.get(root_sig, {"class": "?", "method": "?"})
-        result.append(_make_label(node))
-        children = adj.get(root_sig, [])
-        visited = {root_sig}
-        for i, (child_sig, child_callsite, child_cycle) in enumerate(children):
-            result.extend(
-                _render_subtree(
-                    child_sig,
-                    adj,
-                    nodes,
-                    "",
-                    i == len(children) - 1,
-                    visited,
-                    child_callsite,
-                    child_cycle,
-                )
-            )
-    return result
+    return [line for root_sig in roots for line in _render_root(root_sig, adj, nodes)]
 
 
 def main() -> None:

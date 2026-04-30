@@ -20,7 +20,7 @@ def _build_adjacency(
     calls: list[dict],
 ) -> dict[str, list[tuple[str, int, bool]]]:
     """caller → [(callee_sig, callsite_line, is_cycle)]."""
-    normal = [c for c in calls if not c.get("filtered")]
+    normal = [c for c in calls if not c.get("filtered", False)]
     callers = dict.fromkeys(c["from"] for c in normal)
     return {
         caller: [
@@ -34,7 +34,9 @@ def _build_adjacency(
 
 def _find_roots(node_sigs: set[str], calls: list[dict]) -> list[str]:
     has_incoming = {
-        c["to"] for c in calls if not c.get("filtered") and not c.get("cycle")
+        c["to"]
+        for c in calls
+        if not c.get("filtered", False) and not c.get("cycle", False)
     }
     return sorted(node_sigs - has_incoming)
 

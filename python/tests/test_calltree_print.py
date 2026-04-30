@@ -92,3 +92,17 @@ class TestRenderFlat:
         assert "│   ├── B.bar" in lines
         assert "│   └── C.baz" in lines
         assert "└── D.qux" in lines
+
+    def test_does_not_mutate_inputs(self):
+        from copy import deepcopy
+        from calltree_print import render_flat
+
+        nodes = {SIG_SVC: _node(SIG_SVC, "com.example.Svc", "handle")}
+        calls = [{"from": SIG_SVC, "to": SIG_DAO, "callSiteLine": 42}]
+        nodes_before = deepcopy(nodes)
+        calls_before = deepcopy(calls)
+
+        render_flat(nodes, calls)
+
+        assert nodes == nodes_before
+        assert calls == calls_before

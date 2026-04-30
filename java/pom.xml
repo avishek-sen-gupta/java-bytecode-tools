@@ -57,35 +57,68 @@
             <version>5.11.3</version>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>fr.inria.gforge.spoon</groupId>
-            <artifactId>spoon-core</artifactId>
-            <version>11.3.1-beta-8</version>
-        </dependency>
-        <dependency>
-            <groupId>fr.inria.gforge.spoon</groupId>
-            <artifactId>spoon-control-flow</artifactId>
-            <version>0.0.2-SNAPSHOT</version>
-        </dependency>
-        <dependency>
-            <groupId>com.sourcegraph</groupId>
-            <artifactId>scip-java-proto</artifactId>
-            <version>0.10.4</version>
-        </dependency>
     </dependencies>
 
-    <repositories>
-        <repository>
-            <id>sonatype-snapshots</id>
-            <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
-            <snapshots>
-                <enabled>true</enabled>
-            </snapshots>
-            <releases>
-                <enabled>false</enabled>
-            </releases>
-        </repository>
-    </repositories>
+    <profiles>
+        <!-- Active by default; excluded automatically when -P icfg is passed -->
+        <profile>
+            <id>no-icfg</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <excludes>
+                                <exclude>tools/source/**</exclude>
+                            </excludes>
+                            <testExcludes>
+                                <testExclude>tools/source/**</testExclude>
+                                <testExclude>tools/bytecode/SpoonCfgComparisonTest.java</testExclude>
+                            </testExcludes>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- Opt-in profile for the Spoon/SCIP ICFG experiment: mvn compile -P icfg -->
+        <profile>
+            <id>icfg</id>
+            <dependencies>
+                <dependency>
+                    <groupId>fr.inria.gforge.spoon</groupId>
+                    <artifactId>spoon-core</artifactId>
+                    <version>11.3.1-beta-8</version>
+                </dependency>
+                <dependency>
+                    <groupId>fr.inria.gforge.spoon</groupId>
+                    <artifactId>spoon-control-flow</artifactId>
+                    <version>0.0.2-SNAPSHOT</version>
+                </dependency>
+                <dependency>
+                    <groupId>com.sourcegraph</groupId>
+                    <artifactId>scip-java-proto</artifactId>
+                    <version>0.10.4</version>
+                </dependency>
+            </dependencies>
+            <repositories>
+                <repository>
+                    <id>sonatype-snapshots</id>
+                    <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
+                    <snapshots>
+                        <enabled>true</enabled>
+                    </snapshots>
+                    <releases>
+                        <enabled>false</enabled>
+                    </releases>
+                </repository>
+            </repositories>
+        </profile>
+    </profiles>
 
     <build>
         <plugins>

@@ -47,6 +47,24 @@ class TestBuildTreeCallsiteLines:
         assert node["children"][0]["callSiteLine"] == 10
         assert node["children"][0]["children"][0]["callSiteLine"] == 20
 
+    def test_children_sorted_by_callsite_line(self):
+        from calltree import build_tree
+
+        cg = _cg([(SIG_A, [SIG_B, SIG_C])])
+        callsites = {SIG_A: {SIG_B: 20, SIG_C: 10}}
+        node = build_tree(SIG_A, cg, _pat("com.example"), set(), {}, {}, callsites, "")
+        lines = [c["callSiteLine"] for c in node["children"]]
+        assert lines == [10, 20]
+
+    def test_children_without_callsite_line_sort_last(self):
+        from calltree import build_tree
+
+        cg = _cg([(SIG_A, [SIG_B, SIG_C])])
+        callsites = {SIG_A: {SIG_C: 5}}  # SIG_B has no callsite line
+        node = build_tree(SIG_A, cg, _pat("com.example"), set(), {}, {}, callsites, "")
+        sigs = [c["methodSignature"] for c in node["children"]]
+        assert sigs == [SIG_C, SIG_B]
+
     def test_does_not_mutate_callsites_input(self):
         from calltree import build_tree
 

@@ -60,16 +60,19 @@ def build_tree(
         return {**base, "ref": True}
 
     on_path.add(sig)
-    children = [
-        child
-        for callee in cg.get(sig, [])
-        if (
-            child := build_tree(
-                callee, cg, pat, on_path, fully_built, ref_index, callsites, sig
+    children = sorted(
+        (
+            child
+            for callee in cg.get(sig, [])
+            if (
+                child := build_tree(
+                    callee, cg, pat, on_path, fully_built, ref_index, callsites, sig
+                )
             )
-        )
-        is not None
-    ]
+            is not None
+        ),
+        key=lambda c: c.get("callSiteLine", float("inf")),
+    )
     on_path.remove(sig)
 
     if not (cls and pat.search(cls)) and not children:

@@ -203,7 +203,11 @@ class TestRunRecurse:
             jsp_filter="main.jsp",
             recurse=True,
         )
-        jsps_in_result = {a["jsp"] for a in result["actions"]}
+        jsps_in_result = {
+            node.get("class", "").lstrip("/")
+            for node in result["nodes"].values()
+            if node.get("node_type") == "jsp"
+        }
         assert "child.jsp" in jsps_in_result
 
     def test_recurse_false_excludes_child(self, workspace):
@@ -220,7 +224,11 @@ class TestRunRecurse:
             jsp_filter="main.jsp",
             recurse=False,
         )
-        jsps_in_result = {a["jsp"] for a in result["actions"]}
+        jsps_in_result = {
+            node.get("class", "").lstrip("/")
+            for node in result["nodes"].values()
+            if node.get("node_type") == "jsp"
+        }
         assert "child.jsp" not in jsps_in_result
 
     def test_recurse_meta_includes_jsp_set(self, workspace):
@@ -235,9 +243,9 @@ class TestRunRecurse:
             jsp_filter="main.jsp",
             recurse=True,
         )
-        assert "jsp_set" in result["meta"]
-        assert "main.jsp" in result["meta"]["jsp_set"]
-        assert "child.jsp" in result["meta"]["jsp_set"]
+        assert "jsp_set" in result["metadata"]
+        assert "main.jsp" in result["metadata"]["jsp_set"]
+        assert "child.jsp" in result["metadata"]["jsp_set"]
 
 
 # ---------------------------------------------------------------------------
@@ -300,8 +308,8 @@ class TestRunRecurseIncludes:
             jsp_filter="main.jsp",
             recurse=True,
         )
-        assert "jsp_includes" in result["meta"]
-        assert "child.jsp" in result["meta"]["jsp_includes"]["main.jsp"]
+        assert "jsp_includes" in result["metadata"]
+        assert "child.jsp" in result["metadata"]["jsp_includes"]["main.jsp"]
 
     def test_meta_jsp_includes_absent_without_recurse(self, workspace):
         jsp_dir = workspace["jsp_dir"]
@@ -315,4 +323,4 @@ class TestRunRecurseIncludes:
             jsp_filter="main.jsp",
             recurse=False,
         )
-        assert "jsp_includes" not in result["meta"]
+        assert "jsp_includes" not in result["metadata"]

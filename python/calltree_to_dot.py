@@ -1,110 +1,72 @@
-"""Render find-called-methods output as a Graphviz call tree.
+"""Render calltree/frames {nodes, calls} output as a Graphviz call tree.
 
 Pipeline:
-  find-called-methods ... | calltree-to-dot [--svg] [-o out.svg]
-
-No ftrace-semantic step needed — this consumes the {trace, refIndex} envelope directly
-and emits a DOT digraph: one node per method, one edge per caller→callee relationship.
+  calltree ... | calltree-to-dot [--svg] [-o out.svg]
+  frames  ...  | calltree-to-dot [--svg] [-o out.svg]
 """
 
 import re
-from functools import reduce
-from ftrace_types import MethodCFG, short_class
 
-# --- Types ---
+from ftrace_types import short_class
 
 NodeSig = str
 Edge = tuple[NodeSig, NodeSig]
 
 
-# --- Pure functions ---
+def collect_nodes_flat(nodes: dict[str, dict]) -> frozenset[NodeSig]:
+    """Return all node sigs from the flat nodes dict."""
+    return frozenset(nodes.keys())
 
 
-def _is_leaf(node: MethodCFG) -> bool:
-    return bool(node.get("ref") or node.get("cycle") or node.get("filtered"))
+def collect_edges_flat(
+    calls: list[dict],
+) -> tuple[frozenset[Edge], frozenset[Edge]]:
+    """Split calls into (normal_edges, cycle_edges), dropping filtered entries."""
+    normal = frozenset(
+        (c["from"], c["to"])
+        for c in calls
+        if not c.get("filtered") and not c.get("cycle")
+    )
+    cycle = frozenset((c["from"], c["to"]) for c in calls if c.get("cycle"))
+    return normal, cycle
 
 
-def _resolve(node: MethodCFG, ref_index: dict[str, MethodCFG]) -> MethodCFG:
-    """For a ref leaf, return the resolved full node from ref_index (or node itself)."""
-    if node.get("ref"):
-        sig = node.get("methodSignature", "")
-        return ref_index.get(sig, node)
-    return node
+def find_roots(node_sigs: frozenset[NodeSig], calls: list[dict]) -> frozenset[NodeSig]:
+    """Nodes with no incoming normal (non-filtered, non-cycle) call edges."""
+    has_incoming = frozenset(
+        c["to"] for c in calls if not c.get("filtered") and not c.get("cycle")
+    )
+    return node_sigs - has_incoming
 
 
-def collect_nodes(
-    trace: MethodCFG, ref_index: dict[str, MethodCFG]
-) -> frozenset[NodeSig]:
-    """Collect all method signatures reachable from trace, resolving refs."""
-
-    def _fold(acc: frozenset[NodeSig], node: MethodCFG) -> frozenset[NodeSig]:
-        sig = node.get("methodSignature", "")
-        if not sig or sig in acc:
-            return acc
-        acc = acc | frozenset({sig})
-        resolved = _resolve(node, ref_index)
-        if _is_leaf(resolved):
-            return acc
-        return reduce(_fold, resolved.get("children", []), acc)
-
-    return _fold(frozenset(), trace)
-
-
-def collect_edges(trace: MethodCFG, ref_index: dict[str, MethodCFG]) -> frozenset[Edge]:
-    """Collect all (parent_sig, child_sig) edges reachable from trace, resolving refs."""
-
-    def _fold(
-        acc: tuple[frozenset[Edge], frozenset[NodeSig]], node: MethodCFG
-    ) -> tuple[frozenset[Edge], frozenset[NodeSig]]:
-        edges, visited = acc
-        sig = node.get("methodSignature", "")
-        if not sig or sig in visited:
-            return acc
-        visited = visited | frozenset({sig})
-        resolved = _resolve(node, ref_index)
-        if _is_leaf(resolved):
-            return (edges, visited)
-        children = resolved.get("children", [])
-        new_edges = frozenset(
-            (sig, child.get("methodSignature", ""))
-            for child in children
-            if child.get("methodSignature", "")
-        )
-        acc = (edges | new_edges, visited)
-        return reduce(_fold, children, acc)
-
-    result_edges, _ = _fold((frozenset(), frozenset()), trace)
-    return result_edges
-
-
-def make_dot_label(node: MethodCFG) -> str:
-    """Return ShortClass.method label for a node."""
+def _make_dot_label(node: dict) -> str:
     return short_class(node.get("class", "?")) + "." + node.get("method", "?")
 
 
 def _sanitize_id(sig: str) -> str:
-    """Convert a method signature to a valid DOT node ID."""
     return re.sub(r"[^a-zA-Z0-9_]", "_", sig)
 
 
 def render_dot(
-    nodes: frozenset[NodeSig],
+    node_sigs: frozenset[NodeSig],
     edges: frozenset[Edge],
+    cycle_edges: frozenset[Edge],
     label_map: dict[NodeSig, str],
+    roots: frozenset[NodeSig] = frozenset(),
 ) -> str:
-    """Emit a Graphviz DOT digraph string."""
     node_lines = [
-        f'  {_sanitize_id(sig)} [label="{label_map.get(sig, sig)}" shape=box];'
-        for sig in sorted(nodes)
+        f'  {_sanitize_id(sig)} [label="{label_map.get(sig, sig)}" shape={"ellipse" if sig in roots else "box"}];'
+        for sig in sorted(node_sigs)
     ]
     edge_lines = [
         f"  {_sanitize_id(src)} -> {_sanitize_id(dst)};" for src, dst in sorted(edges)
     ]
-    body = "\n".join(node_lines + edge_lines)
+    cycle_lines = [
+        f"  {_sanitize_id(src)} -> {_sanitize_id(dst)} [style=dashed color=gray];"
+        for src, dst in sorted(cycle_edges)
+    ]
+    body = "\n".join(node_lines + edge_lines + cycle_lines)
     return f"digraph calltree {{\n  rankdir=LR;\n{body}\n}}\n"
-
-
-# --- Entry point ---
 
 
 def main() -> None:
@@ -113,10 +75,9 @@ def main() -> None:
     import subprocess
     import sys
     from pathlib import Path
-    from typing import cast
 
     parser = argparse.ArgumentParser(
-        description="Render find-called-methods output as a Graphviz call tree."
+        description="Render calltree/frames output as a Graphviz call graph."
     )
     parser.add_argument("--input", type=Path, help="Input JSON (default: stdin)")
     parser.add_argument(
@@ -131,29 +92,14 @@ def main() -> None:
         json.loads(Path(args.input).read_text()) if args.input else json.load(sys.stdin)
     )
 
-    trace = cast(MethodCFG, data.get("trace", data))
-    ref_index: dict[str, MethodCFG] = data.get("refIndex", {})
+    nodes: dict[str, dict] = data.get("nodes", {})
+    calls: list[dict] = data.get("calls", [])
 
-    nodes = collect_nodes(trace, ref_index)
-
-    # Build label map: walk the tree once more to collect node dicts
-    def _gather_node_dicts(
-        acc: dict[NodeSig, MethodCFG], node: MethodCFG
-    ) -> dict[NodeSig, MethodCFG]:
-        sig = node.get("methodSignature", "")
-        if not sig or sig in acc:
-            return acc
-        acc = {**acc, sig: node}
-        resolved = _resolve(node, ref_index)
-        if _is_leaf(resolved):
-            return acc
-        return reduce(_gather_node_dicts, resolved.get("children", []), acc)
-
-    node_dicts = _gather_node_dicts({}, trace)
-    label_map = {sig: make_dot_label(nd) for sig, nd in node_dicts.items()}
-
-    edges = collect_edges(trace, ref_index)
-    dot = render_dot(nodes, edges, label_map)
+    node_sigs = collect_nodes_flat(nodes)
+    edges, cycle_edges = collect_edges_flat(calls)
+    roots = find_roots(node_sigs, calls)
+    label_map = {sig: _make_dot_label(nd) for sig, nd in nodes.items()}
+    dot = render_dot(node_sigs, edges, cycle_edges, label_map, roots)
 
     if not args.svg and not args.png:
         if args.output:

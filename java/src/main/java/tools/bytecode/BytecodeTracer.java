@@ -26,8 +26,8 @@ import sootup.java.core.views.JavaView;
  * BytecodeTracer — shared infrastructure for bytecode analysis.
  *
  * <p>Holds the SootUp view, project class filtering, and utility methods used by {@link
- * CallGraphBuilder}, {@link ForwardTracer}, and {@link BackwardTracer}. Also provides
- * intraprocedural tracing ({@link #trace}) and the CLI entry point.
+ * CallGraphBuilder} and {@link ForwardTracer}. Also provides intraprocedural tracing ({@link
+ * #trace}) and the CLI entry point.
  */
 public class BytecodeTracer {
 

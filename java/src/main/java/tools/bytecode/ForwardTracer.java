@@ -283,15 +283,18 @@ public class ForwardTracer {
     return envelope;
   }
 
+  @SuppressWarnings("unchecked")
   private Map<String, List<String>> loadForwardCallGraph() throws IOException {
     if (tracer.getCallGraphCache() != null && Files.exists(tracer.getCallGraphCache())) {
       System.err.println("Loading call graph from " + tracer.getCallGraphCache() + "...");
       ObjectMapper cgMapper = new ObjectMapper();
-      @SuppressWarnings("unchecked")
-      Map<String, List<String>> cached =
-          cgMapper.readValue(tracer.getCallGraphCache().toFile(), Map.class);
-      System.err.println("Loaded " + cached.size() + " caller entries");
-      return cached;
+      Map<String, Object> raw = cgMapper.readValue(tracer.getCallGraphCache().toFile(), Map.class);
+      Map<String, List<String>> graph =
+          raw.containsKey("callees")
+              ? (Map<String, List<String>>) raw.get("callees")
+              : (Map<String, List<String>>) (Object) raw;
+      System.err.println("Loaded " + graph.size() + " caller entries");
+      return graph;
     }
     throw new RuntimeException("Call graph cache not found. Run `buildcg` first.");
   }

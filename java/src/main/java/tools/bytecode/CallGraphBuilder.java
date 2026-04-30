@@ -44,7 +44,10 @@ public class CallGraphBuilder {
       Set<String> bridgeSigs,
       int methodsWithBodies) {}
 
-  public Map<String, List<String>> buildCallGraph() {
+  public record CallGraphResult(
+      Map<String, List<String>> graph, Map<String, Map<String, Integer>> lineIndex) {}
+
+  public CallGraphResult buildCallGraph() {
     long totalStart = System.currentTimeMillis();
 
     log.info("[buildcg] Loading project classes...");
@@ -102,13 +105,21 @@ public class CallGraphBuilder {
         1,
         TimeUnit.SECONDS);
 
+    Map<String, Map<String, Integer>> lineIndex = new LinkedHashMap<>();
     try {
       for (JavaSootClass cls : projectClasses) {
         for (SootMethod method : cls.getMethods()) {
           if (!method.hasBody()) continue;
           String mSig = method.getSignature().toString();
           Body body = method.getBody();
+          int minLine = Integer.MAX_VALUE;
+          int maxLine = Integer.MIN_VALUE;
           for (Stmt stmt : body.getStmtGraph().getNodes()) {
+            int line = BytecodeTracer.stmtLine(stmt);
+            if (line > 0) {
+              if (line < minLine) minLine = line;
+              if (line > maxLine) maxLine = line;
+            }
             Optional<AbstractInvokeExpr> invokeOpt = BytecodeTracer.extractInvoke(stmt);
             if (invokeOpt.isEmpty()) continue;
             AbstractInvokeExpr invoke = invokeOpt.get();
@@ -131,6 +142,9 @@ public class CallGraphBuilder {
               }
             }
             methodsScanned.incrementAndGet();
+          }
+          if (maxLine != Integer.MIN_VALUE) {
+            lineIndex.put(mSig, Map.of("lineStart", minLine, "lineEnd", maxLine));
           }
         }
         classesScanned.incrementAndGet();
@@ -160,7 +174,7 @@ public class CallGraphBuilder {
         result.size(),
         edges,
         elapsedSecs(totalStart));
-    return result;
+    return new CallGraphResult(result, Collections.unmodifiableMap(lineIndex));
   }
 
   /** Phase 1: Iterates all class methods to build the signature index and name lookup map. */

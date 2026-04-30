@@ -78,7 +78,6 @@ def main() -> None:
     data = (
         json.loads(Path(args.input).read_text()) if args.input else json.load(sys.stdin)
     )
-
     trace = cast(MethodCFG, data.get("trace", data))
     for line in render_tree(trace):
         print(line)

@@ -193,3 +193,21 @@ class TestBuildFramesGraph:
         chains = [[SIG_MAIN, SIG_SVC, SIG_DAO], [SIG_UTIL, SIG_SVC, SIG_DAO]]
         nodes, calls = build_frames_graph(chains, CALLSITES, METHOD_LINES)
         assert list(nodes.keys()).count(SIG_SVC) == 1
+
+    def test_node_has_node_type_java_method(self):
+        from frames import build_frames_graph
+
+        nodes, calls = build_frames_graph(
+            [[SIG_MAIN, SIG_SVC, SIG_DAO]], CALLSITES, METHOD_LINES
+        )
+        assert nodes[SIG_MAIN]["node_type"] == "java_method"
+        assert nodes[SIG_DAO]["node_type"] == "java_method"
+
+    def test_edge_has_edge_info(self):
+        from frames import build_frames_graph
+
+        nodes, calls = build_frames_graph(
+            [[SIG_MAIN, SIG_SVC, SIG_DAO]], CALLSITES, METHOD_LINES
+        )
+        for edge in calls:
+            assert edge["edge_info"] == {}

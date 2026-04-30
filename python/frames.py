@@ -127,7 +127,12 @@ def enumerate_chains(
 def _node_entry(sig: str, method_lines: dict[str, dict]) -> dict:
     cls = extract_class(sig)
     method = extract_method(sig)
-    base: dict = {"class": cls, "method": method, "methodSignature": sig}
+    base: dict = {
+        "node_type": "java_method",
+        "class": cls,
+        "method": method,
+        "methodSignature": sig,
+    }
     lr = method_lines.get(sig, {})
     if lr:
         line_start = lr.get("lineStart", 0)
@@ -156,7 +161,7 @@ def build_frames_graph(
             if (caller, callee) not in seen_edges:
                 seen_edges.add((caller, callee))
                 callsite_line = callsites.get(caller, {}).get(callee, 0)
-                edge: dict = {"from": caller, "to": callee}
+                edge: dict = {"from": caller, "to": callee, "edge_info": {}}
                 if callsite_line > 0:
                     edge["callSiteLine"] = callsite_line
                 calls.append(edge)

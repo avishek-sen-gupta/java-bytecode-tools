@@ -61,13 +61,16 @@
             <groupId>fr.inria.gforge.spoon</groupId>
             <artifactId>spoon-core</artifactId>
             <version>11.3.1-beta-8</version>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>fr.inria.gforge.spoon</groupId>
             <artifactId>spoon-control-flow</artifactId>
             <version>0.0.2-SNAPSHOT</version>
-            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.sourcegraph</groupId>
+            <artifactId>scip-java-proto</artifactId>
+            <version>0.10.4</version>
         </dependency>
     </dependencies>
 

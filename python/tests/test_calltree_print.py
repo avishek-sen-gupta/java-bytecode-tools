@@ -1,133 +1,94 @@
-"""Tests for calltree ASCII pretty-printer."""
+"""Tests for calltree_print with flat {nodes, calls} schema."""
+
+SIG_SVC = "<com.example.Svc: void handle()>"
+SIG_DAO = "<com.example.Dao: void save()>"
+SIG_FOO = "<com.example.A: void foo()>"
+SIG_BAR = "<com.example.B: void bar()>"
+SIG_BAZ = "<com.example.C: void baz()>"
+SIG_QUX = "<com.example.D: void qux()>"
 
 
-def _node(cls: str, method: str, children=(), **kwargs):
-    return {
-        "class": cls,
-        "method": method,
-        "methodSignature": f"<{cls}: void {method}()>",
-        "children": list(children),
-        **kwargs,
-    }
+def _node(sig: str, cls: str, method: str) -> dict:
+    return {"class": cls, "method": method, "methodSignature": sig}
 
 
-class TestRenderTree:
+NODES = {
+    SIG_SVC: _node(SIG_SVC, "com.example.Svc", "handle"),
+    SIG_DAO: _node(SIG_DAO, "com.example.Dao", "save"),
+}
+
+
+class TestRenderFlat:
     def test_single_root_no_children(self):
-        from calltree_print import render_tree
+        from calltree_print import render_flat
 
-        node = _node("com.example.Svc", "handle")
-        assert render_tree(node) == ["Svc.handle"]
+        nodes = {SIG_SVC: _node(SIG_SVC, "com.example.Svc", "handle")}
+        calls = []
+        lines = render_flat(nodes, calls)
+        assert lines == ["Svc.handle"]
 
     def test_root_with_one_child(self):
-        from calltree_print import render_tree
+        from calltree_print import render_flat
 
-        node = _node(
-            "com.example.Svc", "handle", children=[_node("com.example.Dao", "save")]
-        )
-        lines = render_tree(node)
-        assert lines == ["Svc.handle", "└── Dao.save"]
-
-    def test_root_with_multiple_children_last_uses_corner(self):
-        from calltree_print import render_tree
-
-        node = _node(
-            "com.example.Svc",
-            "handle",
-            children=[
-                _node("com.example.A", "foo"),
-                _node("com.example.B", "bar"),
-            ],
-        )
-        lines = render_tree(node)
-        assert lines == ["Svc.handle", "├── A.foo", "└── B.bar"]
-
-    def test_grandchildren_use_correct_prefix(self):
-        from calltree_print import render_tree
-
-        node = _node(
-            "com.example.Svc",
-            "handle",
-            children=[
-                _node(
-                    "com.example.A",
-                    "foo",
-                    children=[
-                        _node("com.example.B", "bar"),
-                        _node("com.example.C", "baz"),
-                    ],
-                ),
-                _node("com.example.D", "qux"),
-            ],
-        )
-        lines = render_tree(node)
-        assert lines == [
-            "Svc.handle",
-            "├── A.foo",
-            "│   ├── B.bar",
-            "│   └── C.baz",
-            "└── D.qux",
-        ]
-
-    def test_last_child_grandchildren_use_spaces(self):
-        from calltree_print import render_tree
-
-        node = _node(
-            "com.example.Svc",
-            "handle",
-            children=[
-                _node(
-                    "com.example.A",
-                    "foo",
-                    children=[_node("com.example.B", "bar")],
-                ),
-            ],
-        )
-        lines = render_tree(node)
-        assert lines == ["Svc.handle", "└── A.foo", "    └── B.bar"]
-
-    def test_ref_node_shows_marker_no_children(self):
-        from calltree_print import render_tree
-
-        child = _node("com.example.Dao", "save", ref=True)
-        node = _node("com.example.Svc", "handle", children=[child])
-        lines = render_tree(node)
-        assert lines == ["Svc.handle", "└── Dao.save [ref]"]
-
-    def test_cycle_node_shows_marker(self):
-        from calltree_print import render_tree
-
-        child = _node("com.example.Svc", "handle", cycle=True)
-        node = _node("com.example.Svc", "handle", children=[child])
-        lines = render_tree(node)
-        assert lines == ["Svc.handle", "└── Svc.handle [↻]"]
-
-    def test_does_not_mutate_input(self):
-        from calltree_print import render_tree
-
-        child = _node("com.example.Dao", "save")
-        node = _node("com.example.Svc", "handle", children=[child])
-        original_children = list(node["children"])
-        render_tree(node)
-        assert node["children"] == original_children
-
-    def test_child_callsite_line_shown(self):
-        from calltree_print import render_tree
-
-        child = _node("com.example.Dao", "save", callSiteLine=42)
-        node = _node("com.example.Svc", "handle", children=[child])
-        lines = render_tree(node)
+        nodes = {
+            SIG_SVC: _node(SIG_SVC, "com.example.Svc", "handle"),
+            SIG_DAO: _node(SIG_DAO, "com.example.Dao", "save"),
+        }
+        calls = [{"from": SIG_SVC, "to": SIG_DAO, "callSiteLine": 42}]
+        lines = render_flat(nodes, calls)
         assert lines == ["Svc.handle", "└── Dao.save:42"]
 
+    def test_root_with_multiple_children_last_uses_corner(self):
+        from calltree_print import render_flat
+
+        nodes = {
+            SIG_FOO: _node(SIG_FOO, "com.example.A", "foo"),
+            SIG_BAR: _node(SIG_BAR, "com.example.B", "bar"),
+            SIG_BAZ: _node(SIG_BAZ, "com.example.C", "baz"),
+        }
+        calls = [
+            {"from": SIG_FOO, "to": SIG_BAR, "callSiteLine": 10},
+            {"from": SIG_FOO, "to": SIG_BAZ, "callSiteLine": 20},
+        ]
+        lines = render_flat(nodes, calls)
+        assert lines[0] == "A.foo"
+        assert "├── B.bar:10" in lines
+        assert "└── C.baz:20" in lines
+
+    def test_cycle_edges_shown_with_marker(self):
+        from calltree_print import render_flat
+
+        nodes = {SIG_SVC: _node(SIG_SVC, "com.example.Svc", "handle")}
+        calls = [{"from": SIG_SVC, "to": SIG_SVC, "cycle": True}]
+        lines = render_flat(nodes, calls)
+        assert any("[↻]" in line for line in lines)
+
     def test_no_callsite_line_no_suffix(self):
-        from calltree_print import render_tree
+        from calltree_print import render_flat
 
-        node = _node("com.example.Svc", "handle")
-        assert render_tree(node) == ["Svc.handle"]
+        nodes = {SIG_SVC: _node(SIG_SVC, "com.example.Svc", "handle")}
+        calls = []
+        assert render_flat(nodes, calls) == ["Svc.handle"]
 
-    def test_callsite_line_with_ref_marker(self):
-        from calltree_print import render_tree
+    def test_grandchildren_correct_prefix(self):
+        from calltree_print import render_flat
 
-        child = _node("com.example.Dao", "save", ref=True, callSiteLine=99)
-        node = _node("com.example.Svc", "handle", children=[child])
-        lines = render_tree(node)
-        assert lines == ["Svc.handle", "└── Dao.save:99 [ref]"]
+        nodes = {
+            SIG_SVC: _node(SIG_SVC, "com.example.Svc", "handle"),
+            SIG_FOO: _node(SIG_FOO, "com.example.A", "foo"),
+            SIG_BAR: _node(SIG_BAR, "com.example.B", "bar"),
+            SIG_BAZ: _node(SIG_BAZ, "com.example.C", "baz"),
+            SIG_QUX: _node(SIG_QUX, "com.example.D", "qux"),
+        }
+        calls = [
+            {"from": SIG_SVC, "to": SIG_FOO},
+            {"from": SIG_FOO, "to": SIG_BAR},
+            {"from": SIG_FOO, "to": SIG_BAZ},
+            {"from": SIG_SVC, "to": SIG_QUX},
+        ]
+        lines = render_flat(nodes, calls)
+        assert lines[0] == "Svc.handle"
+        assert "├── A.foo" in lines
+        assert "│   ├── B.bar" in lines
+        assert "│   └── C.baz" in lines
+        assert "└── D.qux" in lines

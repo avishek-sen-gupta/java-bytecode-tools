@@ -1,62 +1,106 @@
-"""Render a calltree as an ASCII tree.
+"""Render a calltree or frames flat {nodes, calls} output as an ASCII tree.
 
 Pipeline:
   calltree ... | calltree-print
+  frames  ...  | calltree-print
   calltree-print --input tree.json
 """
 
-from ftrace_types import MethodCFG, short_class
+from ftrace_types import short_class
 
 
-def _line_suffix(node: MethodCFG) -> str:
-    callsite = node.get("callSiteLine", 0)
-    return f":{callsite}" if callsite else ""
-
-
-def _format_label(node: MethodCFG) -> str:
-    base = (
-        short_class(node.get("class", "?"))
-        + "."
-        + node.get("method", "?")
-        + _line_suffix(node)
-    )
-    if node.get("ref"):
-        return base + " [ref]"
-    if node.get("cycle"):
-        return base + " [↻]"
+def _make_label(node: dict, callsite_line: int = 0) -> str:
+    base = short_class(node.get("class", "?")) + "." + node.get("method", "?")
+    if callsite_line > 0:
+        base = base + f":{callsite_line}"
     return base
 
 
-def _render_subtree(node: MethodCFG, prefix: str, is_last: bool) -> list[str]:
+def _build_adjacency(
+    calls: list[dict],
+) -> dict[str, list[tuple[str, int, bool]]]:
+    """caller → [(callee_sig, callsite_line, is_cycle)]."""
+    adj: dict[str, list[tuple[str, int, bool]]] = {}
+    for c in calls:
+        if c.get("filtered"):
+            continue
+        caller = c["from"]
+        callee = c["to"]
+        callsite = c.get("callSiteLine", 0)
+        is_cycle = bool(c.get("cycle"))
+        adj.setdefault(caller, []).append((callee, callsite, is_cycle))
+    return adj
+
+
+def _find_roots(node_sigs: set[str], calls: list[dict]) -> list[str]:
+    has_incoming = {
+        c["to"] for c in calls if not c.get("filtered") and not c.get("cycle")
+    }
+    return sorted(node_sigs - has_incoming)
+
+
+def _render_subtree(
+    sig: str,
+    adj: dict[str, list[tuple[str, int, bool]]],
+    nodes: dict[str, dict],
+    prefix: str,
+    is_last: bool,
+    visited: set[str],
+    callsite_line: int,
+    is_cycle: bool,
+) -> list[str]:
     connector = "└── " if is_last else "├── "
-    own = [prefix + connector + _format_label(node)]
-    if node.get("ref") or node.get("cycle"):
-        return own
-    children = node.get("children", [])
+    node = nodes.get(sig, {"class": "?", "method": "?"})
+    label = _make_label(node, callsite_line)
+    if is_cycle:
+        label = label + " [↻]"
+    own_line = prefix + connector + label
+    if is_cycle or sig in visited:
+        return [own_line]
+
+    visited = visited | {sig}
+    children = adj.get(sig, [])
     child_prefix = prefix + ("    " if is_last else "│   ")
-    return [
-        *own,
-        *(
-            line
-            for i, child in enumerate(children)
-            for line in _render_subtree(child, child_prefix, i == len(children) - 1)
-        ),
+    child_lines = [
+        line
+        for i, (child_sig, child_callsite, child_cycle) in enumerate(children)
+        for line in _render_subtree(
+            child_sig,
+            adj,
+            nodes,
+            child_prefix,
+            i == len(children) - 1,
+            visited,
+            child_callsite,
+            child_cycle,
+        )
     ]
+    return [own_line, *child_lines]
 
 
-def render_tree(trace: MethodCFG) -> list[str]:
-    root_line = [_format_label(trace)]
-    if trace.get("ref") or trace.get("cycle"):
-        return root_line
-    children = trace.get("children", [])
-    return [
-        *root_line,
-        *(
-            line
-            for i, child in enumerate(children)
-            for line in _render_subtree(child, "", i == len(children) - 1)
-        ),
-    ]
+def render_flat(nodes: dict[str, dict], calls: list[dict]) -> list[str]:
+    adj = _build_adjacency(calls)
+    roots = _find_roots(set(nodes.keys()), calls)
+    result: list[str] = []
+    for root_sig in roots:
+        node = nodes.get(root_sig, {"class": "?", "method": "?"})
+        result.append(_make_label(node))
+        children = adj.get(root_sig, [])
+        visited = {root_sig}
+        for i, (child_sig, child_callsite, child_cycle) in enumerate(children):
+            result.extend(
+                _render_subtree(
+                    child_sig,
+                    adj,
+                    nodes,
+                    "",
+                    i == len(children) - 1,
+                    visited,
+                    child_callsite,
+                    child_cycle,
+                )
+            )
+    return result
 
 
 def main() -> None:
@@ -64,9 +108,10 @@ def main() -> None:
     import json
     import sys
     from pathlib import Path
-    from typing import cast
 
-    parser = argparse.ArgumentParser(description="Render a calltree as an ASCII tree.")
+    parser = argparse.ArgumentParser(
+        description="Render a calltree/frames flat graph as an ASCII tree."
+    )
     parser.add_argument("--input", type=Path, help="Input JSON (default: stdin)")
     args = parser.parse_args()
 
@@ -74,8 +119,9 @@ def main() -> None:
         json.loads(Path(args.input).read_text()) if args.input else json.load(sys.stdin)
     )
 
-    trace = cast(MethodCFG, data.get("trace", data))
-    for line in render_tree(trace):
+    nodes: dict[str, dict] = data.get("nodes", {})
+    calls: list[dict] = data.get("calls", [])
+    for line in render_flat(nodes, calls):
         print(line)
 
 

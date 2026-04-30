@@ -52,21 +52,20 @@ classpath
                                                                        |
                 +-----------------------+------------------+-----------+------------+
                 |                       |                  |                        |
-             calltree               frames*             jspmap                   xtrace*
-                |                       |                  |                        |
-       flat {nodes,calls}       flat {nodes,calls}    jspmap JSON             envelope JSON
-                |                       |                  |                        |
-      calltree-print              frames-print       jspmap-to-dot          [ftrace-slice]
-      calltree-to-dot                                                   [ftrace-expand-refs]
-                |                       |                  |                        |
-           text/SVG/DOT               text              SVG/DOT                    |
-                                                                           ftrace-semantic
-                                                                                    |
-                                                                   +----------------+----------------+
-                                                                   |                                 |
-                                                         ftrace-semantic-to-dot           ftrace-validate
-                                                                   |
-                                                                SVG/DOT
+             calltree               frames              jspmap                   xtrace*
+                \                   /                      |                        |
+                 \                 /                   jspmap JSON             envelope JSON
+                  v               v                        |                        |
+           flat {nodes, calls, metadata}             jspmap-to-dot          [ftrace-slice]
+                       |                                               [ftrace-expand-refs]
+         +-------------+-------------+                                             |
+         |             |             |                                     ftrace-semantic
+  calltree-print  frames-print  calltree-to-dot                                    |
+    (ASCII)         (text)        (SVG/DOT)                      +------------------+------------------+
+                                                                 |                                     |
+                                                       ftrace-semantic-to-dot               ftrace-validate
+                                                                 |
+                                                              SVG/DOT
 
 * also takes classpath directly
 ```

@@ -1,78 +1,143 @@
-"""Pretty-print the JSON output of the `frames` backward-trace command."""
+"""Pretty-print the JSON output of `frames` or `calltree` backward-trace — flat {nodes, calls, metadata} schema."""
 
 import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 _INDENT = "  "
 _BRANCH = "└─ "
 _PIPE = "   "
 
 
-def _flatten_chain(node: dict[str, Any]) -> list[dict[str, Any]]:
-    """Walk the singly-linked children list and return frames in call order."""
-    children = node.get("children", [])
-    return [node] + (_flatten_chain(children[0]) if children else [])
+def find_roots(node_sigs: set[str], calls: list[dict]) -> set[str]:
+    """Nodes with no incoming normal (non-filtered, non-cycle) call edges."""
+    has_incoming = {
+        c["to"] for c in calls if not c.get("filtered") and not c.get("cycle")
+    }
+    return node_sigs - has_incoming
 
 
-def _format_frame(frame: dict[str, Any]) -> str:
-    cls = frame.get("class", "?")
-    method = frame.get("method", "?")
-    line_start = frame.get("lineStart", "?")
-    line_end = frame.get("lineEnd", "?")
-    line_count = frame.get("sourceLineCount", "?")
+def _build_adjacency(calls: list[dict]) -> dict[str, list[tuple[str, int]]]:
+    """caller → [(callee_sig, callsite_line)] for normal edges only."""
+    adj: dict[str, list[tuple[str, int]]] = {}
+    for c in calls:
+        if c.get("filtered") or c.get("cycle"):
+            continue
+        adj.setdefault(c["from"], []).append((c["to"], c.get("callSiteLine", 0)))
+    return adj
+
+
+def _dfs_paths(
+    sig: str,
+    target: str,
+    adj: dict[str, list[tuple[str, int]]],
+    path: list[str],
+    results: list[list[str]],
+) -> None:
+    if sig == target and len(path) > 1:
+        results.append(list(path))
+        return
+    for callee, _ in adj.get(sig, []):
+        if callee not in path:  # avoid cycles
+            path.append(callee)
+            _dfs_paths(callee, target, adj, path, results)
+            path.pop()
+
+
+def collect_paths(roots: set[str], target: str, calls: list[dict]) -> list[list[str]]:
+    """DFS from each root to target; return list of sig-chains."""
+    adj = _build_adjacency(calls)
+    results: list[list[str]] = []
+    for root in sorted(roots):
+        _dfs_paths(root, target, adj, [root], results)
+    return results
+
+
+def format_frame(node: dict) -> str:
+    cls = node.get("class", "?")
+    method = node.get("method", "?")
+    line_start = node.get("lineStart", "?")
+    line_end = node.get("lineEnd", "?")
+    line_count = node.get("sourceLineCount", "?")
     return f"{cls}.{method}  L{line_start}-{line_end}  ({line_count} lines)"
 
 
-def _format_chain(index: int, chain_root: dict[str, Any]) -> str:
-    frames = _flatten_chain(chain_root)
+def _callsite_for(caller: str, callee: str, calls: list[dict]) -> int:
+    return next(
+        (
+            c.get("callSiteLine", 0)
+            for c in calls
+            if c["from"] == caller and c["to"] == callee
+        ),
+        0,
+    )
+
+
+def format_path(
+    path: list[str], nodes: dict[str, dict], calls: list[dict], index: int
+) -> str:
     lines = [f"Chain {index + 1}:"]
-    for i, frame in enumerate(frames):
-        callsite = frame.get("callSiteLine", 0)
-        callsite_str = f"@L{callsite}  " if (i > 0 and callsite > 0) else ""
+    for i, sig in enumerate(path):
+        node = nodes.get(sig, {"class": "?", "method": "?"})
+        if i == 0:
+            callsite_str = ""
+        else:
+            callsite = _callsite_for(path[i - 1], sig, calls)
+            callsite_str = f"@L{callsite}  " if callsite > 0 else ""
         prefix = _INDENT + (_BRANCH if i > 0 else "")
         extra_indent = _INDENT + _PIPE * (i - 1) if i > 1 else ""
-        lines.append(f"{extra_indent}{prefix}{callsite_str}{_format_frame(frame)}")
+        lines.append(f"{extra_indent}{prefix}{callsite_str}{format_frame(node)}")
     lines.append("")
     return "\n".join(lines)
 
 
-def _format_frames(data: dict[str, Any]) -> str:
-    to_class = data.get("toClass", "?")
-    to_line = data.get("toLine", "?")
-    found = data.get("found", False)
+def format_frames(data: dict) -> str:
+    metadata = data.get("metadata", {})
+    to_class = metadata.get("toClass", "?")
+    to_line = metadata.get("toLine", "?")
+    nodes: dict[str, dict] = data.get("nodes", {})
+    calls: list[dict] = data.get("calls", [])
 
     header_parts = [f"Target: {to_class}  (line {to_line})"]
-    if "fromClass" in data:
+    if "fromClass" in metadata:
         header_parts.append(
-            f"From:   {data['fromClass']}  (line {data.get('fromLine', '?')})"
+            f"From:   {metadata['fromClass']}  (line {metadata.get('fromLine', '?')})"
         )
 
-    if not found:
+    if not nodes:
         return "\n".join(header_parts) + "\nFound:  no paths\n"
 
-    trace = data.get("trace", {})
-    chains = trace.get("children", [])
-    header_parts.append(
-        f"Found:  {len(chains)} chain{'s' if len(chains) != 1 else ''}\n"
+    target_sig = next(
+        (sig for sig, nd in nodes.items() if nd.get("class") == to_class),
+        "",
     )
-    chain_blocks = [_format_chain(i, chain) for i, chain in enumerate(chains)]
+
+    if not target_sig:
+        return "\n".join(header_parts) + "\nFound:  no paths\n"
+
+    roots = find_roots(set(nodes.keys()), calls)
+    paths = collect_paths(roots, target_sig, calls)
+
+    if not paths:
+        return "\n".join(header_parts) + "\nFound:  no paths\n"
+
+    header_parts.append(f"Found:  {len(paths)} chain{'s' if len(paths) != 1 else ''}\n")
+    chain_blocks = [format_path(p, nodes, calls, i) for i, p in enumerate(paths)]
     return "\n".join(header_parts) + "\n".join(chain_blocks)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Pretty-print the JSON output of the frames backward-trace command."
+        description="Pretty-print frames/calltree {nodes, calls, metadata} output."
     )
-    parser.add_argument("--input", type=Path, help="Frames JSON file (default: stdin)")
+    parser.add_argument("--input", type=Path, help="JSON file (default: stdin)")
     parser.add_argument("--output", type=Path, help="Output file (default: stdout)")
     args = parser.parse_args()
 
     src = sys.stdin if args.input is None else args.input.open()
     data = json.load(src)
-    result = _format_frames(data)
+    result = format_frames(data)
 
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

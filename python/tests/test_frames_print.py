@@ -1,157 +1,142 @@
-"""Tests for frames_print pretty-printer."""
+"""Tests for frames_print with flat {nodes, calls, metadata} schema."""
 
-from frames_print import _flatten_chain, _format_chain, _format_frame, _format_frames
+SIG_MAIN = "<com.example.App: void main(String[])>"
+SIG_SVC = "<com.example.Svc: void handle()>"
+SIG_DAO = "<com.example.Dao: void save()>"
 
 
-class TestFlattenChain:
-    def test_single_node_no_children(self):
-        node = {"method": "A"}
-        assert _flatten_chain(node) == [{"method": "A"}]
+def _node(sig: str, cls: str, method: str, line_start: int, line_end: int) -> dict:
+    return {
+        "class": cls,
+        "method": method,
+        "methodSignature": sig,
+        "lineStart": line_start,
+        "lineEnd": line_end,
+        "sourceLineCount": line_end - line_start + 1,
+    }
 
-    def test_two_node_chain(self):
-        node = {"method": "A", "children": [{"method": "B"}]}
-        assert _flatten_chain(node) == [
-            {"method": "A", "children": [{"method": "B"}]},
-            {"method": "B"},
-        ]
 
-    def test_three_node_chain(self):
-        node = {
-            "method": "A",
-            "children": [{"method": "B", "children": [{"method": "C"}]}],
-        }
-        result = _flatten_chain(node)
-        assert [f["method"] for f in result] == ["A", "B", "C"]
+NODES = {
+    SIG_MAIN: _node(SIG_MAIN, "com.example.App", "main", 5, 15),
+    SIG_SVC: _node(SIG_SVC, "com.example.Svc", "handle", 20, 40),
+    SIG_DAO: _node(SIG_DAO, "com.example.Dao", "save", 50, 70),
+}
+
+CALLS = [
+    {"from": SIG_MAIN, "to": SIG_SVC, "callSiteLine": 10},
+    {"from": SIG_SVC, "to": SIG_DAO, "callSiteLine": 35},
+]
+
+
+class TestFindRoots:
+    def test_node_with_no_incoming_is_root(self):
+        from frames_print import find_roots
+
+        roots = find_roots(set(NODES.keys()), CALLS)
+        assert SIG_MAIN in roots
+
+    def test_non_root_excluded(self):
+        from frames_print import find_roots
+
+        roots = find_roots(set(NODES.keys()), CALLS)
+        assert SIG_SVC not in roots
+        assert SIG_DAO not in roots
+
+
+class TestCollectPaths:
+    def test_single_chain_collected(self):
+        from frames_print import collect_paths
+
+        paths = collect_paths({SIG_MAIN}, SIG_DAO, CALLS)
+        assert [SIG_MAIN, SIG_SVC, SIG_DAO] in paths
+
+    def test_no_path_returns_empty(self):
+        from frames_print import collect_paths
+
+        paths = collect_paths({SIG_MAIN}, SIG_MAIN, CALLS)
+        assert paths == []
 
 
 class TestFormatFrame:
-    def test_basic_format(self):
-        frame = {
-            "class": "com.example.Foo",
-            "method": "bar",
-            "lineStart": 10,
-            "lineEnd": 20,
-            "sourceLineCount": 11,
-        }
-        assert _format_frame(frame) == "com.example.Foo.bar  L10-20  (11 lines)"
+    def test_format_shows_class_method_lines(self):
+        from frames_print import format_frame
 
-    def test_missing_fields_use_question_mark(self):
-        result = _format_frame({})
-        assert "?" in result
+        result = format_frame(NODES[SIG_DAO])
+        assert "com.example.Dao.save" in result
+        assert "L50-70" in result
+        assert "21 lines" in result
 
 
-class TestFormatChain:
+class TestFormatPath:
     def test_single_frame_no_callsite(self):
-        chain = {
-            "class": "A",
-            "method": "m",
-            "lineStart": 1,
-            "lineEnd": 5,
-            "sourceLineCount": 5,
-        }
-        result = _format_chain(0, chain)
-        assert "@L" not in result
+        from frames_print import format_path
+
+        result = format_path([SIG_MAIN], NODES, CALLS, 0)
         assert "Chain 1:" in result
-
-    def test_second_frame_with_callsite_shows_at_L(self):
-        chain = {
-            "class": "A",
-            "method": "m1",
-            "lineStart": 1,
-            "lineEnd": 10,
-            "sourceLineCount": 10,
-            "children": [
-                {
-                    "class": "B",
-                    "method": "m2",
-                    "lineStart": 20,
-                    "lineEnd": 30,
-                    "sourceLineCount": 11,
-                    "callSiteLine": 7,
-                }
-            ],
-        }
-        result = _format_chain(0, chain)
-        assert "@L7" in result
-
-    def test_second_frame_without_callsite_no_at_L(self):
-        chain = {
-            "class": "A",
-            "method": "m1",
-            "lineStart": 1,
-            "lineEnd": 10,
-            "sourceLineCount": 10,
-            "children": [
-                {
-                    "class": "B",
-                    "method": "m2",
-                    "lineStart": 20,
-                    "lineEnd": 30,
-                    "sourceLineCount": 11,
-                }
-            ],
-        }
-        result = _format_chain(0, chain)
         assert "@L" not in result
 
-    def test_root_frame_never_shows_callsite_even_if_field_present(self):
-        chain = {
-            "class": "A",
-            "method": "m",
-            "lineStart": 1,
-            "lineEnd": 5,
-            "sourceLineCount": 5,
-            "callSiteLine": 99,
-        }
-        result = _format_chain(0, chain)
-        assert "@L" not in result
+    def test_second_frame_shows_callsite(self):
+        from frames_print import format_path
+
+        result = format_path([SIG_MAIN, SIG_SVC, SIG_DAO], NODES, CALLS, 0)
+        assert "@L10" in result
+        assert "@L35" in result
 
     def test_chain_index_in_header(self):
-        chain = {
-            "class": "A",
-            "method": "m",
-            "lineStart": 1,
-            "lineEnd": 5,
-            "sourceLineCount": 5,
-        }
-        assert "Chain 3:" in _format_chain(2, chain)
+        from frames_print import format_path
+
+        result = format_path([SIG_MAIN], NODES, CALLS, 2)
+        assert "Chain 3:" in result
 
 
 class TestFormatFrames:
-    def test_not_found(self):
-        data = {"toClass": "com.example.Foo", "toLine": 42, "found": False}
-        result = _format_frames(data)
-        assert "no paths" in result
-        assert "com.example.Foo" in result
+    def test_header_shows_target(self):
+        from frames_print import format_frames
 
-    def test_found_shows_chain_count(self):
         data = {
-            "toClass": "com.example.Foo",
-            "toLine": 42,
-            "found": True,
-            "trace": {
-                "children": [
-                    {
-                        "class": "A",
-                        "method": "m",
-                        "lineStart": 1,
-                        "lineEnd": 5,
-                        "sourceLineCount": 5,
-                    }
-                ]
-            },
+            "nodes": NODES,
+            "calls": CALLS,
+            "metadata": {"tool": "frames", "toClass": "com.example.Dao", "toLine": 55},
         }
-        result = _format_frames(data)
+        result = format_frames(data)
+        assert "com.example.Dao" in result
+        assert "55" in result
+
+    def test_shows_chain_count(self):
+        from frames_print import format_frames
+
+        data = {
+            "nodes": NODES,
+            "calls": CALLS,
+            "metadata": {"tool": "frames", "toClass": "com.example.Dao", "toLine": 55},
+        }
+        result = format_frames(data)
         assert "1 chain" in result
 
-    def test_from_class_shown_when_present(self):
+    def test_no_paths_message(self):
+        from frames_print import format_frames
+
         data = {
-            "fromClass": "com.example.Bar",
-            "fromLine": 10,
-            "toClass": "com.example.Foo",
-            "toLine": 42,
-            "found": False,
+            "nodes": {},
+            "calls": [],
+            "metadata": {"tool": "frames", "toClass": "com.example.Dao", "toLine": 55},
         }
-        result = _format_frames(data)
-        assert "com.example.Bar" in result
-        assert "line 10" in result
+        result = format_frames(data)
+        assert "no paths" in result
+
+    def test_from_class_shown_when_present(self):
+        from frames_print import format_frames
+
+        data = {
+            "nodes": NODES,
+            "calls": CALLS,
+            "metadata": {
+                "tool": "frames",
+                "toClass": "com.example.Dao",
+                "toLine": 55,
+                "fromClass": "com.example.App",
+                "fromLine": 5,
+            },
+        }
+        result = format_frames(data)
+        assert "com.example.App" in result

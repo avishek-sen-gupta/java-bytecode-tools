@@ -49,23 +49,22 @@ classpath
     |
     +---> buildcg ---------------------------------------------> call graph JSON
                                                                        |
-                +-----------------------+------------------+-----------+
-                |                       |                  |           |
-             calltree               frames*             jspmap      xtrace*
-                |                       |                  |           |
-          call tree JSON           frame JSON         jspmap JSON      |
-                |                       |                  |     envelope JSON
-         calltree-to-dot          frames-print       jspmap-to-dot     |
-                |                       |                  |     [ftrace-slice]
-             SVG/DOT                  text             SVG/DOT  [ftrace-expand-refs]
-                                                                        |
-                                                               ftrace-semantic
-                                                                        |
-                                                          +-------------+-------------+
-                                                          |                           |
-                                                ftrace-semantic-to-dot       ftrace-validate
-                                                          |
-                                                       SVG/DOT
+                +-----------------------+------------------+                        +-----------+
+                |                       |                  |                        |
+             calltree               frames*             jspmap                   xtrace*
+                |                       |                  |                        |
+          call tree JSON           frame JSON         jspmap JSON             envelope JSON
+                |                       |                  |                        |
+         calltree-to-dot          frames-print       jspmap-to-dot          [ftrace-slice]
+                |                       |                  |            [ftrace-expand-refs]
+             SVG/DOT                  text             SVG/DOT                      |
+                                                                           ftrace-semantic
+                                                                                    |
+                                                                   +----------------+----------------+
+                                                                   |                                 |
+                                                         ftrace-semantic-to-dot           ftrace-validate
+                                                                   |
+                                                                SVG/DOT
 
 * also takes classpath directly
 ```

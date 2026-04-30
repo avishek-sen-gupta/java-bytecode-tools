@@ -184,3 +184,79 @@ class TestBuildGraph:
             "",
         )
         assert callsites_in == orig_callsites
+
+    def test_node_has_node_type_java_method(self):
+        from calltree import build_graph
+
+        nodes, calls = {}, []
+        build_graph(
+            SIG_A,
+            _cg([(SIG_A, [])]),
+            _pat("com.example"),
+            set(),
+            set(),
+            nodes,
+            calls,
+            {},
+            METHOD_LINES,
+            "",
+        )
+        assert nodes[SIG_A]["node_type"] == "java_method"
+
+    def test_normal_edge_has_edge_info(self):
+        from calltree import build_graph
+
+        nodes, calls = {}, []
+        build_graph(
+            SIG_A,
+            _cg([(SIG_A, [SIG_B]), (SIG_B, [])]),
+            _pat("com.example"),
+            set(),
+            set(),
+            nodes,
+            calls,
+            {},
+            METHOD_LINES,
+            "",
+        )
+        edge = next(c for c in calls if c["from"] == SIG_A and c["to"] == SIG_B)
+        assert edge["edge_info"] == {}
+
+    def test_cycle_edge_has_edge_info(self):
+        from calltree import build_graph
+
+        nodes, calls = {}, []
+        build_graph(
+            SIG_A,
+            _cg([(SIG_A, [SIG_B]), (SIG_B, [SIG_A])]),
+            _pat("com.example"),
+            set(),
+            set(),
+            nodes,
+            calls,
+            {},
+            METHOD_LINES,
+            "",
+        )
+        cycle_edge = next(c for c in calls if c.get("cycle"))
+        assert cycle_edge["edge_info"] == {}
+
+    def test_filtered_edge_has_edge_info(self):
+        from calltree import build_graph
+
+        SIG_OTHER = "<other.pkg.X: void run()>"
+        nodes, calls = {}, []
+        build_graph(
+            SIG_A,
+            _cg([(SIG_A, [SIG_OTHER])]),
+            _pat("com.example"),
+            set(),
+            set(),
+            nodes,
+            calls,
+            {},
+            {},
+            "",
+        )
+        filtered_edge = next(c for c in calls if c.get("filtered"))
+        assert filtered_edge["edge_info"] == {}

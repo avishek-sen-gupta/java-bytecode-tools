@@ -28,6 +28,7 @@ def _node_entry(sig: str, method_lines: dict[str, dict]) -> dict[str, str | int]
     cls = extract_class(sig)
     method = extract_method(sig)
     base: dict[str, str | int] = {
+        "node_type": "java_method",
         "class": cls,
         "method": method,
         "methodSignature": sig,
@@ -64,7 +65,7 @@ def build_graph(
     if sig in on_path:
         # Cycle — emit a cycle edge, don't recurse
         callsite_line = callsites.get(caller_sig, {}).get(sig, 0) if caller_sig else 0
-        edge: dict = {"from": caller_sig, "to": sig, "cycle": True}
+        edge: dict = {"from": caller_sig, "to": sig, "cycle": True, "edge_info": {}}
         if callsite_line > 0:
             edge["callSiteLine"] = callsite_line
         calls.append(edge)
@@ -74,7 +75,7 @@ def build_graph(
         # Out of scope — emit filtered edge and stop
         if caller_sig:
             callsite_line = callsites.get(caller_sig, {}).get(sig, 0)
-            edge = {"from": caller_sig, "to": sig, "filtered": True}
+            edge = {"from": caller_sig, "to": sig, "filtered": True, "edge_info": {}}
             if callsite_line > 0:
                 edge["callSiteLine"] = callsite_line
             calls.append(edge)
@@ -83,7 +84,7 @@ def build_graph(
     # Emit caller→sig edge
     if caller_sig:
         callsite_line = callsites.get(caller_sig, {}).get(sig, 0)
-        edge = {"from": caller_sig, "to": sig}
+        edge = {"from": caller_sig, "to": sig, "edge_info": {}}
         if callsite_line > 0:
             edge["callSiteLine"] = callsite_line
         calls.append(edge)

@@ -38,6 +38,38 @@ Key Python commands:
 - `jspmap`: map JSP EL actions through call graph to DAO methods; outputs JSON semantic map
 - `jspmap-to-dot`: render jspmap JSON output as DOT/SVG
 
+## Tool Combinations
+
+```
+classpath
+    |
+    +---> dump ------------------------------------------------> method ranges
+    |
+    +---> trace -----------------------------------------------> intra-method paths
+    |
+    +---> buildcg ---------------------------------------------> call graph JSON
+                                                                       |
+                +-----------------------+------------------+-----------+
+                |                       |                  |           |
+             calltree               frames*             jspmap      xtrace*
+                |                       |                  |           |
+          call tree JSON           frame JSON         jspmap JSON      |
+                |                       |                  |     envelope JSON
+         calltree-to-dot          frames-print       jspmap-to-dot     |
+                |                       |                  |     [ftrace-slice]
+             SVG/DOT                  text             SVG/DOT  [ftrace-expand-refs]
+                                                                        |
+                                                               ftrace-semantic
+                                                                        |
+                                                          +-------------+-------------+
+                                                          |                           |
+                                                ftrace-semantic-to-dot       ftrace-validate
+                                                          |
+                                                       SVG/DOT
+
+* also takes classpath directly
+```
+
 ## Setup
 
 ```bash

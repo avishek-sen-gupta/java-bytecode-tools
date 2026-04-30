@@ -26,10 +26,16 @@ class ReindexConfig:
     srcs: tuple[Path, ...]
     classes: tuple[Path, ...]
     output: Path
+    encoding: str  # empty string = omit -encoding flag
 
 
 def parse_config_file(path: Path) -> dict[str, list[str]]:
-    result: dict[str, list[str]] = {"src": [], "classes": [], "output": []}
+    result: dict[str, list[str]] = {
+        "src": [],
+        "classes": [],
+        "output": [],
+        "encoding": [],
+    }
     for raw in path.read_text().splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
@@ -46,10 +52,12 @@ def build_config(args: argparse.Namespace) -> ReindexConfig:
         srcs = [Path(p) for p in cfg["src"]]
         classes = [Path(p) for p in cfg["classes"]]
         output_str = cfg["output"][0] if cfg["output"] else ""
+        encoding = cfg["encoding"][0] if cfg["encoding"] else ""
     else:
         srcs = [Path(p) for p in args.src]
         classes = [Path(p) for p in args.classes]
         output_str = args.output or ""
+        encoding = args.encoding
 
     if not srcs or not classes or not output_str:
         print(
@@ -62,6 +70,7 @@ def build_config(args: argparse.Namespace) -> ReindexConfig:
         srcs=tuple(srcs),
         classes=tuple(classes),
         output=Path(output_str),
+        encoding=encoding,
     )
 
 
@@ -87,10 +96,12 @@ def compile_sources(config: ReindexConfig, java_files: list[Path]) -> None:
     out_dir = config.classes[0]
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"Compiling sources ({len(java_files)} files, output -> {out_dir})...")
+    encoding_flag = ["-encoding", config.encoding] if config.encoding else []
     run(
         [
             "javac",
             "-g",
+            *encoding_flag,
             "-sourcepath",
             sourcepath(config.srcs),
             "-cp",
@@ -105,6 +116,7 @@ def compile_sources(config: ReindexConfig, java_files: list[Path]) -> None:
 def index_sources(config: ReindexConfig, java_files: list[Path]) -> None:
     out_dir = config.classes[0]
     print("Indexing with scip-java...")
+    encoding_flag = ["-encoding", config.encoding] if config.encoding else []
     run(
         [
             "scip-java",
@@ -114,6 +126,7 @@ def index_sources(config: ReindexConfig, java_files: list[Path]) -> None:
             "--",
             "javac",
             "-g",
+            *encoding_flag,
             "-sourcepath",
             sourcepath(config.srcs),
             "-cp",
@@ -152,6 +165,12 @@ def main() -> None:
     )
     parser.add_argument(
         "--output", metavar="FILE", help="output index.scip path; required with --src"
+    )
+    parser.add_argument(
+        "--encoding",
+        metavar="CHARSET",
+        default="",
+        help="javac -encoding value (e.g. windows-874); overrides config file",
     )
 
     args = parser.parse_args()

@@ -1,4 +1,4 @@
-"""Tests for reindex encoding and lib_dir support."""
+"""Tests for reindex encoding, lib_dir, and add_exports support."""
 
 import textwrap
 from pathlib import Path
@@ -45,6 +45,7 @@ def _config(encoding: str = "", lib_dirs: tuple[Path, ...] = ()) -> ReindexConfi
         output=Path("/out/index.scip"),
         encoding=encoding,
         lib_dirs=lib_dirs,
+        add_exports=(),
     )
 
 
@@ -224,3 +225,91 @@ def test_files_from_different_packages_are_both_kept(tmp_path: Path) -> None:
 
     assert f1 in result
     assert f2 in result
+
+
+# --- add_exports ---
+
+_EXPORT = "java.xml/com.sun.org.apache.xerces.internal.impl.dv.util=ALL-UNNAMED"
+_EXPORT2 = "java.base/sun.net.www.protocol.https=ALL-UNNAMED"
+
+
+def test_config_file_parses_add_exports(tmp_path: Path) -> None:
+    conf = tmp_path / "reindex.conf"
+    conf.write_text(textwrap.dedent(f"""\
+        src=/s
+        classes=/c
+        output=/o
+        add_exports={_EXPORT}
+        add_exports={_EXPORT2}
+        """))
+    result = parse_config_file(conf)
+    assert result["add_exports"] == [_EXPORT, _EXPORT2]
+
+
+def test_config_file_add_exports_absent_gives_empty_list(tmp_path: Path) -> None:
+    conf = tmp_path / "reindex.conf"
+    conf.write_text("src=/s\nclasses=/c\noutput=/o\n")
+    result = parse_config_file(conf)
+    assert result["add_exports"] == []
+
+
+def _config_with_exports(
+    add_exports: tuple[str, ...] = (),
+) -> ReindexConfig:
+    return ReindexConfig(
+        srcs=(Path("/src"),),
+        classes=(Path("/cls"),),
+        output=Path("/out/index.scip"),
+        encoding="",
+        lib_dirs=(),
+        add_exports=add_exports,
+    )
+
+
+def test_add_exports_flags_included_in_compile_when_set(tmp_path: Path) -> None:
+    config = _config_with_exports(add_exports=(_EXPORT, _EXPORT2))
+    java_files = [tmp_path / "Foo.java"]
+    java_files[0].touch()
+
+    with patch("reindex.run") as mock_run, patch("reindex.Path.mkdir"):
+        compile_sources(config, java_files)
+
+    args = mock_run.call_args[0][0]
+    assert "--add-exports" in args
+    exports_in_args = [args[i + 1] for i, a in enumerate(args) if a == "--add-exports"]
+    assert _EXPORT in exports_in_args
+    assert _EXPORT2 in exports_in_args
+
+
+def test_add_exports_flags_omitted_from_compile_when_empty(tmp_path: Path) -> None:
+    config = _config_with_exports()
+    java_files = [tmp_path / "Foo.java"]
+    java_files[0].touch()
+
+    with patch("reindex.run") as mock_run, patch("reindex.Path.mkdir"):
+        compile_sources(config, java_files)
+
+    args = mock_run.call_args[0][0]
+    assert "--add-exports" not in args
+
+
+def test_add_exports_flags_included_in_index_when_set() -> None:
+    config = _config_with_exports(add_exports=(_EXPORT,))
+
+    with patch("reindex.run") as mock_run:
+        index_sources(config, [])
+
+    args = mock_run.call_args[0][0]
+    assert "--add-exports" in args
+    idx = args.index("--add-exports")
+    assert args[idx + 1] == _EXPORT
+
+
+def test_add_exports_flags_omitted_from_index_when_empty() -> None:
+    config = _config_with_exports()
+
+    with patch("reindex.run") as mock_run:
+        index_sources(config, [])
+
+    args = mock_run.call_args[0][0]
+    assert "--add-exports" not in args

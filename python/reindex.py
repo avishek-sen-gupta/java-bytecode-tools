@@ -28,6 +28,7 @@ class ReindexConfig:
     output: Path
     encoding: str  # empty string = omit -encoding flag
     lib_dirs: tuple[Path, ...]  # directories whose *.jar files are added to -cp
+    add_exports: tuple[str, ...]  # java.module/pkg=ALL-UNNAMED pairs for --add-exports
 
 
 def parse_config_file(path: Path) -> dict[str, list[str]]:
@@ -37,6 +38,7 @@ def parse_config_file(path: Path) -> dict[str, list[str]]:
         "output": [],
         "encoding": [],
         "lib_dir": [],
+        "add_exports": [],
     }
     for raw in path.read_text().splitlines():
         line = raw.strip()
@@ -56,12 +58,14 @@ def build_config(args: argparse.Namespace) -> ReindexConfig:
         output_str = cfg["output"][0] if cfg["output"] else ""
         encoding = cfg["encoding"][0] if cfg["encoding"] else ""
         lib_dirs = [Path(p) for p in cfg["lib_dir"]]
+        add_exports = cfg["add_exports"]
     else:
         srcs = [Path(p) for p in args.src]
         classes = [Path(p) for p in args.classes]
         output_str = args.output or ""
         encoding = args.encoding
         lib_dirs = [Path(p) for p in (args.lib_dir or [])]
+        add_exports = args.add_exports or []
 
     if not srcs or not classes or not output_str:
         print(
@@ -76,6 +80,7 @@ def build_config(args: argparse.Namespace) -> ReindexConfig:
         output=Path(output_str),
         encoding=encoding,
         lib_dirs=tuple(lib_dirs),
+        add_exports=tuple(add_exports),
     )
 
 
@@ -131,6 +136,10 @@ def run(cmd: list[str]) -> None:
         sys.exit(result.returncode)
 
 
+def _add_exports_flags(add_exports: tuple[str, ...]) -> list[str]:
+    return [flag for exp in add_exports for flag in ("--add-exports", exp)]
+
+
 def compile_sources(config: ReindexConfig, java_files: list[Path]) -> None:
     out_dir = config.classes[0]
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -141,6 +150,7 @@ def compile_sources(config: ReindexConfig, java_files: list[Path]) -> None:
             "javac",
             "-g",
             *encoding_flag,
+            *_add_exports_flags(config.add_exports),
             "-sourcepath",
             sourcepath(config.srcs),
             "-cp",
@@ -166,6 +176,7 @@ def index_sources(config: ReindexConfig, java_files: list[Path]) -> None:
             "javac",
             "-g",
             *encoding_flag,
+            *_add_exports_flags(config.add_exports),
             "-sourcepath",
             sourcepath(config.srcs),
             "-cp",
@@ -218,6 +229,14 @@ def main() -> None:
         dest="lib_dir",
         default=None,
         help="directory of *.jar files to add to -cp (repeatable)",
+    )
+    parser.add_argument(
+        "--add-exports",
+        metavar="MODULE/PKG=TARGET",
+        action="append",
+        dest="add_exports",
+        default=None,
+        help="javac --add-exports value (repeatable); e.g. java.base/sun.net.www.protocol.https=ALL-UNNAMED",
     )
 
     args = parser.parse_args()

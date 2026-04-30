@@ -56,8 +56,8 @@ classpath
           call tree JSON           frame JSON         jspmap JSON             envelope JSON
                 |                       |                  |                        |
          calltree-to-dot          frames-print       jspmap-to-dot          [ftrace-slice]
-                |                       |                  |            [ftrace-expand-refs]
-             SVG/DOT                  text             SVG/DOT                      |
+                |                       |                  |             [ftrace-expand-refs]
+             SVG/DOT                  text              SVG/DOT                     |
                                                                            ftrace-semantic
                                                                                     |
                                                                    +----------------+----------------+

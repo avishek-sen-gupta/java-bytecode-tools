@@ -395,6 +395,30 @@ classes=module-b/target/classes
 output=target/index.scip
 ```
 
+All config keys and their purpose:
+
+| Key | Repeatable | Description |
+|-----|-----------|-------------|
+| `src` | yes | Source root directory |
+| `classes` | yes | Classes directory; first entry is `javac -d` output, all are added to `-cp` |
+| `output` | no | Output path for `index.scip` |
+| `encoding` | no | javac `-encoding` value (e.g. `ISO-8859-1`) — omit flag if absent |
+| `lib_dir` | yes | Directory whose `*.jar` files are all added to `-cp` |
+| `add_exports` | yes | `module/package=ALL-UNNAMED` pair passed as `--add-exports` to javac |
+
+`encoding` is useful for legacy codebases with non-UTF-8 source files. `ISO-8859-1` accepts every byte value and is the safest choice for mixed-encoding files.
+
+`lib_dir` is useful when dependencies are not already on the classes path — for example, after running `mvn dependency:copy-dependencies`.
+
+`add_exports` is needed when legacy code imports internal JDK packages that Java 9+ encapsulates via JPMS. For example:
+
+```
+add_exports=java.xml/com.sun.org.apache.xerces.internal.impl.dv.util=ALL-UNNAMED
+add_exports=java.base/sun.net.www.protocol.https=ALL-UNNAMED
+```
+
+If two source roots contain a class with the same fully-qualified name, `reindex` keeps the first and skips subsequent duplicates (useful for multi-module Maven projects where a class is defined in more than one module).
+
 Run:
 
 ```bash
@@ -409,7 +433,10 @@ cd python && uv run reindex --config reindex.conf
 cd python && uv run reindex \
   --src test-fixtures/src \
   --classes test-fixtures/classes \
-  --output test-fixtures/index.scip
+  --output test-fixtures/index.scip \
+  --encoding ISO-8859-1 \
+  --lib-dir /path/to/deps \
+  --add-exports java.base/sun.net.www.protocol.https=ALL-UNNAMED
 ```
 
 The first `--classes` entry is used as the `javac -d` output directory; all entries are joined as `-cp` so cross-module type references resolve correctly.

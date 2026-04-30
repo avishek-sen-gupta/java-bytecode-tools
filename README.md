@@ -23,18 +23,18 @@ Key Java commands:
 - `dump`: list methods in a class with source line ranges
 - `trace`: intraprocedural trace between two lines in one class
 - `xtrace`: forward interprocedural trace from an entry point
-- `frames`: backward interprocedural trace to a target method
 
 Key Python commands:
 
 - `calltree`: walk call-graph JSON and emit a recursive call tree from a named method (methods only, no CFG)
 - `calltree-to-dot`: render `calltree` output as a DOT/SVG call-tree diagram
+- `frames`: backward interprocedural trace to a target method; emits flat `{nodes, calls, metadata}` graph
+- `frames-print`: pretty-print backward trace chains
 - `ftrace-slice`: extract a subtree or path-constrained slice from `xtrace` output
 - `ftrace-expand-refs`: replace `ref` leaves with full method bodies
 - `ftrace-semantic`: normalize raw `xtrace` JSON into a semantic graph (CFG-level)
 - `ftrace-semantic-to-dot`: render semantic graph JSON as DOT/SVG
 - `ftrace-validate`: validate semantic graph output
-- `frames-print`: pretty-print backward trace chains
 - `jspmap`: map JSP EL actions through call graph to DAO methods; outputs JSON semantic map
 - `jspmap-to-dot`: render jspmap JSON output as DOT/SVG
 
@@ -227,35 +227,70 @@ Important details:
 
 ### 4. Backward Trace To A Target Method
 
+First, build the call graph:
+
 ```bash
 scripts/bytecode.sh --prefix com.example. "$CP" \
-  frames --call-graph callgraph.json \
-  --to com.example.app.JdbcOrderRepository --to-line 7 \
-  --output backward.json
+  buildcg --output callgraph.json
 ```
 
-`frames` performs a backward BFS over the call graph and emits a lightweight nested frame tree. It does not include CFG blocks. Instead, each frame records:
+Then use the Python `frames` command to find all call chains that reach a target method:
 
-- class and method
-- `lineStart` / `lineEnd`
-- `sourceLineCount`
-- `callSiteLine` for non-root frames
+```bash
+uv --directory python run frames \
+  --call-graph callgraph.json \
+  --to-class com.example.app.JdbcOrderRepository \
+  --to-line 7 \
+  > backward.json
+```
+
+`frames` performs a backward BFS over the call graph and emits a flat `{nodes, calls, metadata}` graph:
+
+```json
+{
+  "nodes": {
+    "<signature>": {
+      "class": "com.example.app.OrderController",
+      "method": "handleGet",
+      "methodSignature": "<com.example.app.OrderController: void handleGet()>",
+      "lineStart": 15,
+      "lineEnd": 20,
+      "sourceLineCount": 6
+    }
+  },
+  "calls": [
+    {
+      "from": "<com.example.app.OrderController: void handleGet()>",
+      "to": "<com.example.app.OrderService: void processOrder()>",
+      "callSiteLine": 17
+    }
+  ],
+  "metadata": {
+    "tool": "frames",
+    "toClass": "com.example.app.JdbcOrderRepository",
+    "toLine": 7
+  }
+}
+```
 
 Pretty-print the chain view with:
 
 ```bash
-cd python && uv run frames-print --input ../backward.json
+uv --directory python run frames-print < backward.json
 ```
 
 You can also constrain the backward search to a known entry point:
 
 ```bash
-scripts/bytecode.sh --prefix com.example. "$CP" \
-  frames --call-graph callgraph.json \
-  --from com.example.app.OrderController --from-line 15 \
-  --to com.example.app.JdbcOrderRepository --to-line 7 \
-  --output bidirectional.json
+uv --directory python run frames \
+  --call-graph callgraph.json \
+  --from-class com.example.app.OrderController \
+  --from-line 15 \
+  --to-class com.example.app.JdbcOrderRepository \
+  --to-line 7
 ```
+
+This finds all call chains from the `--from-class` method down to the `--to-class` method, emitting the same flat `{nodes, calls, metadata}` schema with additional `fromClass` and `fromLine` fields in metadata.
 
 ### 5. Intraprocedural Trace Within One Method
 
@@ -337,9 +372,10 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
 ```
 
 ```bash
-scripts/bytecode.sh --prefix com.example. "$CP" \
-  frames --call-graph callgraph.json \
-  --to com.example.app.JdbcOrderRepository --to-line 7 \
+uv --directory python run frames \
+  --call-graph callgraph.json \
+  --to-class com.example.app.JdbcOrderRepository \
+  --to-line 7 \
   | uv --directory python run frames-print
 ```
 
@@ -559,5 +595,5 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
 
 - The Java launchers set `-Xss4m -Xmx8g`
 - The CLI expects compiled bytecode (`.class` files), not source files
-- `frames` supports `--depth` to cap backward BFS depth and `--max-chains` to cap the number of returned call chains (default: 50)
+- The Python `frames` command supports `--max-depth` to cap backward BFS depth and `--max-chains` to cap the number of returned call chains (default: 50)
 - Most JSON-writing commands create parent directories for `--output` automatically

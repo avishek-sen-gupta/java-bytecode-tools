@@ -16,6 +16,7 @@ import sootup.core.graph.StmtGraph;
 import sootup.core.jimple.common.stmt.Stmt;
 import sootup.core.model.SootMethod;
 import spoon.Launcher;
+import spoon.reflect.code.CtInvocation;
 import spoon.reflect.code.CtVariableAccess;
 import spoon.reflect.declaration.CtMethod;
 import spoon.reflect.visitor.filter.TypeFilter;
@@ -182,6 +183,44 @@ class SpoonCfgComparisonTest {
     // ----------------------------------------------------------------
     writeDotAndSvg(sootupToDot(sootNodes, stmtGraph), "sootup-cfg");
     writeDotAndSvg(spoonGraph.toGraphVisText(), "spoon-cfg");
+  }
+
+  @Test
+  void checkInterfaceDispatch() throws Exception {
+    Launcher launcher = new Launcher();
+    launcher.addInputResource(SOURCE_PATH);
+    launcher.getEnvironment().setNoClasspath(false);
+    launcher.buildModel();
+
+    CtMethod<?> ctMethod =
+        launcher.getFactory().Type().get(CLASS_NAME).getMethodsByName(METHOD_NAME).get(0);
+
+    ControlFlowBuilder builder = new ControlFlowBuilder();
+    builder.build(ctMethod);
+    ControlFlowGraph spoonGraph = builder.getResult();
+    spoonGraph.simplifyConvergenceNodes();
+    writeDotAndSvg(spoonGraph.toGraphVisText(), "spoon-cfg-dispatch");
+
+    System.out.println("\n=== SPOON CFG — INVOCATION DISPATCH KINDS ===");
+    for (ControlFlowNode n : spoonGraph.vertexSet()) {
+      if (n.getStatement() == null) continue;
+      List<CtInvocation<?>> invocations =
+          n.getStatement().getElements(new TypeFilter<>(CtInvocation.class));
+      for (CtInvocation<?> inv : invocations) {
+        var exec = inv.getExecutable();
+        var declaringType = exec.getDeclaringType();
+        boolean isInterface = declaringType != null && declaringType.isInterface();
+        boolean isStatic = exec.isStatic();
+        String dispatchKind = isStatic ? "static" : (isInterface ? "interface" : "virtual");
+        System.out.printf(
+            "  call: %s.%s%n    declaring-type: %s  isInterface=%b  dispatch=%s%n",
+            declaringType != null ? declaringType.getSimpleName() : "?",
+            exec.getSimpleName(),
+            declaringType != null ? declaringType.getQualifiedName() : "?",
+            isInterface,
+            dispatchKind);
+      }
+    }
   }
 
   private String sootupToDot(List<Stmt> nodes, StmtGraph<?> g) {

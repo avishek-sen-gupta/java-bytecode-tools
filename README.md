@@ -36,12 +36,11 @@ Key Python commands:
 - `ftrace-semantic`: normalize raw `xtrace` JSON into a semantic graph (CFG-level)
 - `ftrace-semantic-to-dot`: render semantic graph JSON as DOT/SVG
 - `ftrace-validate`: validate semantic graph output
-- `jspmap`: map JSP EL actions through call graph to DAO methods; outputs JSON semantic map
-- `jspmap-to-dot`: render jspmap JSON output as DOT/SVG
+- `jspmap`: map JSP EL actions through a call graph; emits flat {nodes, calls, metadata} consumable by calltree-print, frames-print, calltree-to-dot
 
 ## Tool Combinations
 
-```
+```text
 classpath
     |
     +---> dump ------------------------------------------------> method ranges
@@ -50,22 +49,29 @@ classpath
     |
     +---> buildcg ---------------------------------------------> call graph JSON
                                                                        |
-                +-----------------------+------------------+-----------+------------+
-                |                       |                  |                        |
-             calltree               frames              jspmap                   xtrace*
-                \                   /                      |                        |
-                 \                 /                   jspmap JSON             envelope JSON
-                  v               v                        |                        |
-           flat {nodes, calls, metadata}             jspmap-to-dot          [ftrace-slice]
-                       |                                               [ftrace-expand-refs]
-         +-------------+-------------+                                             |
-         |             |             |                                     ftrace-semantic
-  calltree-print  frames-print  calltree-to-dot                                    |
-    (ASCII)         (text)        (SVG/DOT)                      +------------------+------------------+
-                                                                 |                                     |
-                                                       ftrace-semantic-to-dot               ftrace-validate
+                +-----------------------+------------------+-----------+
+                |                       |                  |
+             calltree               frames              jspmap
+                \                   /                   /
+                 \                 /                   /
+                  v               v                   v
+           flat {nodes, calls, metadata}
+                       |
+         +-------------+-------------+
+         |             |             |
+  calltree-print  frames-print  calltree-to-dot
+    (ASCII)         (text)        (SVG/DOT)
                                                                  |
-                                                              SVG/DOT
+    +---> xtrace* --------------------------------------------> envelope JSON
+                                                              [ftrace-slice]
+                                                          [ftrace-expand-refs]
+                                                              ftrace-semantic
+                                                                   |
+                                                     +-------------+-------------+
+                                                     |                           |
+                                           ftrace-semantic-to-dot     ftrace-validate
+                                                     |
+                                                  SVG/DOT
 
 * also takes classpath directly
 ```
@@ -589,7 +595,6 @@ uv --directory python run ftrace-semantic         --input expanded.json --output
 uv --directory python run ftrace-semantic-to-dot  --input semantic.json --output trace.svg
 uv --directory python run ftrace-validate         --input semantic.json
 uv --directory python run frames-print            --input backward.json
-uv --directory python run jspmap-to-dot           --input jspmap.json --output jspmap.svg
 
 # Full CFG pipeline piped end-to-end
 scripts/bytecode.sh --prefix com.example. "$CP" \

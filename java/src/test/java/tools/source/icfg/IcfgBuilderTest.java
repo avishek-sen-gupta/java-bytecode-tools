@@ -24,6 +24,9 @@ class IcfgBuilderTest {
         new IcfgBuilder()
             .build("com.example.app.OrderService", "processOrder", index, cache, config);
     assertNotNull(icfg.entryNode());
+    assertTrue(
+        icfg.entryNode().methodSymbol().contains("OrderService"),
+        "Entry node should be from OrderService");
     assertEquals(0, icfg.entryNode().depth());
   }
 
@@ -88,5 +91,22 @@ class IcfgBuilderTest {
         .forEach(
             n ->
                 assertEquals(0, n.depth(), "Exit nodes should be from the entry method (depth 0)"));
+  }
+
+  @Test
+  void multipleInvocationsPerNodeExpanded() {
+    IcfgConfig config = new IcfgConfig(1, StopCondition.none());
+    InterproceduralCfg icfg =
+        new IcfgBuilder()
+            .build("com.example.app.OrderService", "processOrder", index, cache, config);
+    // processOrder has 3 invocations, but OrderRepository interface methods cannot be expanded.
+    // Only transform (concrete method in OrderService) gets a CALL edge.
+    long callEdges = icfg.edgeSet().stream().filter(e -> e.kind() == IcfgEdgeKind.CALL).count();
+    assertTrue(callEdges >= 1, "Expected at least 1 CALL edge from concrete method invocation");
+    assertTrue(
+        icfg.edgeSet().stream()
+            .anyMatch(
+                e -> e.kind() == IcfgEdgeKind.CALL && e.to().methodSymbol().contains("transform")),
+        "Expected CALL edge to transform method");
   }
 }

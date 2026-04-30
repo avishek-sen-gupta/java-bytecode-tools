@@ -23,7 +23,7 @@ public class IcfgBuilder {
       IcfgConfig config) {
     SourceLocation loc = index.locationOf(className, methodName);
     ControlFlowGraph baseCfg = cache.cfgFor(className, loc.startLine());
-    String symbol = className.replace('.', '/') + "#" + methodName;
+    String symbol = toSymbol(className, methodName);
     return expand(className, symbol, baseCfg, 0, index, cache, config);
   }
 
@@ -98,14 +98,19 @@ public class IcfgBuilder {
       // Method may not have a body (abstract, etc.)
       return;
     }
-    String calleeSymbol = calleeFqn.replace('.', '/') + "#" + calleeMethod;
+    String calleeSymbol = toSymbol(calleeFqn, calleeMethod);
     InterproceduralCfg calleeIcfg =
         expand(calleeFqn, calleeSymbol, calleeCfg, depth + 1, index, cache, config);
+
+    // Guard: calleeIcfg.entryNode() can be null
+    if (calleeIcfg.entryNode() == null) return;
 
     nodes.addAll(calleeIcfg.vertexSet());
     edges.addAll(calleeIcfg.edgeSet());
 
     IcfgNode callsiteNode = nodeMap.get(callsiteCfn);
+    // Guard: callsiteNode can be null
+    if (callsiteNode == null) return;
 
     // Capture callsite's current INTRA successors before removing them
     Set<IcfgNode> callerSuccessors =
@@ -120,11 +125,20 @@ public class IcfgBuilder {
     // Add CALL edge
     edges.add(new IcfgEdge(callsiteNode, calleeIcfg.entryNode(), IcfgEdgeKind.CALL));
 
-    // Add RETURN edges
+    // Add RETURN edges (skip if no exit nodes, e.g., abstract methods or stubs)
+    if (calleeIcfg.exitNodes().isEmpty()) {
+      System.err.println(
+          "WARN: callee " + calleeSymbol + " has no exit nodes; RETURN edges skipped");
+      return;
+    }
     for (IcfgNode calleeExit : calleeIcfg.exitNodes()) {
       for (IcfgNode callerSucc : callerSuccessors) {
         edges.add(new IcfgEdge(calleeExit, callerSucc, IcfgEdgeKind.RETURN));
       }
     }
+  }
+
+  private static String toSymbol(String fqn, String methodName) {
+    return fqn.replace('.', '/') + "#" + methodName;
   }
 }

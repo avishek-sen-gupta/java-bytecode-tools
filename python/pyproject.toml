@@ -17,6 +17,8 @@ ftrace-validate = "ftrace_validate:main"
 frames-print = "frames_print:main"
 jspmap = "jspmap.jspmap:main"
 jspmap-to-dot = "jspmap_to_dot:main"
+find-called-methods = "find_called_methods:main"
+reindex = "reindex:main"
 
 [build-system]
 requires = ["hatchling"]

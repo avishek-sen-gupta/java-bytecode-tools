@@ -1,0 +1,7 @@
+# Sample reindex config — copy to reindex.conf and edit as needed.
+# Keys may repeat to specify multiple source roots or class directories.
+# First 'classes' entry is used as the javac -d output directory.
+
+src=test-fixtures/src
+classes=test-fixtures/classes
+output=test-fixtures/index.scip

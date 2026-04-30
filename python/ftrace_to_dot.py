@@ -170,13 +170,27 @@ def _render_trap_cluster(
     return [*header, *style_lines, *node_lines, "    }"]
 
 
-def _render_cross_edges(
+_DRILLDOWN_STYLE = 'color="#e05050", style=bold, penwidth=1.5'
+
+
+def _render_drilldown_edge(e: SemanticEdge) -> str:
+    """Render a drilldown edge (parent node → child CFG entry) at global scope."""
+    return f"  {e['from']} -> {e['to']} [{_DRILLDOWN_STYLE}];"
+
+
+def _render_fallback_cross_edges(
     nodes: list[SemanticNode],
     children: list[MethodSemanticCFG],
     child_entries: list[str],
     entry_nid: str,
+    covered_entries: frozenset[str],
 ) -> list[str]:
-    """Build parent→child call edges by matching callSiteLine to node lines."""
+    """Build cross-edges for children not already covered by JSON drilldown edges.
+
+    Covers: leaf children (ref/cycle/filtered) always, and non-leaf children
+    whose entry node isn't already in covered_entries (backward compat with
+    older semantic JSON that pre-dates drilldown edge injection).
+    """
     line_to_nids: dict[int, list[str]] = reduce(
         lambda acc, pair: {**acc, pair[0]: [*acc.get(pair[0], []), pair[1]]},
         ((ln, n["id"]) for n in nodes for ln in n.get("lines", [])),
@@ -184,15 +198,12 @@ def _render_cross_edges(
     )
 
     def _edge_for_child(child: MethodSemanticCFG, child_entry: str) -> list[str]:
-        if not child_entry:
+        if not child_entry or child_entry in covered_entries:
             return []
         csl = child.get("callSiteLine", -1)
         source_nids = line_to_nids.get(csl, [])
         if source_nids:
-            return [
-                f"  {source_nids[0]} -> {child_entry} "
-                f'[color="#e05050", style=bold, penwidth=1.5];'
-            ]
+            return [f"  {source_nids[0]} -> {child_entry} [{_DRILLDOWN_STYLE}];"]
         if entry_nid:
             return [f"  {entry_nid} -> {child_entry};"]
         return []
@@ -224,7 +235,9 @@ def _render_method(node: MethodSemanticCFG, counter: int) -> _MethodDotResult:
     cls = short_class(node.get("class", "?"))
     method_name = node.get("method", "?")
     nodes = node.get("nodes", [])
-    edges = node.get("edges", [])
+    all_edges = node.get("edges", [])
+    flow_edges = [e for e in all_edges if e.get("kind") != "drilldown"]
+    drilldown_edges = [e for e in all_edges if e.get("kind") == "drilldown"]
     clusters = node.get("clusters", [])
     exception_edges = node.get("exceptionEdges", [])
     children = node.get("children", [])
@@ -232,7 +245,7 @@ def _render_method(node: MethodSemanticCFG, counter: int) -> _MethodDotResult:
     line_end = node.get("lineEnd", "?")
     entry_nid = node.get("entryNodeId", "") or (nodes[0]["id"] if nodes else "")
 
-    # Subgraph for this method
+    # Subgraph for this method — only control flow edges rendered here
     cid = f"cluster_{counter}"
     subgraph = [
         f"  subgraph {cid} {{",
@@ -241,7 +254,7 @@ def _render_method(node: MethodSemanticCFG, counter: int) -> _MethodDotResult:
         '    color="#4a86c8";',
         "",
         *[_render_node(n["id"], n) for n in nodes],
-        *[_render_edge(e) for e in edges],
+        *[_render_edge(e) for e in flow_edges],
         *[
             line
             for i, c in enumerate(clusters)
@@ -274,9 +287,13 @@ def _render_method(node: MethodSemanticCFG, counter: int) -> _MethodDotResult:
     child_cross = [edge for r in child_results for edge in r["cross_edges"]]
     child_entries = [r["entry_nid"] for r in child_results]
 
+    covered_entries = frozenset(e["to"] for e in drilldown_edges)
     cross_edges = [
         *child_cross,
-        *_render_cross_edges(nodes, children, child_entries, entry_nid),
+        *[_render_drilldown_edge(e) for e in drilldown_edges],
+        *_render_fallback_cross_edges(
+            nodes, children, child_entries, entry_nid, covered_entries
+        ),
     ]
 
     return _MethodDotResult(

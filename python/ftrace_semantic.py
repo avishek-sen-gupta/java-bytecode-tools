@@ -301,6 +301,17 @@ def classify_node_kind(entry: MergedStmt) -> NodeKind:
     return NodeKind.PLAIN
 
 
+def _classify_non_branch_node(entry: MergedStmt) -> NodeKind:
+    """Classify a node that is NOT the last node of a branch block.
+    Skips the branches check to prevent non-last nodes from getting BRANCH kind
+    (they only have sequential intra-block edges, not T/F edges)."""
+    if entry.get("calls"):
+        return NodeKind.CALL
+    if entry.get("assigns"):
+        return NodeKind.ASSIGN
+    return NodeKind.PLAIN
+
+
 def _process_block_stmts(
     merged: list[MergedStmt],
     is_branch_block: bool,
@@ -316,7 +327,7 @@ def _process_block_stmts(
             "kind": (
                 NodeKind.BRANCH
                 if is_branch_block and idx == last_idx
-                else classify_node_kind(entry)
+                else _classify_non_branch_node(entry)
             ),
             "label": (
                 make_node_label(entry)
@@ -341,11 +352,12 @@ def _build_nodes(blocks: list[RawBlock], next_id: int) -> _NodeBuildResult:
         # Empty block: placeholder node
         if not merged:
             nid = f"n{counter}"
+            is_branch = bool(block.get("branchCondition"))
             placeholder: SemanticNode = {
                 "id": nid,
                 "lines": [],
-                "kind": NodeKind.PLAIN,
-                "label": [bid],
+                "kind": NodeKind.BRANCH if is_branch else NodeKind.PLAIN,
+                "label": [bid] + ([block["branchCondition"]] if is_branch else []),
             }
             return (
                 [*nodes, placeholder],
@@ -661,6 +673,31 @@ class _ChildFoldAcc(TypedDict):
     counter: NodeCounter
 
 
+def _build_drilldown_edges(
+    parent_nodes: list[SemanticNode],
+    children: list[MethodSemanticCFG],
+    parent_entry_nid: str,
+) -> list[SemanticEdge]:
+    """Build drilldown edges from call-site nodes to non-leaf child CFG entries.
+
+    Leaf children (ref/cycle/filtered) have no entryNodeId and are skipped —
+    their cross-edges are computed by the DOT renderer at render time.
+    """
+    line_to_nid: dict[int, str] = {
+        ln: n["id"] for n in parent_nodes for ln in n.get("lines", [])
+    }
+    return [
+        cast(SemanticEdge, {"from": source_nid, "to": child_entry, "kind": "drilldown"})
+        for child in children
+        for child_entry in [child.get("entryNodeId", "")]
+        if child_entry
+        for source_nid in [
+            line_to_nid.get(child.get("callSiteLine", -1), parent_entry_nid)
+        ]
+        if source_nid
+    ]
+
+
 def _assemble_result(
     tree: MethodCFG,
     build_result: _GraphBuildResult,
@@ -699,6 +736,15 @@ def _assemble_result(
         )
         result[_F_CHILDREN] = folded["children"]
         counter = folded["counter"]
+        drilldowns = _build_drilldown_edges(
+            cast(list[SemanticNode], result.get("nodes", [])),
+            folded["children"],
+            cast(str, result.get("entryNodeId", "")),
+        )
+        result["edges"] = [
+            *cast(list[SemanticEdge], result.get("edges", [])),
+            *drilldowns,
+        ]
 
     return (cast(MethodSemanticCFG, result), counter)
 

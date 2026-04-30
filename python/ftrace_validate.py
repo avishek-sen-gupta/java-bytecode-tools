@@ -150,8 +150,10 @@ def _check_branch_edges(
     - Non-branch nodes must have at most 1 outgoing edge, never labeled.
     """
 
-    # Build outgoing edges per node using reduce
+    # Build outgoing edges per node using reduce — drilldown edges are exempt
     def add_edge(acc: dict[str, list[SemanticEdge]], edge: SemanticEdge):
+        if edge.get("kind") == "drilldown":
+            return acc
         from_id = edge["from"]
         return {**acc, from_id: [*acc.get(from_id, []), edge]}
 

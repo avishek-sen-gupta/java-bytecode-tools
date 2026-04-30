@@ -239,9 +239,11 @@ class SemanticEdge(_SemanticEdgeBase, total=False):
     - from: source node ID (required)
     - to: target node ID (required)
     - branch: branch label if from a conditional (optional)
+    - kind: edge kind — "drilldown" for parent→child CFG edges, absent for control flow
     """
 
     branch: str
+    kind: str
 
 
 # SemanticCluster: trapType, role, nodeIds required; entryNodeId optional

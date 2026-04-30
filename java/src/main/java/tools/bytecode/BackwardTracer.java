@@ -144,8 +144,12 @@ public class BackwardTracer {
       System.err.println("Loading call graph from " + tracer.getCallGraphCache() + "...");
       ObjectMapper cgMapper = new ObjectMapper();
       @SuppressWarnings("unchecked")
+      Map<String, Object> raw = cgMapper.readValue(tracer.getCallGraphCache().toFile(), Map.class);
+      @SuppressWarnings("unchecked")
       Map<String, List<String>> cached =
-          cgMapper.readValue(tracer.getCallGraphCache().toFile(), Map.class);
+          raw.containsKey("callees")
+              ? (Map<String, List<String>>) raw.get("callees")
+              : (Map<String, List<String>>) (Map<?, ?>) raw;
       for (var entry : cached.entrySet()) {
         String callerSig = entry.getKey();
         for (String calleeSig : entry.getValue()) {

@@ -9,13 +9,8 @@ from ftrace_types import MethodCFG, short_class
 
 
 def _line_suffix(node: MethodCFG) -> str:
-    line_start = node.get("lineStart", "")
-    line_end = node.get("lineEnd", "")
-    if not line_start:
-        return ""
-    if line_start == line_end:
-        return f":{line_start}"
-    return f":{line_start}-{line_end}"
+    callsite = node.get("callSiteLine", 0)
+    return f":{callsite}" if callsite else ""
 
 
 def _format_label(node: MethodCFG) -> str:

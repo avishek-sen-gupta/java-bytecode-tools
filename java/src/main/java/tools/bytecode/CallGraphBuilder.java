@@ -44,7 +44,10 @@ public class CallGraphBuilder {
       Set<String> bridgeSigs,
       int methodsWithBodies) {}
 
-  public Map<String, List<String>> buildCallGraph() {
+  public record CallGraphResult(
+      Map<String, List<String>> graph, Map<String, Map<String, Integer>> callsites) {}
+
+  public CallGraphResult buildCallGraph() {
     long totalStart = System.currentTimeMillis();
 
     log.info("[buildcg] Loading project classes...");
@@ -73,6 +76,7 @@ public class CallGraphBuilder {
         "[Phase 3] Scanning {} classes / {} methods (sequential)...", totalClasses, totalMethods);
     long phase3Start = System.currentTimeMillis();
     Map<String, Set<String>> callerToCallees = new ConcurrentHashMap<>();
+    Map<String, Map<String, Integer>> rawCallsites = new ConcurrentHashMap<>();
     AtomicInteger classesScanned = new AtomicInteger(0);
     AtomicInteger methodsScanned = new AtomicInteger(0);
 
@@ -121,6 +125,7 @@ public class CallGraphBuilder {
             targetClasses.add(declClass);
             List<String> impls = ifaceToImpls.get(declClass);
             if (impls != null) targetClasses.addAll(impls);
+            int callLine = BytecodeTracer.stmtLine(stmt);
             for (String targetClass : targetClasses) {
               String key = targetClass + "#" + methodName + "#" + paramCount;
               List<String> candidates = index.nameIndex().get(key);
@@ -128,6 +133,13 @@ public class CallGraphBuilder {
                 callerToCallees
                     .computeIfAbsent(mSig, k -> ConcurrentHashMap.newKeySet())
                     .addAll(candidates);
+                if (callLine > 0) {
+                  Map<String, Integer> siteMap =
+                      rawCallsites.computeIfAbsent(mSig, k -> new ConcurrentHashMap<>());
+                  for (String cSig : candidates) {
+                    siteMap.putIfAbsent(cSig, callLine);
+                  }
+                }
               }
             }
             methodsScanned.incrementAndGet();
@@ -154,13 +166,15 @@ public class CallGraphBuilder {
 
     log.info("[Phase 4] Collapsing {} bridge method(s)...", index.bridgeSigs().size());
     Map<String, List<String>> result = collapseBridgeMethods(raw, index.bridgeSigs());
+    Map<String, Map<String, Integer>> callsites =
+        collapseCallsiteBridges(rawCallsites, index.bridgeSigs(), raw);
     int edges = result.values().stream().mapToInt(List::size).sum();
     log.info(
         "[buildcg] Complete: {} callers, {} edges. Total: {}",
         result.size(),
         edges,
         elapsedSecs(totalStart));
-    return result;
+    return new CallGraphResult(result, Collections.unmodifiableMap(callsites));
   }
 
   /** Phase 1: Iterates all class methods to build the signature index and name lookup map. */
@@ -312,6 +326,36 @@ public class CallGraphBuilder {
     }
 
     log.info("Collapsed {} bridge method(s).", bridgeSigs.size());
+    return result;
+  }
+
+  /**
+   * Redirects callsite entries whose callee is a bridge method to the real target(s), preserving
+   * the original callsite line number. Bridge caller entries are removed.
+   */
+  static Map<String, Map<String, Integer>> collapseCallsiteBridges(
+      Map<String, Map<String, Integer>> callsites,
+      Set<String> bridgeSigs,
+      Map<String, List<String>> rawGraph) {
+    if (bridgeSigs.isEmpty()) return callsites;
+    Map<String, Map<String, Integer>> result = new LinkedHashMap<>();
+    for (var outer : callsites.entrySet()) {
+      String callerSig = outer.getKey();
+      if (bridgeSigs.contains(callerSig)) continue;
+      Map<String, Integer> redirected = new LinkedHashMap<>();
+      for (var inner : outer.getValue().entrySet()) {
+        String calleeSig = inner.getKey();
+        int line = inner.getValue();
+        if (bridgeSigs.contains(calleeSig)) {
+          for (String real : rawGraph.getOrDefault(calleeSig, List.of())) {
+            if (!real.equals(calleeSig)) redirected.putIfAbsent(real, line);
+          }
+        } else {
+          redirected.putIfAbsent(calleeSig, line);
+        }
+      }
+      if (!redirected.isEmpty()) result.put(callerSig, redirected);
+    }
     return result;
   }
 }

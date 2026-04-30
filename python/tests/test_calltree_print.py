@@ -110,28 +110,24 @@ class TestRenderTree:
         render_tree(node)
         assert node["children"] == original_children
 
-    def test_line_range_shown_when_present(self):
+    def test_child_callsite_line_shown(self):
         from calltree_print import render_tree
 
-        node = _node("com.example.Svc", "handle", lineStart=17, lineEnd=23)
-        assert render_tree(node) == ["Svc.handle:17-23"]
-
-    def test_single_line_method_shows_one_number(self):
-        from calltree_print import render_tree
-
-        node = _node("com.example.Svc", "handle", lineStart=33, lineEnd=33)
-        assert render_tree(node) == ["Svc.handle:33"]
-
-    def test_child_line_range_shown(self):
-        from calltree_print import render_tree
-
-        child = _node("com.example.Dao", "save", lineStart=5, lineEnd=7)
+        child = _node("com.example.Dao", "save", callSiteLine=42)
         node = _node("com.example.Svc", "handle", children=[child])
         lines = render_tree(node)
-        assert lines == ["Svc.handle", "└── Dao.save:5-7"]
+        assert lines == ["Svc.handle", "└── Dao.save:42"]
 
-    def test_no_line_numbers_unchanged(self):
+    def test_no_callsite_line_no_suffix(self):
         from calltree_print import render_tree
 
         node = _node("com.example.Svc", "handle")
         assert render_tree(node) == ["Svc.handle"]
+
+    def test_callsite_line_with_ref_marker(self):
+        from calltree_print import render_tree
+
+        child = _node("com.example.Dao", "save", ref=True, callSiteLine=99)
+        node = _node("com.example.Svc", "handle", children=[child])
+        lines = render_tree(node)
+        assert lines == ["Svc.handle", "└── Dao.save:99 [ref]"]

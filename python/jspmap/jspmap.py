@@ -96,6 +96,8 @@ _RESOLVERS: dict[str, type[BeanResolver]] = {
     "jsf": JsfBeanResolver,
 }
 
+_DEFAULT_EXTENSIONS: list[str] = ["jsp", "jspf", "xhtml"]
+
 
 def _entry_sigs_for(
     action: ELAction, call_graph: dict[str, list[str]], fqcn: str
@@ -191,12 +193,12 @@ def run(
     dao_pattern: str = ".",
     resolver_name: str = "jsf",
     pattern: str = ".",
-    extensions: list[str] | None = None,
+    extensions: list[str] = _DEFAULT_EXTENSIONS,
     jsp_filter: str = "",
     recurse: bool = False,
 ) -> dict:
     """Core pipeline. Returns flat {nodes, calls, metadata} graph."""
-    exts = extensions or ["jsp", "jspf", "xhtml"]
+    exts = list(extensions)
     pat = re.compile(pattern)
 
     resolver_cls = _RESOLVERS.get(resolver_name)

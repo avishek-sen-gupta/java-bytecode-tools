@@ -32,6 +32,28 @@ def extract_method(sig: str) -> str | None:
     return m.group(1) if m else None
 
 
+def build_line_index(dumps: list[dict]) -> dict[str, dict]:
+    """Build a {signature: {lineStart, lineEnd}} index from parsed dump-*.json data."""
+    return {
+        method["signature"]: {
+            "lineStart": method["lineStart"],
+            "lineEnd": method["lineEnd"],
+        }
+        for dump in dumps
+        for method in dump.get("methods", [])
+    }
+
+
+def annotate_tree(node: dict, line_index: dict[str, dict]) -> dict:
+    """Return a new node tree with lineStart/lineEnd added from line_index."""
+    sig = node.get("methodSignature", "")
+    lines = line_index.get(sig, {})
+    annotated_children = [
+        annotate_tree(child, line_index) for child in node.get("children", [])
+    ]
+    return {**node, **lines, "children": annotated_children}
+
+
 def build_tree(
     sig: str,
     cg: dict[str, list[str]],
@@ -39,12 +61,10 @@ def build_tree(
     on_path: set[str],
     fully_built: dict[str, dict | None],
     ref_index: dict[str, dict],
-    line_index: dict[str, dict],
 ) -> dict | None:
     cls = extract_class(sig)
     method = extract_method(sig)
-    lines = line_index.get(sig, {})
-    base: dict = {"class": cls, "method": method, "methodSignature": sig, **lines}
+    base: dict = {"class": cls, "method": method, "methodSignature": sig}
 
     if sig in on_path:
         return {**base, "cycle": True} if (cls and pat.search(cls)) else None
@@ -60,11 +80,7 @@ def build_tree(
     children = [
         child
         for callee in cg.get(sig, [])
-        if (
-            child := build_tree(
-                callee, cg, pat, on_path, fully_built, ref_index, line_index
-            )
-        )
+        if (child := build_tree(callee, cg, pat, on_path, fully_built, ref_index))
         is not None
     ]
     on_path.remove(sig)
@@ -86,14 +102,17 @@ def main() -> None:
     parser.add_argument("--method", required=True)
     parser.add_argument("--pattern", required=True)
     parser.add_argument("--callgraph", "-g", type=Path, required=True, metavar="PATH")
+    parser.add_argument(
+        "--dump",
+        type=Path,
+        nargs="+",
+        metavar="FILE",
+        help="Dump JSON files to source line numbers from",
+    )
     args = parser.parse_args()
 
     with open(args.callgraph) as f:
-        cg_data = json.load(f)
-
-    # Support both old format {sig: [callees]} and new format {callees: {...}, lineIndex: {...}}
-    cg: dict[str, list[str]] = cg_data.get("callees", cg_data)
-    line_index: dict[str, dict] = cg_data.get("lineIndex", {})
+        cg: dict[str, list[str]] = json.load(f)
 
     entry_re = re.compile(rf"^<{re.escape(args.cls)}: .+\b{re.escape(args.method)}\(")
     entries = [sig for sig in cg if entry_re.match(sig)]
@@ -114,7 +133,7 @@ def main() -> None:
     fully_built: dict[str, dict | None] = {}
 
     sys.setrecursionlimit(10000)
-    trace = build_tree(entries[0], cg, pat, set(), fully_built, ref_index, line_index)
+    trace = build_tree(entries[0], cg, pat, set(), fully_built, ref_index)
 
     if trace is None:
         print(
@@ -122,6 +141,14 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+
+    if args.dump:
+        dumps = [json.loads(p.read_text()) for p in args.dump]
+        line_index = build_line_index(dumps)
+        trace = annotate_tree(trace, line_index)
+        ref_index = {
+            sig: annotate_tree(node, line_index) for sig, node in ref_index.items()
+        }
 
     json.dump({"trace": trace, "refIndex": ref_index}, sys.stdout, indent=2)
     print()

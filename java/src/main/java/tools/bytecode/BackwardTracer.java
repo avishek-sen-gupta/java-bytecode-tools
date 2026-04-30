@@ -138,24 +138,21 @@ public class BackwardTracer {
     return buildResult(fromClass, fromLine, toClass, toLine, chainTrees);
   }
 
-  @SuppressWarnings("unchecked")
   private Map<String, List<String>> loadReverseCallGraph() throws IOException {
     Map<String, List<String>> calleeToCallers = new LinkedHashMap<>();
     if (tracer.getCallGraphCache() != null && Files.exists(tracer.getCallGraphCache())) {
       System.err.println("Loading call graph from " + tracer.getCallGraphCache() + "...");
       ObjectMapper cgMapper = new ObjectMapper();
-      Map<String, Object> raw = cgMapper.readValue(tracer.getCallGraphCache().toFile(), Map.class);
-      Map<String, List<String>> callerToCallees =
-          raw.containsKey("callees")
-              ? (Map<String, List<String>>) raw.get("callees")
-              : (Map<String, List<String>>) (Object) raw;
-      for (var entry : callerToCallees.entrySet()) {
+      @SuppressWarnings("unchecked")
+      Map<String, List<String>> cached =
+          cgMapper.readValue(tracer.getCallGraphCache().toFile(), Map.class);
+      for (var entry : cached.entrySet()) {
         String callerSig = entry.getKey();
         for (String calleeSig : entry.getValue()) {
           calleeToCallers.computeIfAbsent(calleeSig, k -> new ArrayList<>()).add(callerSig);
         }
       }
-      System.err.println("Loaded " + callerToCallees.size() + " caller entries");
+      System.err.println("Loaded " + cached.size() + " caller entries");
     } else {
       throw new RuntimeException("Call graph cache not found. Run `buildcg` first.");
     }

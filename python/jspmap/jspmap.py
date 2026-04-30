@@ -223,8 +223,7 @@ def run(
     log.info("Bean map: %d beans resolved", len(bean_map))
 
     log.info("Loading call graph from %s...", call_graph_path)
-    _cg_data = json.loads(call_graph_path.read_text())
-    call_graph: dict[str, list[str]] = _cg_data.get("callees", _cg_data)
+    call_graph: dict[str, list[str]] = json.loads(call_graph_path.read_text())
     log.info("Call graph loaded: %d callers", len(call_graph))
 
     meta: dict = {

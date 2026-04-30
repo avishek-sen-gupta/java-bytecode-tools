@@ -5,14 +5,11 @@ setup; load_line_numbers
 
 echo "buildcg"
 
-assert_json_gt "$OUT/callgraph.json" '.callees | length' 0 \
+assert_json_gt "$OUT/callgraph.json" '. | length' 0 \
     "call graph has edges"
 
 assert_json_contains "$OUT/callgraph.json" \
-    '.callees | to_entries | any(.value[] | test("findById"))' \
+    'to_entries | any(.value[] | test("findById"))' \
     "call graph contains findById callee"
-
-assert_json_gt "$OUT/callgraph.json" '.lineIndex | length' 0 \
-    "call graph has line index"
 
 report

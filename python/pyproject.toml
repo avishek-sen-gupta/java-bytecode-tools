@@ -18,9 +18,9 @@ frames-print = "frames_print:main"
 jspmap = "jspmap.jspmap:main"
 jspmap-to-dot = "jspmap_to_dot:main"
 calltree = "calltree:main"
-calltree-print = "calltree_print:main"
 reindex = "reindex:main"
 calltree-to-dot = "calltree_to_dot:main"
+calltree-print = "calltree_print:main"
 
 [build-system]
 requires = ["hatchling"]

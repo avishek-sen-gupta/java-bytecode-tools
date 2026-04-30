@@ -41,6 +41,7 @@ test-fixtures/target/
 
 # Output artifacts
 scripts/target/
+python/output/
 
 # Beads / Dolt files (added by bd init)
 .dolt/

@@ -2,6 +2,7 @@ package tools.bytecode.cli;
 
 import java.nio.file.Path;
 import java.util.Map;
+import picocli.CommandLine.ArgGroup;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import tools.bytecode.BytecodeTracer;
@@ -30,11 +31,19 @@ import tools.bytecode.ForwardTracer;
     })
 class XtraceCommand extends BaseCommand {
 
+  static class EntryPoint {
+    @Option(names = "--from-line", description = "Source line in --from class")
+    int fromLine = -1;
+
+    @Option(names = "--from-method", description = "Entry-point method name")
+    String fromMethod;
+  }
+
   @Option(names = "--from", required = true, description = "Entry-point class")
   String fromClass;
 
-  @Option(names = "--from-line", required = true, description = "Source line in --from class")
-  int fromLine;
+  @ArgGroup(exclusive = true, multiplicity = "1")
+  EntryPoint entryPoint;
 
   @Option(names = "--filter", description = "JSON filter file with allow/stop prefix arrays")
   Path filterFile;
@@ -49,7 +58,9 @@ class XtraceCommand extends BaseCommand {
       tracer.setCallGraphCache(callGraphFile);
       BytecodeTracer.FilterConfig filter = BytecodeTracer.FilterConfig.load(filterFile);
       Map<String, Object> result =
-          new ForwardTracer(tracer).traceForward(fromClass, fromLine, filter);
+          entryPoint.fromMethod != null
+              ? new ForwardTracer(tracer).traceForward(fromClass, entryPoint.fromMethod, filter)
+              : new ForwardTracer(tracer).traceForward(fromClass, entryPoint.fromLine, filter);
       writeOutput(result);
     } catch (Exception e) {
       System.err.println("Error: " + e.getMessage());

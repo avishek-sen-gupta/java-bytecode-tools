@@ -172,6 +172,44 @@ public class BytecodeTracer {
     return -1;
   }
 
+  /** Resolve a method in a class by name. Throws if not found or ambiguous. */
+  SootMethod resolveMethodByName(String className, String methodName) {
+    ClassType type = view.getIdentifierFactory().getClassType(className);
+    Optional<JavaSootClass> clsOpt = view.getClass(type);
+    if (clsOpt.isEmpty()) {
+      throw new RuntimeException("Class not found: " + className);
+    }
+    List<SootMethod> matches =
+        clsOpt.get().getMethods().stream()
+            .filter(m -> m.getName().equals(methodName) && m.hasBody())
+            .collect(Collectors.toList());
+    if (matches.isEmpty()) {
+      throw new RuntimeException("No method named '" + methodName + "' in " + className);
+    }
+    if (matches.size() > 1) {
+      StringBuilder sb = new StringBuilder();
+      sb.append("Ambiguous: ")
+          .append(matches.size())
+          .append(" overloads for '")
+          .append(methodName)
+          .append("' in ")
+          .append(className)
+          .append(":\n");
+      for (SootMethod m : matches) {
+        int lineStart =
+            m.getBody().getStmtGraph().getNodes().stream()
+                .mapToInt(BytecodeTracer::stmtLine)
+                .filter(l -> l > 0)
+                .min()
+                .orElse(-1);
+        sb.append("  ").append(m.getSignature()).append(" (line ").append(lineStart).append(")\n");
+      }
+      sb.append("Use --from-line to disambiguate.");
+      throw new RuntimeException(sb.toString());
+    }
+    return matches.get(0);
+  }
+
   /** Resolve a method in a class by line number. Throws if not found. */
   SootMethod resolveMethod(String className, int line) {
     ClassType type = view.getIdentifierFactory().getClassType(className);

@@ -170,12 +170,23 @@ The output includes each method's `lineStart` and `lineEnd`. Those line numbers 
 
 ### 3. Forward Trace From An Entry Point
 
+Identify the entry method by source line or by method name:
+
 ```bash
+# By line number (use `dump` to find the line)
 scripts/bytecode.sh --prefix com.example. "$CP" \
   xtrace --call-graph callgraph.json \
   --from com.example.app.OrderService --from-line 17 \
   --output forward.json
+
+# By method name (simpler when the name is unambiguous)
+scripts/bytecode.sh --prefix com.example. "$CP" \
+  xtrace --call-graph callgraph.json \
+  --from com.example.app.OrderService --from-method processOrder \
+  --output forward.json
 ```
+
+`--from-line` and `--from-method` are mutually exclusive; exactly one is required. If the method name is overloaded, the error message lists all overloads with their line numbers so you can switch to `--from-line` to disambiguate.
 
 `xtrace` is implemented as a two-pass pipeline:
 
@@ -408,7 +419,7 @@ Example:
 ```bash
 scripts/bytecode.sh --prefix com.example. "$CP" \
   xtrace --call-graph callgraph.json \
-  --from com.example.app.OrderService --from-line 17 \
+  --from com.example.app.OrderService --from-method processOrder \
   --filter test-fixtures/filter.json \
   --output filtered.json
 ```
@@ -451,9 +462,11 @@ scripts/bytecode.sh --prefix com.example. "$CP" buildcg --output callgraph.json
 # Inspect a class
 scripts/bytecode.sh --prefix com.example. "$CP" dump com.example.app.OrderService
 
-# Forward trace
+# Forward trace (by line or by method name)
 scripts/bytecode.sh --prefix com.example. "$CP" \
   xtrace --call-graph callgraph.json --from com.example.app.OrderService --from-line 17
+scripts/bytecode.sh --prefix com.example. "$CP" \
+  xtrace --call-graph callgraph.json --from com.example.app.OrderService --from-method processOrder
 
 # Backward trace
 scripts/bytecode.sh --prefix com.example. "$CP" \

@@ -226,8 +226,20 @@ public class ForwardTracer {
   }
 
   public Map<String, Object> traceForward(
+      String fromClass, String fromMethod, BytecodeTracer.FilterConfig filter) throws IOException {
+    return traceForwardFromMethod(
+        tracer.resolveMethodByName(fromClass, fromMethod), fromClass, -1, filter);
+  }
+
+  public Map<String, Object> traceForward(
       String fromClass, int fromLine, BytecodeTracer.FilterConfig filter) throws IOException {
-    SootMethod entryMethod = tracer.resolveMethod(fromClass, fromLine);
+    return traceForwardFromMethod(
+        tracer.resolveMethod(fromClass, fromLine), fromClass, fromLine, filter);
+  }
+
+  private Map<String, Object> traceForwardFromMethod(
+      SootMethod entryMethod, String fromClass, int fromLine, BytecodeTracer.FilterConfig filter)
+      throws IOException {
     String entrySig = entryMethod.getSignature().toString();
 
     // Index all project methods

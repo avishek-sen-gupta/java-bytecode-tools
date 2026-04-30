@@ -304,6 +304,18 @@ def _render_method(node: MethodSemanticCFG, counter: int) -> _MethodDotResult:
     )
 
 
+def _count_tree(node: MethodSemanticCFG) -> tuple[int, int]:
+    """Return (method_count, node_count) for the whole tree."""
+    own_nodes = len(node.get("nodes", []))
+    children = node.get("children", [])
+    child_methods, child_nodes = reduce(
+        lambda acc, c: (acc[0] + c[0], acc[1] + c[1]),
+        (_count_tree(c) for c in children),
+        (0, 0),
+    )
+    return (1 + child_methods, own_nodes + child_nodes)
+
+
 def build_dot(root: MethodSemanticCFG, splines: str = "") -> str:
     """Render a MethodSemanticCFG tree as a Graphviz DOT string."""
     header = [
@@ -323,6 +335,7 @@ def build_dot(root: MethodSemanticCFG, splines: str = "") -> str:
 
 def main():
     import argparse
+    import time
 
     parser = argparse.ArgumentParser(
         description="Render semantic graph JSON as Graphviz DOT, then optionally produce SVG/PNG."
@@ -344,13 +357,30 @@ def main():
     )
     args = parser.parse_args()
 
+    print("[ftrace-to-dot] reading JSON...", file=sys.stderr)
+    t0 = time.monotonic()
     if args.input:
         with open(args.input) as f:
             root = json.load(f)
     else:
         root = json.load(sys.stdin)
+    method_count, node_count = _count_tree(root)
+    print(
+        f"[ftrace-to-dot] loaded: {method_count} methods, {node_count} nodes "
+        f"({time.monotonic() - t0:.1f}s)",
+        file=sys.stderr,
+    )
 
+    print("[ftrace-to-dot] building DOT...", file=sys.stderr)
+    t1 = time.monotonic()
     dot = build_dot(root, splines=args.splines or "")
+    dot_lines = dot.count("\n")
+    dot_kb = len(dot.encode()) // 1024
+    print(
+        f"[ftrace-to-dot] DOT ready: {dot_lines} lines, {dot_kb} KB "
+        f"({time.monotonic() - t1:.1f}s)",
+        file=sys.stderr,
+    )
 
     if args.output:
         ext = args.output.suffix.lower()
@@ -359,6 +389,8 @@ def main():
 
             fmt = ext.lstrip(".")
             args.output.parent.mkdir(parents=True, exist_ok=True)
+            print(f"[ftrace-to-dot] running graphviz dot -{fmt}...", file=sys.stderr)
+            t2 = time.monotonic()
             result = subprocess.run(
                 ["dot", f"-T{fmt}", "-o", str(args.output)],
                 input=dot,
@@ -366,13 +398,16 @@ def main():
                 capture_output=True,
             )
             if result.returncode != 0:
-                print(f"dot failed: {result.stderr}", file=sys.stderr)
+                print(f"[ftrace-to-dot] dot failed: {result.stderr}", file=sys.stderr)
                 sys.exit(1)
-            print(f"Rendered {args.output}", file=sys.stderr)
+            print(
+                f"[ftrace-to-dot] rendered {args.output} ({time.monotonic() - t2:.1f}s)",
+                file=sys.stderr,
+            )
         else:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(dot)
-            print(f"Wrote {args.output}", file=sys.stderr)
+            print(f"[ftrace-to-dot] wrote {args.output}", file=sys.stderr)
     else:
         print(dot)
 

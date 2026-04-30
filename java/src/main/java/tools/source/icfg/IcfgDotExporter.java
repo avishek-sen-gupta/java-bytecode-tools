@@ -8,6 +8,10 @@ import java.util.Set;
 public class IcfgDotExporter {
 
   public String toDot(InterproceduralCfg icfg) {
+    if (icfg.vertexSet().isEmpty()) {
+      return "digraph icfg { }\n";
+    }
+
     StringBuilder sb = new StringBuilder();
     sb.append("digraph icfg {\n");
     sb.append("  rankdir=LR;\n");
@@ -61,7 +65,7 @@ public class IcfgDotExporter {
   }
 
   private String nodeId(IcfgNode node) {
-    return "n_" + node.id().replaceAll("[^a-zA-Z0-9_]", "_");
+    return "n_" + Math.abs(node.id().hashCode()) + "_" + node.id().replaceAll("[^a-zA-Z0-9_]", "_");
   }
 
   private String nodeLabel(IcfgNode node) {
@@ -69,16 +73,14 @@ public class IcfgDotExporter {
     if (cfn.getStatement() == null) {
       return cfn.getKind().name();
     }
-    int line =
-        cfn.getStatement().getPosition().isValidPosition()
-            ? cfn.getStatement().getPosition().getLine()
-            : -1;
+    var position = cfn.getStatement().getPosition();
+    int line = (position != null && position.isValidPosition()) ? position.getLine() : -1;
     String stmt = cfn.getStatement().toString().replace("\"", "\\\"").replace("\n", "\\n");
     return "[L" + line + "] " + stmt + "  (depth " + node.depth() + ")";
   }
 
   private String simpleMethodName(String symbol) {
-    // symbol: "com/example/app/OrderService#processOrder"
+    // symbol format: "com/example/app/OrderService#processOrder"
     int hash = symbol.lastIndexOf('#');
     return hash >= 0 ? symbol.substring(hash + 1) : symbol;
   }

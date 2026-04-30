@@ -32,6 +32,28 @@ def extract_method(sig: str) -> str | None:
     return m.group(1) if m else None
 
 
+def build_line_index(dumps: list[dict]) -> dict[str, dict]:
+    """Build a {signature: {lineStart, lineEnd}} index from parsed dump-*.json data."""
+    return {
+        method["signature"]: {
+            "lineStart": method["lineStart"],
+            "lineEnd": method["lineEnd"],
+        }
+        for dump in dumps
+        for method in dump.get("methods", [])
+    }
+
+
+def annotate_tree(node: dict, line_index: dict[str, dict]) -> dict:
+    """Return a new node tree with lineStart/lineEnd added from line_index."""
+    sig = node.get("methodSignature", "")
+    lines = line_index.get(sig, {})
+    annotated_children = [
+        annotate_tree(child, line_index) for child in node.get("children", [])
+    ]
+    return {**node, **lines, "children": annotated_children}
+
+
 def build_tree(
     sig: str,
     cg: dict[str, list[str]],
@@ -80,6 +102,13 @@ def main() -> None:
     parser.add_argument("--method", required=True)
     parser.add_argument("--pattern", required=True)
     parser.add_argument("--callgraph", "-g", type=Path, required=True, metavar="PATH")
+    parser.add_argument(
+        "--dump",
+        type=Path,
+        nargs="+",
+        metavar="FILE",
+        help="Dump JSON files to source line numbers from",
+    )
     args = parser.parse_args()
 
     with open(args.callgraph) as f:
@@ -112,6 +141,14 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+
+    if args.dump:
+        dumps = [json.loads(p.read_text()) for p in args.dump]
+        line_index = build_line_index(dumps)
+        trace = annotate_tree(trace, line_index)
+        ref_index = {
+            sig: annotate_tree(node, line_index) for sig, node in ref_index.items()
+        }
 
     json.dump({"trace": trace, "refIndex": ref_index}, sys.stdout, indent=2)
     print()

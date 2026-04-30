@@ -87,6 +87,32 @@ def collect_java_files(srcs: tuple[Path, ...]) -> list[Path]:
     return [f for src in srcs for f in sorted(src.rglob("*.java"))]
 
 
+def _fqcn(srcs: tuple[Path, ...], java_file: Path) -> str:
+    """Return dot-separated FQCN for a .java file relative to its source root."""
+    for src in srcs:
+        try:
+            return (
+                str(java_file.relative_to(src)).replace("/", ".").removesuffix(".java")
+            )
+        except ValueError:
+            continue
+    return str(java_file)
+
+
+def deduplicate_java_files(
+    srcs: tuple[Path, ...], java_files: list[Path]
+) -> list[Path]:
+    """Remove files with duplicate FQCNs, keeping the first occurrence."""
+    seen: set[str] = set()
+    result = []
+    for f in java_files:
+        name = _fqcn(srcs, f)
+        if name not in seen:
+            seen.add(name)
+            result.append(f)
+    return result
+
+
 def sourcepath(srcs: tuple[Path, ...]) -> str:
     return ":".join(str(s) for s in srcs)
 
@@ -199,7 +225,7 @@ def main() -> None:
         parser.error("--classes and --output are required when using --src")
 
     config = build_config(args)
-    java_files = collect_java_files(config.srcs)
+    java_files = deduplicate_java_files(config.srcs, collect_java_files(config.srcs))
 
     compile_sources(config, java_files)
     index_sources(config, java_files)

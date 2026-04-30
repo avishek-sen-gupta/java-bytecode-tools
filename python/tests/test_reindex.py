@@ -9,6 +9,7 @@ from reindex import (
     compile_sources,
     index_sources,
     lib_dir_jars,
+    deduplicate_java_files,
     ReindexConfig,
 )
 
@@ -176,3 +177,50 @@ def test_config_file_parses_lib_dir(tmp_path: Path) -> None:
         """))
     result = parse_config_file(conf)
     assert result["lib_dir"] == ["/some/lib", "/other/lib"]
+
+
+# --- deduplicate_java_files ---
+
+
+def test_unique_files_are_kept(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    (src / "com/example").mkdir(parents=True)
+    a = src / "com/example/A.java"
+    b = src / "com/example/B.java"
+    a.touch()
+    b.touch()
+
+    result = deduplicate_java_files((src,), [a, b])
+
+    assert result == [a, b]
+
+
+def test_duplicate_fqcn_across_src_roots_keeps_first(tmp_path: Path) -> None:
+    src1 = tmp_path / "mod1/src"
+    src2 = tmp_path / "mod2/src"
+    (src1 / "com/example").mkdir(parents=True)
+    (src2 / "com/example").mkdir(parents=True)
+    f1 = src1 / "com/example/Svc.java"
+    f2 = src2 / "com/example/Svc.java"
+    f1.touch()
+    f2.touch()
+
+    result = deduplicate_java_files((src1, src2), [f1, f2])
+
+    assert result == [f1]
+    assert f2 not in result
+
+
+def test_files_from_different_packages_are_both_kept(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    (src / "com/a").mkdir(parents=True)
+    (src / "com/b").mkdir(parents=True)
+    f1 = src / "com/a/Svc.java"
+    f2 = src / "com/b/Svc.java"
+    f1.touch()
+    f2.touch()
+
+    result = deduplicate_java_files((src,), [f1, f2])
+
+    assert f1 in result
+    assert f2 in result

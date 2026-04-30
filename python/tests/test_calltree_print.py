@@ -109,3 +109,29 @@ class TestRenderTree:
         original_children = list(node["children"])
         render_tree(node)
         assert node["children"] == original_children
+
+    def test_line_range_shown_when_present(self):
+        from calltree_print import render_tree
+
+        node = _node("com.example.Svc", "handle", lineStart=17, lineEnd=23)
+        assert render_tree(node) == ["Svc.handle:17-23"]
+
+    def test_single_line_method_shows_one_number(self):
+        from calltree_print import render_tree
+
+        node = _node("com.example.Svc", "handle", lineStart=33, lineEnd=33)
+        assert render_tree(node) == ["Svc.handle:33"]
+
+    def test_child_line_range_shown(self):
+        from calltree_print import render_tree
+
+        child = _node("com.example.Dao", "save", lineStart=5, lineEnd=7)
+        node = _node("com.example.Svc", "handle", children=[child])
+        lines = render_tree(node)
+        assert lines == ["Svc.handle", "└── Dao.save:5-7"]
+
+    def test_no_line_numbers_unchanged(self):
+        from calltree_print import render_tree
+
+        node = _node("com.example.Svc", "handle")
+        assert render_tree(node) == ["Svc.handle"]

@@ -124,6 +124,20 @@ class TestRunEndToEnd:
         layers = [h["layer"] for h in chain]
         assert layers == ["web", "service", "dao"]
 
+    def test_new_callgraph_format_with_callees_subkey(self, workspace, tmp_path):
+        # callgraph.json in new {callees, callsites} format
+        cg = tmp_path / "callgraph_new.json"
+        cg.write_text(json.dumps({"callees": CALL_GRAPH, "callsites": {}}))
+        result = run(
+            jsps=workspace["jsp_dir"],
+            faces_config=workspace["faces"],
+            call_graph_path=cg,
+            dao_pattern=r"com\.example\.dao",
+        )
+        chain = result["actions"][0]["chains"][0]
+        assert len(chain) == 3
+        assert chain[-1]["class"] == "com.example.dao.JdbcDao"
+
     def test_unresolved_bean_gives_empty_chains(self, workspace, tmp_path):
         # JSP references a bean not in faces-config.xml
         jsp_dir = tmp_path / "j2"

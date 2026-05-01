@@ -43,38 +43,46 @@ Key Python commands:
 ```mermaid
 flowchart TD
     classpath([classpath])
-    jsps([JSP files\n+ faces-config])
+    jsps([JSP files\nfaces-config])
 
-    classpath --> dump[dump]
-    classpath --> trace[trace]
-    classpath --> buildcg[buildcg]
+    subgraph java ["Java CLI — scripts/bytecode.sh"]
+        dump[dump]
+        trace[trace]
+        buildcg[buildcg]
+        xtrace[xtrace]
+    end
 
-    dump --> method_ranges([method ranges])
+    subgraph py_flat ["Flat schema pipeline"]
+        calltree[calltree]
+        frames[frames]
+        jspmap[jspmap]
+        flat([flat nodes · calls · metadata])
+        cp[calltree-print]
+        fp[frames-print]
+        ctd[calltree-to-dot]
+    end
+
+    subgraph py_cfg ["CFG pipeline"]
+        fslice["[ftrace-slice]"]
+        fexpand["[ftrace-expand-refs]"]
+        fsem[ftrace-semantic]
+        fsdot[ftrace-semantic-to-dot]
+        fval[ftrace-validate]
+    end
+
+    classpath --> dump & trace & buildcg & xtrace
+    dump --> mrange([method ranges])
     trace --> intra([intra-method paths])
     buildcg --> cg([call graph JSON])
-
-    cg --> calltree[calltree]
-    cg --> frames[frames]
-    cg --> jspmap[jspmap]
-    cg --> xtrace[xtrace]
-    classpath --> xtrace
-
+    cg --> xtrace & calltree & frames & jspmap
     jsps --> jspmap
 
-    calltree --> flat([flat nodes · calls · metadata])
-    frames   --> flat
-    jspmap   --> flat
-
-    flat --> cp[calltree-print\nASCII]
-    flat --> fp[frames-print\ntext]
-    flat --> ctd[calltree-to-dot\nSVG / DOT]
+    calltree & frames & jspmap --> flat
+    flat --> cp & fp & ctd
 
     xtrace --> env([envelope JSON])
-    env --> fslice["[ftrace-slice]"]
-    fslice --> fexpand["[ftrace-expand-refs]"]
-    fexpand --> fsem[ftrace-semantic]
-    fsem --> fsdot[ftrace-semantic-to-dot\nSVG / DOT]
-    fsem --> fval[ftrace-validate]
+    env --> fslice --> fexpand --> fsem
+    fsem --> fsdot & fval
 ```
 
 ## Setup

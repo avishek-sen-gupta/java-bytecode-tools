@@ -373,6 +373,8 @@ cd python && uv run fw-calltree \
 
 The output is a flat `{nodes, calls, metadata}` graph where each node carries `class`, `method`, `methodSignature`, and (when available) `lineStart`, `lineEnd`, `sourceLineCount`. Each call edge carries `from`, `to`, and optionally `callSiteLine`. Out-of-scope callees appear as `filtered: true` edges; recursive calls appear as `cycle: true` edges and are not expanded further.
 
+The `fw-calltree` artifact now includes `metadata.root` — the entry method signature used as the Qilin pointer analysis entry point.
+
 ### 3. Render The Call Tree
 
 ```bash
@@ -421,6 +423,41 @@ scripts/bytecode.sh --prefix com.example. "$CP" ddg-inter-cfg \
   --input calltree.json \
   --output ddg-artifact.json
 ```
+
+### ddg-inter-cfg artifact schema (v2)
+
+**Breaking change**: The v2 schema separates the calltree and DDG into distinct subgraphs.
+
+```json
+{
+  "metadata": { "root": "<com.example.app.OrderService: java.lang.String processOrder(int)>" },
+  "calltree": {
+    "nodes": [
+      { "id": "<sig>", "className": "OrderService", "methodName": "processOrder" }
+    ],
+    "edges": [
+      { "from": "<caller-sig>", "to": "<callee-sig>" }
+    ]
+  },
+  "ddg": {
+    "nodes": [
+      { "id": "<sig>#s1", "method": "<sig>", "stmtId": "s1",
+        "stmt": "i0 := @parameter0: int", "line": -1, "kind": "IDENTITY" }
+    ],
+    "edges": [
+      { "from": "<sig>#s1", "to": "<sig>#s6", "edge_info": { "kind": "LOCAL" } },
+      { "from": "<sigA>#s5", "to": "<sigB>#s2",
+        "edge_info": { "kind": "HEAP", "field": "<com.example.app.Order: java.lang.String status>" } }
+    ]
+  }
+}
+```
+
+**Edge kinds**: `LOCAL` (def-use on Jimple local), `HEAP` (field read/write via may-alias), `PARAM` (argument → parameter), `RETURN` (callee return → caller).
+
+**Node IDs**: Globally unique compound keys `"<methodSig>#<stmtId>"`. Cross-method and intra-method edges are structurally identical.
+
+Existing artifacts on disk must be regenerated after upgrading.
 
 ### 2. Run The Backward Slice
 

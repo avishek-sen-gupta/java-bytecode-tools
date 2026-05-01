@@ -26,6 +26,14 @@ assert_json_contains "$OUT/bwd-slice.json" \
   "output has edges array"
 
 assert_json_contains "$OUT/bwd-slice.json" \
+  '.seed | has("method") and has("local_var")' \
+  "seed has method and local_var fields"
+
+assert_json_contains "$OUT/bwd-slice.json" \
+  '[.edges[].edge_info.kind] | all(. != null)' \
+  "all edges have edge_info.kind"
+
+assert_json_contains "$OUT/bwd-slice.json" \
   '.seed.method == "'"$METHOD"'"' \
   "seed method is processOrder"
 

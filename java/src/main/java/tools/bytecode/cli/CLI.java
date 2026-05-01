@@ -15,7 +15,7 @@ import picocli.CommandLine.*;
       "            Without it, every class visible on the classpath is analyzed.",
       "  classpath Colon-separated compiled .class directories or jars.",
       "",
-      "Subcommands: buildcg  dump  xtrace  ddg-inter-cfg",
+      "Subcommands: buildcg  dump  xtrace  ddg-inter-cfg  bwd-slice",
       "",
       "JSON-producing commands write to stdout by default; use --output <file> to write a file.",
       "xtrace output can be piped into the Python post-processing tools:",
@@ -27,7 +27,8 @@ import picocli.CommandLine.*;
       DumpCommand.class,
       BuildCgCommand.class,
       XtraceCommand.class,
-      DdgInterCfgCommand.class
+      DdgInterCfgCommand.class,
+      BwdSliceCommand.class
     })
 public class CLI implements Runnable {
 

@@ -9,25 +9,25 @@ class FilterConfigTest {
 
   @Test
   void shouldRecurse_returnsTrueWhenNoFilters() {
-    FilterConfig cfg = new FilterConfig(null, null);
+    FilterConfig cfg = new FilterConfig(List.of(), List.of());
     assertTrue(cfg.shouldRecurse("com.example.Foo"));
   }
 
   @Test
   void shouldRecurse_returnsTrueWhenClassMatchesAllowPrefix() {
-    FilterConfig cfg = new FilterConfig(List.of("com.example"), null);
+    FilterConfig cfg = new FilterConfig(List.of("com.example"), List.of());
     assertTrue(cfg.shouldRecurse("com.example.Foo"));
   }
 
   @Test
   void shouldRecurse_returnsFalseWhenClassDoesNotMatchAllowPrefix() {
-    FilterConfig cfg = new FilterConfig(List.of("com.example"), null);
+    FilterConfig cfg = new FilterConfig(List.of("com.example"), List.of());
     assertFalse(cfg.shouldRecurse("org.other.Bar"));
   }
 
   @Test
   void shouldRecurse_returnsFalseWhenClassMatchesStopPrefix() {
-    FilterConfig cfg = new FilterConfig(null, List.of("com.ext"));
+    FilterConfig cfg = new FilterConfig(List.of(), List.of("com.ext"));
     assertFalse(cfg.shouldRecurse("com.ext.External"));
   }
 
@@ -41,5 +41,11 @@ class FilterConfigTest {
   void shouldRecurse_returnsFalseWhenClassMatchesAllowButAlsoStop() {
     FilterConfig cfg = new FilterConfig(List.of("com.example"), List.of("com.example.bad"));
     assertFalse(cfg.shouldRecurse("com.example.bad.Excluded"));
+  }
+
+  @Test
+  void load_returnsEmptyFilterConfigWhenPathIsNull() throws Exception {
+    FilterConfig cfg = FilterConfig.load(null);
+    assertTrue(cfg.shouldRecurse("com.anything.Foo"));
   }
 }

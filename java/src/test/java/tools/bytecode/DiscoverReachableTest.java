@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 
 class DiscoverReachableTest {
 
-  private static final FilterConfig NO_FILTER = new FilterConfig(null, null);
+  private static final FilterConfig NO_FILTER = new FilterConfig(List.of(), List.of());
 
   @Nested
   class SimpleChainTest {
@@ -97,7 +97,7 @@ class DiscoverReachableTest {
       Map<String, List<String>> callGraph = new LinkedHashMap<>();
       callGraph.put("A", List.of(calleeSig));
       Set<String> known = Set.of("A", calleeSig);
-      FilterConfig filter = new FilterConfig(null, List.of("com.ext"));
+      FilterConfig filter = new FilterConfig(List.of(), List.of("com.ext"));
 
       DiscoveryResult result = ForwardTracer.discoverReachable("A", callGraph, known, filter);
 

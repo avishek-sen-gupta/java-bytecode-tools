@@ -135,7 +135,7 @@ public class ForwardTracer {
       FilterConfig filter) {
     if (pathAncestors.contains(calleeSig)) return Classification.CYCLE;
     if (!knownSignatures.contains(calleeSig)) return Classification.FILTERED;
-    if (filter != null && filter.stop() != null) {
+    if (filter != null && !filter.stop().isEmpty()) {
       String calleeClass = extractClassName(calleeSig);
       if (!filter.shouldRecurse(calleeClass)) return Classification.FILTERED;
     }

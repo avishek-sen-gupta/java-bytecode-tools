@@ -19,8 +19,8 @@ class FrameBuilder {
     List<Stmt> stmts = new ArrayList<>(body.getStmtGraph().getNodes());
     List<Map<String, Object>> details = StmtAnalyzer.buildStmtDetails(stmts);
     List<Map<String, Object>> srcTrace = StmtAnalyzer.deduplicateToSourceLines(details);
-    int minL = stmts.stream().mapToInt(StmtAnalyzer::stmtLine).filter(l -> l > 0).min().orElse(-1);
-    int maxL = stmts.stream().mapToInt(StmtAnalyzer::stmtLine).max().orElse(-1);
+    int minL = StmtAnalyzer.minLine(stmts);
+    int maxL = StmtAnalyzer.maxLine(stmts);
     return new CallFrame(methodClass, method.getName(), sig, minL, maxL, srcTrace, details);
   }
 
@@ -29,8 +29,8 @@ class FrameBuilder {
     String methodClass = method.getDeclaringClassType().getFullyQualifiedName();
     Body body = method.getBody();
     List<Stmt> stmts = new ArrayList<>(body.getStmtGraph().getNodes());
-    int minL = stmts.stream().mapToInt(StmtAnalyzer::stmtLine).filter(l -> l > 0).min().orElse(-1);
-    int maxL = stmts.stream().mapToInt(StmtAnalyzer::stmtLine).max().orElse(-1);
+    int minL = StmtAnalyzer.minLine(stmts);
+    int maxL = StmtAnalyzer.maxLine(stmts);
     List<Map<String, Object>> callTrace =
         stmts.stream()
             .flatMap(

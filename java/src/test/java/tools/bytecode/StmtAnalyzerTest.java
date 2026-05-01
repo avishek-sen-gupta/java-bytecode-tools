@@ -86,6 +86,33 @@ class StmtAnalyzerTest {
   }
 
   @Nested
+  class MinMaxLine {
+    @Test
+    void minLine_returnsSmallestPositiveLine() {
+      int min = StmtAnalyzer.minLine(orderServiceStmts);
+      assertTrue(min > 0);
+      assertTrue(
+          orderServiceStmts.stream()
+              .mapToInt(StmtAnalyzer::stmtLine)
+              .filter(l -> l > 0)
+              .allMatch(l -> l >= min));
+    }
+
+    @Test
+    void maxLine_returnsLargestLine() {
+      int max = StmtAnalyzer.maxLine(orderServiceStmts);
+      assertTrue(
+          orderServiceStmts.stream().mapToInt(StmtAnalyzer::stmtLine).allMatch(l -> l <= max));
+    }
+
+    @Test
+    void minLine_isAtMostMaxLine() {
+      assertTrue(
+          StmtAnalyzer.minLine(orderServiceStmts) <= StmtAnalyzer.maxLine(orderServiceStmts));
+    }
+  }
+
+  @Nested
   class StmtsAtLine {
     @Test
     void returnsStmtsAtGivenLine() {

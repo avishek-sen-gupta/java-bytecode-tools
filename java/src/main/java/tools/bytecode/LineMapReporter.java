@@ -46,8 +46,8 @@ class LineMapReporter {
     Map<Integer, Integer> lineCounts =
         nodes.stream()
             .collect(Collectors.toMap(StmtAnalyzer::stmtLine, s -> 1, Integer::sum, TreeMap::new));
-    int minLine = lineCounts.keySet().stream().filter(l -> l > 0).mapToInt(i -> i).min().orElse(-1);
-    int maxLine = lineCounts.keySet().stream().mapToInt(i -> i).max().orElse(-1);
+    int minLine = StmtAnalyzer.minLine(nodes);
+    int maxLine = StmtAnalyzer.maxLine(nodes);
     Map<String, Object> m = new LinkedHashMap<>();
     m.put("method", method.getName());
     m.put("signature", method.getSignature().toString());

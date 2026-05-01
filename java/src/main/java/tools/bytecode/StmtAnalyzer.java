@@ -28,6 +28,14 @@ final class StmtAnalyzer {
     return pos.getFirstLine();
   }
 
+  static int minLine(Collection<Stmt> stmts) {
+    return stmts.stream().mapToInt(StmtAnalyzer::stmtLine).filter(l -> l > 0).min().orElse(-1);
+  }
+
+  static int maxLine(Collection<Stmt> stmts) {
+    return stmts.stream().mapToInt(StmtAnalyzer::stmtLine).max().orElse(-1);
+  }
+
   static Optional<AbstractInvokeExpr> extractInvoke(Stmt stmt) {
     if (stmt instanceof JInvokeStmt) {
       return ((JInvokeStmt) stmt).getInvokeExpr();

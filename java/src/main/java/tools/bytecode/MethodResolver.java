@@ -71,11 +71,17 @@ class MethodResolver {
 
   /** Resolve a method by its full Soot signature string. Throws if not found. */
   SootMethod resolveBySignature(String methodSignature) {
-    return view.getClasses()
-        .flatMap(clazz -> clazz.getMethods().stream())
+    String className =
+        extractDeclaringClass(methodSignature).orElseThrow(() -> methodNotFound(methodSignature));
+    ClassType type = view.getIdentifierFactory().getClassType(className);
+    Optional<JavaSootClass> clsOpt = view.getClass(type);
+    if (clsOpt.isEmpty()) {
+      throw methodNotFound(methodSignature);
+    }
+    return clsOpt.get().getMethods().stream()
         .filter(method -> method.getSignature().toString().equals(methodSignature))
         .findFirst()
-        .orElseThrow(() -> new RuntimeException("Method not found: " + methodSignature));
+        .orElseThrow(() -> methodNotFound(methodSignature));
   }
 
   /**
@@ -119,5 +125,20 @@ class MethodResolver {
   private boolean containsLine(SootMethod method, int line) {
     return method.getBody().getStmtGraph().getNodes().stream()
         .anyMatch(stmt -> StmtAnalyzer.stmtLine(stmt) == line);
+  }
+
+  private static Optional<String> extractDeclaringClass(String methodSignature) {
+    if (!methodSignature.startsWith("<") || !methodSignature.endsWith(">")) {
+      return Optional.empty();
+    }
+    int colonIndex = methodSignature.indexOf(':');
+    if (colonIndex <= 1) {
+      return Optional.empty();
+    }
+    return Optional.of(methodSignature.substring(1, colonIndex));
+  }
+
+  private static RuntimeException methodNotFound(String methodSignature) {
+    return new RuntimeException("Method not found: " + methodSignature);
   }
 }

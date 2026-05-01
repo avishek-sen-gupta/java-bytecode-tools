@@ -67,6 +67,15 @@ class DdgInterCfgArtifactBuilderTest {
   }
 
   @Test
+  void rejectsEmptyNodes() {
+    IllegalArgumentException ex =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new DdgInterCfgArtifactBuilder(tracer).build(Map.of("nodes", Map.of())));
+    assertTrue(ex.getMessage().contains("nodes"), ex.getMessage());
+  }
+
+  @Test
   void rejectsResolvedMethodWithoutBody() {
     IllegalArgumentException ex =
         assertThrows(

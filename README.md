@@ -21,7 +21,6 @@ Key Java commands:
 
 - `buildcg`: build caller → callee edges for project classes
 - `dump`: list methods in a class with source line ranges
-- `trace`: intraprocedural trace between two lines in one class
 - `xtrace`: forward interprocedural trace from an entry point
 
 Key Python commands:
@@ -48,7 +47,6 @@ flowchart TD
 
     subgraph java ["Java CLI — scripts/bytecode.sh"]
         dump[dump]
-        trace[trace]
         buildcg[buildcg]
         xtrace[xtrace]
     end
@@ -72,9 +70,8 @@ flowchart TD
         fval[ftrace-validate]
     end
 
-    classpath --> dump & trace & buildcg & xtrace
+    classpath --> dump & buildcg & xtrace
     dump --> mrange([method ranges])
-    trace --> intra([intra-method paths])
     buildcg --> cg([call graph JSON])
     cg --> xtrace & calltree & frames & jspmap
     jsps --> jspmap
@@ -310,15 +307,6 @@ uv --directory python run frames \
 
 This finds all call chains from the `--from-class` method down to the `--to-class` method, emitting the same flat `{nodes, calls, metadata}` schema with additional `fromClass` and `fromLine` fields in metadata.
 
-### 5. Intraprocedural Trace Within One Method
-
-```bash
-scripts/bytecode.sh --prefix com.example. "$CP" \
-  trace com.example.app.OrderService 17 23
-```
-
-This command stays within a single method and reports paths between two source lines.
-
 ## Call Tree (Methods Only)
 
 `calltree` walks a call-graph JSON file and emits a flat `{nodes, calls, metadata}` graph of all methods transitively reachable from a named entry point — method nodes and caller→callee edges only, no CFG blocks or source lines. `calltree-to-dot` renders that graph as DOT/SVG; `calltree-print` renders it as an ASCII tree.
@@ -378,7 +366,7 @@ The post-processing tools are designed to compose as Unix filters.
 
 - `calltree`, `calltree-print`, `calltree-to-dot`, `ftrace-slice`, `ftrace-intra-slice`, `ftrace-expand-refs`, `ftrace-semantic`, `ftrace-validate`, `ftrace-semantic-to-dot`, and `frames-print` read stdin if `--input` is omitted
 - Those same tools write stdout if `--output` is omitted
-- Java CLI commands such as `buildcg`, `dump`, `xtrace`, and `trace` write JSON to stdout when `--output` is omitted
+- Java CLI commands such as `buildcg`, `dump`, and `xtrace` write JSON to stdout when `--output` is omitted
 - The Python `frames` command writes JSON to stdout (pipe-friendly)
 
 Examples:
@@ -585,7 +573,7 @@ The end-to-end suite:
 
 - compiles the fixture classes
 - builds a shared call graph
-- exercises `buildcg`, `dump`, `trace`, `xtrace`, and `frames`
+- exercises `buildcg`, `dump`, `xtrace`, and `frames`
 - checks the slice, expand, semantic, and render pipeline (both file-based and fully piped via stdin/stdout)
 - validates outputs with `jq`
 
@@ -614,9 +602,6 @@ uv --directory python run frames \
   --call-graph callgraph.json \
   --to-class com.example.app.JdbcOrderRepository \
   --to-line 7
-
-# Intraprocedural trace
-scripts/bytecode.sh --prefix com.example. "$CP" trace com.example.app.OrderService 17 23
 
 # Call tree (methods only, no CFG)
 uv --directory python run calltree \

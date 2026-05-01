@@ -15,19 +15,14 @@ import picocli.CommandLine.*;
       "            Without it, every class visible on the classpath is analyzed.",
       "  classpath Colon-separated compiled .class directories or jars.",
       "",
-      "Subcommands: buildcg  dump  trace  xtrace",
+      "Subcommands: buildcg  dump  xtrace",
       "",
       "JSON-producing commands write to stdout by default; use --output <file> to write a file.",
       "xtrace output can be piped into the Python post-processing tools:",
-      "  ftrace-slice | ftrace-expand-refs | ftrace-semantic | ftrace-to-dot",
+      "  ftrace-slice | ftrace-intra-slice | ftrace-expand-refs | ftrace-semantic | ftrace-to-dot",
       "  frames-print"
     },
-    subcommands = {
-      DumpCommand.class,
-      TraceCommand.class,
-      BuildCgCommand.class,
-      XtraceCommand.class
-    })
+    subcommands = {DumpCommand.class, BuildCgCommand.class, XtraceCommand.class})
 public class CLI implements Runnable {
 
   @Option(

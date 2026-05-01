@@ -203,7 +203,6 @@ public class BwdSliceBuilder {
         "edge_info", Map.of("kind", "param"));
   }
 
-  @SuppressWarnings("unchecked")
   private Map<String, List<String>> buildCallerIndex(List<Map<String, Object>> calls) {
     Map<String, List<String>> index = new HashMap<>();
     for (Map<String, Object> call : calls) {

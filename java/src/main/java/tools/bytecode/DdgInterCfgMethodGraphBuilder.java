@@ -10,12 +10,12 @@ import sootup.codepropertygraph.propertygraph.PropertyGraph;
 import sootup.codepropertygraph.propertygraph.edges.DdgEdge;
 import sootup.codepropertygraph.propertygraph.edges.PropertyGraphEdge;
 import sootup.codepropertygraph.propertygraph.nodes.StmtGraphNode;
+import sootup.core.jimple.common.ref.JParameterRef;
 import sootup.core.jimple.common.ref.JThisRef;
 import sootup.core.jimple.common.stmt.JAssignStmt;
 import sootup.core.jimple.common.stmt.JGotoStmt;
 import sootup.core.jimple.common.stmt.JIdentityStmt;
 import sootup.core.jimple.common.stmt.JIfStmt;
-import sootup.core.jimple.common.stmt.JInvokeStmt;
 import sootup.core.jimple.common.stmt.JReturnStmt;
 import sootup.core.jimple.common.stmt.JReturnVoidStmt;
 import sootup.core.jimple.common.stmt.JThrowStmt;
@@ -39,7 +39,7 @@ public class DdgInterCfgMethodGraphBuilder {
       String stmtId = "s" + i;
       stmtIds.put(stmt, stmtId);
       nodes.add(toNode(stmtId, stmt));
-      if (stmt instanceof JIdentityStmt) {
+      if (isEntryIdentity(stmt)) {
         entryStmtIds.add(stmtId);
       }
       if (stmt instanceof JReturnStmt || stmt instanceof JReturnVoidStmt) {
@@ -110,32 +110,27 @@ public class DdgInterCfgMethodGraphBuilder {
   }
 
   private static boolean isCallsite(Stmt stmt) {
-    if (stmt instanceof JInvokeStmt) {
-      return true;
-    }
-    return stmt instanceof JAssignStmt assign && assign.containsInvokeExpr();
+    return StmtAnalyzer.extractInvoke(stmt).isPresent();
   }
 
   private static String extractInvokeTarget(Stmt stmt) {
-    if (stmt instanceof JInvokeStmt invokeStmt) {
-      return invokeStmt
-          .getInvokeExpr()
-          .map(invoke -> invoke.getMethodSignature().toString())
-          .orElse("");
+    return StmtAnalyzer.extractInvoke(stmt)
+        .map(invoke -> invoke.getMethodSignature().toString())
+        .orElse("");
+  }
+
+  private static boolean isEntryIdentity(Stmt stmt) {
+    if (!(stmt instanceof JIdentityStmt identity)) {
+      return false;
     }
-    if (stmt instanceof JAssignStmt assign && assign.containsInvokeExpr()) {
-      return assign
-          .getInvokeExpr()
-          .map(invoke -> invoke.getMethodSignature().toString())
-          .orElse("");
-    }
-    return "";
+    return identity.getRightOp() instanceof JThisRef
+        || identity.getRightOp() instanceof JParameterRef;
   }
 
   private static String stmtKind(Stmt stmt) {
     if (stmt instanceof JIdentityStmt) return "identity";
     if (stmt instanceof JAssignStmt assign && assign.containsInvokeExpr()) return "assign_invoke";
-    if (stmt instanceof JInvokeStmt) return "invoke";
+    if (isCallsite(stmt)) return "invoke";
     if (stmt instanceof JAssignStmt) return "assign";
     if (stmt instanceof JIfStmt) return "if";
     if (stmt instanceof JReturnStmt) return "return";

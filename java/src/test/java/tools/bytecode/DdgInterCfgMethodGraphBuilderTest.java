@@ -14,18 +14,24 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import sootup.core.jimple.common.ref.JParameterRef;
+import sootup.core.jimple.common.ref.JThisRef;
+import sootup.core.jimple.common.stmt.JIdentityStmt;
 import sootup.core.model.SootMethod;
 
 class DdgInterCfgMethodGraphBuilderTest {
 
   private static BytecodeTracer tracer;
   private static SootMethod processOrder;
+  private static SootMethod handleException;
 
   @BeforeAll
   static void setUp() {
     String classpath = Paths.get("../test-fixtures/classes").toAbsolutePath().toString();
     tracer = new BytecodeTracer(classpath, "com.example.app", null);
     processOrder = tracer.resolveMethodByName("com.example.app.OrderService", "processOrder");
+    handleException =
+        tracer.resolveMethodByName("com.example.app.ExceptionService", "handleException");
   }
 
   @Test
@@ -91,11 +97,8 @@ class DdgInterCfgMethodGraphBuilderTest {
     assertFalse(entryStmtIds.isEmpty(), "Expected entry statements");
     assertEquals(
         entryStmtIds,
-        nodes.stream()
-            .filter(node -> "identity".equals(node.get("kind")))
-            .map(node -> (String) node.get("id"))
-            .collect(Collectors.toList()),
-        "entry_stmt_ids should match emitted identity nodes");
+        expectedEntryStmtIds(processOrder, nodes),
+        "entry_stmt_ids should match this/parameter identity nodes");
 
     assertFalse(returnStmtIds.isEmpty(), "Expected return statements");
     assertEquals(
@@ -127,7 +130,46 @@ class DdgInterCfgMethodGraphBuilderTest {
         });
   }
 
+  @Test
+  void excludesCaughtExceptionIdentityStatementsFromEntryStmtIds() {
+    Map<String, Object> payload = new DdgInterCfgMethodGraphBuilder().build(handleException);
+
+    @SuppressWarnings("unchecked")
+    List<Map<String, Object>> nodes = (List<Map<String, Object>>) payload.get("nodes");
+    @SuppressWarnings("unchecked")
+    List<String> entryStmtIds = (List<String>) payload.get("entry_stmt_ids");
+
+    assertEquals(
+        expectedEntryStmtIds(handleException, nodes),
+        entryStmtIds,
+        "entry_stmt_ids should exclude caught-exception identity statements");
+    assertTrue(
+        nodes.stream()
+            .filter(node -> "identity".equals(node.get("kind")))
+            .map(node -> (String) node.get("id"))
+            .anyMatch(stmtId -> !entryStmtIds.contains(stmtId)),
+        "Expected at least one non-entry identity node from a caught exception");
+  }
+
   private static List<String> expectedStmtIds(int size) {
     return IntStream.range(0, size).mapToObj(i -> "s" + i).collect(Collectors.toList());
+  }
+
+  private static List<String> expectedEntryStmtIds(
+      SootMethod method, List<Map<String, Object>> emittedNodes) {
+    List<String> stmtIds = expectedStmtIds(emittedNodes.size());
+    List<sootup.core.jimple.common.stmt.Stmt> stmts = method.getBody().getStmtGraph().getStmts();
+    return IntStream.range(0, stmts.size())
+        .filter(i -> isEntryIdentity(stmts.get(i)))
+        .mapToObj(stmtIds::get)
+        .collect(Collectors.toList());
+  }
+
+  private static boolean isEntryIdentity(sootup.core.jimple.common.stmt.Stmt stmt) {
+    if (!(stmt instanceof JIdentityStmt identity)) {
+      return false;
+    }
+    return identity.getRightOp() instanceof JThisRef
+        || identity.getRightOp() instanceof JParameterRef;
   }
 }

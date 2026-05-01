@@ -8,7 +8,7 @@ Interprocedural call tracing and control-flow graph construction from Java sourc
 The repository combines:
 
 - A Java CLI built on SootUp for call-graph construction and interprocedural tracing
-- A small Python toolchain for slicing, ref expansion, validation, semantic graph building, and DOT/SVG rendering
+- A small Python toolchain for method-level call-graph views, trace slicing, ref expansion, semantic graph building, validation, and DOT/SVG rendering
 - A fixture project plus end-to-end tests that exercise the full pipeline
 
 **Forward trace of `OrderService.processOrder`** — branches, calls to repository and internal methods, resolved down to source lines:
@@ -40,50 +40,76 @@ Key Python commands:
 
 ## Tool Combinations
 
+There are three main output families in this repo:
+
+- `buildcg` produces the shared call-graph JSON that feeds method-level tools
+- `xtrace` produces a CFG-rich trace envelope that feeds the trace/semantic pipeline
+- `fw-calltree`, `rev-calltree`, and `jspmap` all converge on the same flat `{nodes, calls, metadata}` schema for printing and rendering
+
 ```mermaid
-flowchart TD
-    classpath([classpath])
-    jsps([JSP files\nfaces-config])
+flowchart LR
+    classDef artifact fill:#f6f8fa,stroke:#6b7280,color:#111827
+    classDef entry fill:#e0f2fe,stroke:#0369a1,color:#0f172a
+    classDef view fill:#ecfccb,stroke:#4d7c0f,color:#1f2937
 
-    subgraph java ["Java CLI — scripts/bytecode.sh"]
-        dump[dump]
-        buildcg[buildcg]
-        xtrace[xtrace]
+    cp[classpath]:::artifact
+    jsp[JSP files<br/>faces-config]:::artifact
+
+    subgraph java["Java entry points"]
+        dump[dump]:::entry
+        buildcg[buildcg]:::entry
+        xtrace[xtrace]:::entry
     end
 
-    subgraph py_flat ["Flat schema pipeline"]
-        calltree[fw-calltree]
-        frames[rev-calltree]
-        jspmap[jspmap]
-        flat([flat nodes · calls · metadata])
-        cp[calltree-print]
-        fp[frames-print]
-        ctd[calltree-to-dot]
-    end
+    ranges[method ranges JSON]:::artifact
+    cg[call graph JSON]:::artifact
+    trace[trace envelope JSON<br/>{trace, refIndex}]:::artifact
+    flat[flat graph JSON<br/>{nodes, calls, metadata}]:::artifact
+    semantic[semantic graph JSON]:::artifact
 
-    subgraph py_cfg ["CFG pipeline"]
-        fslice["[ftrace-inter-slice]"]
-        fisl["[ftrace-intra-slice]"]
-        fexpand["[ftrace-expand-refs]"]
-        fsem[ftrace-semantic]
-        fsdot[ftrace-semantic-to-dot]
-        fval[ftrace-validate]
-    end
+    fw[fw-calltree]:::entry
+    rev[rev-calltree]:::entry
+    jspmap[jspmap]:::entry
 
-    classpath --> dump & buildcg & xtrace
-    dump --> mrange([method ranges])
-    buildcg --> cg([call graph JSON])
-    cg --> xtrace & fw-calltree & rev-calltree & jspmap
-    jsps --> jspmap
+    inter[ftrace-inter-slice]:::entry
+    intra[ftrace-intra-slice]:::entry
+    expand[ftrace-expand-refs]:::entry
+    sem[ftrace-semantic]:::entry
 
-    fw-calltree & rev-calltree & jspmap --> flat
-    flat --> cp & fp & ctd
+    cpview[calltree-print]:::view
+    fpview[frames-print]:::view
+    dotview[calltree-to-dot]:::view
+    semdot[ftrace-semantic-to-dot]:::view
+    validate[ftrace-validate]:::view
 
-    xtrace --> env([envelope JSON])
-    env --> fslice & fisl
-    fslice & fisl --> fexpand
-    fexpand --> fsem
-    fsem --> fsdot & fval
+    cp --> dump
+    cp --> buildcg
+    cp --> xtrace
+
+    dump --> ranges
+    buildcg --> cg
+    cg --> xtrace
+    cg --> fw
+    cg --> rev
+    cg --> jspmap
+    jsp --> jspmap
+
+    xtrace --> trace
+    trace --> inter
+    trace --> intra
+    inter --> expand
+    intra --> expand
+    expand --> sem
+    sem --> semantic
+    semantic --> semdot
+    semantic --> validate
+
+    fw --> flat
+    rev --> flat
+    jspmap --> flat
+    flat --> cpview
+    flat --> fpview
+    flat --> dotview
 ```
 
 ## Setup

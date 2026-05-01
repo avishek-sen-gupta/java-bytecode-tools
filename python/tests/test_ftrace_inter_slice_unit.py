@@ -1,8 +1,8 @@
-"""Unit tests for ftrace_slice pure functions."""
+"""Unit tests for ftrace_inter_slice pure functions."""
 
 import copy
 
-from ftrace_slice import (
+from ftrace_inter_slice import (
     collect_ref_signatures,
     find_subtree,
     index_full_tree,

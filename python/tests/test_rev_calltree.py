@@ -28,31 +28,31 @@ CALLSITES = {
 
 class TestFindTargetSig:
     def test_finds_sig_by_class_and_line_in_range(self):
-        from frames import find_target_sig
+        from rev_calltree import find_target_sig
 
         sig = find_target_sig("com.example.Dao", 55, METHOD_LINES)
         assert sig == SIG_DAO
 
     def test_returns_empty_when_class_not_found(self):
-        from frames import find_target_sig
+        from rev_calltree import find_target_sig
 
         sig = find_target_sig("com.example.Missing", 55, METHOD_LINES)
         assert sig == ""
 
     def test_returns_empty_when_line_out_of_range(self):
-        from frames import find_target_sig
+        from rev_calltree import find_target_sig
 
         sig = find_target_sig("com.example.Dao", 99, METHOD_LINES)
         assert sig == ""
 
     def test_boundary_line_start_inclusive(self):
-        from frames import find_target_sig
+        from rev_calltree import find_target_sig
 
         sig = find_target_sig("com.example.Dao", 50, METHOD_LINES)
         assert sig == SIG_DAO
 
     def test_boundary_line_end_inclusive(self):
-        from frames import find_target_sig
+        from rev_calltree import find_target_sig
 
         sig = find_target_sig("com.example.Dao", 70, METHOD_LINES)
         assert sig == SIG_DAO
@@ -60,7 +60,7 @@ class TestFindTargetSig:
 
 class TestBuildReverseMap:
     def test_inverts_callees(self):
-        from frames import build_reverse_map
+        from rev_calltree import build_reverse_map
 
         callers = build_reverse_map(CALLEES)
         assert SIG_MAIN in callers.get(SIG_SVC, [])
@@ -68,13 +68,13 @@ class TestBuildReverseMap:
         assert SIG_SVC in callers.get(SIG_DAO, [])
 
     def test_root_has_no_entry(self):
-        from frames import build_reverse_map
+        from rev_calltree import build_reverse_map
 
         callers = build_reverse_map(CALLEES)
         assert SIG_MAIN not in callers
 
     def test_does_not_mutate_input(self):
-        from frames import build_reverse_map
+        from rev_calltree import build_reverse_map
 
         original = {SIG_MAIN: [SIG_SVC]}
         build_reverse_map(original)
@@ -83,7 +83,7 @@ class TestBuildReverseMap:
 
 class TestBfsBackward:
     def test_finds_reachable_callers(self):
-        from frames import bfs_backward
+        from rev_calltree import bfs_backward
 
         callers_map = {SIG_SVC: [SIG_MAIN], SIG_DAO: [SIG_SVC]}
         reachable = bfs_backward(SIG_DAO, callers_map, max_depth=10)
@@ -91,7 +91,7 @@ class TestBfsBackward:
         assert SIG_MAIN in reachable
 
     def test_stops_at_max_depth(self):
-        from frames import bfs_backward
+        from rev_calltree import bfs_backward
 
         # main→svc→dao, depth=1 from dao → only svc reachable
         callers_map = {SIG_SVC: [SIG_MAIN], SIG_DAO: [SIG_SVC]}
@@ -100,7 +100,7 @@ class TestBfsBackward:
         assert SIG_MAIN not in reachable
 
     def test_stops_at_from_sig(self):
-        from frames import bfs_backward
+        from rev_calltree import bfs_backward
 
         callers_map = {SIG_SVC: [SIG_MAIN], SIG_DAO: [SIG_SVC]}
         reachable = bfs_backward(SIG_DAO, callers_map, max_depth=10, stop_at=SIG_SVC)
@@ -109,7 +109,7 @@ class TestBfsBackward:
         assert SIG_MAIN not in reachable
 
     def test_target_not_in_reachable(self):
-        from frames import bfs_backward
+        from rev_calltree import bfs_backward
 
         callers_map = {SIG_DAO: [SIG_SVC]}
         reachable = bfs_backward(SIG_DAO, callers_map, max_depth=10)
@@ -118,7 +118,7 @@ class TestBfsBackward:
 
 class TestEnumerateChains:
     def test_single_chain(self):
-        from frames import enumerate_chains
+        from rev_calltree import enumerate_chains
 
         # main→svc→dao; target=dao
         reachable = {SIG_MAIN, SIG_SVC}
@@ -127,7 +127,7 @@ class TestEnumerateChains:
         assert chains[0] == [SIG_MAIN, SIG_SVC, SIG_DAO]
 
     def test_multiple_entry_points(self):
-        from frames import enumerate_chains
+        from rev_calltree import enumerate_chains
 
         # Two roots: main and util can both reach dao (add util→dao path)
         callees = {
@@ -140,7 +140,7 @@ class TestEnumerateChains:
         assert len(chains) == 2
 
     def test_respects_max_chains(self):
-        from frames import enumerate_chains
+        from rev_calltree import enumerate_chains
 
         callees = {
             SIG_MAIN: [SIG_SVC],
@@ -154,7 +154,7 @@ class TestEnumerateChains:
 
 class TestBuildFramesGraph:
     def test_nodes_include_target_and_callers(self):
-        from frames import build_frames_graph
+        from rev_calltree import build_frames_graph
 
         nodes, calls = build_frames_graph(
             [[SIG_MAIN, SIG_SVC, SIG_DAO]], CALLSITES, METHOD_LINES
@@ -164,7 +164,7 @@ class TestBuildFramesGraph:
         assert SIG_DAO in nodes
 
     def test_calls_include_edges_with_callsite_lines(self):
-        from frames import build_frames_graph
+        from rev_calltree import build_frames_graph
 
         nodes, calls = build_frames_graph(
             [[SIG_MAIN, SIG_SVC, SIG_DAO]], CALLSITES, METHOD_LINES
@@ -177,7 +177,7 @@ class TestBuildFramesGraph:
         assert dao_edge["callSiteLine"] == 35
 
     def test_node_has_line_metadata(self):
-        from frames import build_frames_graph
+        from rev_calltree import build_frames_graph
 
         nodes, calls = build_frames_graph(
             [[SIG_MAIN, SIG_SVC, SIG_DAO]], CALLSITES, METHOD_LINES
@@ -187,7 +187,7 @@ class TestBuildFramesGraph:
         assert nodes[SIG_DAO]["sourceLineCount"] == 21
 
     def test_no_duplicate_nodes(self):
-        from frames import build_frames_graph
+        from rev_calltree import build_frames_graph
 
         # Two chains sharing SIG_SVC
         chains = [[SIG_MAIN, SIG_SVC, SIG_DAO], [SIG_UTIL, SIG_SVC, SIG_DAO]]
@@ -195,7 +195,7 @@ class TestBuildFramesGraph:
         assert list(nodes.keys()).count(SIG_SVC) == 1
 
     def test_node_has_node_type_java_method(self):
-        from frames import build_frames_graph
+        from rev_calltree import build_frames_graph
 
         nodes, calls = build_frames_graph(
             [[SIG_MAIN, SIG_SVC, SIG_DAO]], CALLSITES, METHOD_LINES
@@ -204,7 +204,7 @@ class TestBuildFramesGraph:
         assert nodes[SIG_DAO]["node_type"] == "java_method"
 
     def test_edge_has_edge_info(self):
-        from frames import build_frames_graph
+        from rev_calltree import build_frames_graph
 
         nodes, calls = build_frames_graph(
             [[SIG_MAIN, SIG_SVC, SIG_DAO]], CALLSITES, METHOD_LINES

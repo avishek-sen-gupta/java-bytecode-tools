@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import cast
 
-from ftrace_slice import collect_ref_signatures
+from ftrace_inter_slice import collect_ref_signatures
 from ftrace_types import MethodCFG, RawBlock, RawBlockEdge, RawTrap, SourceTraceEntry
 
 

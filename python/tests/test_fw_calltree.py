@@ -25,7 +25,7 @@ def _pat(pattern: str) -> re.Pattern:
 
 class TestBuildGraph:
     def test_single_root_no_children_emits_node(self):
-        from calltree import build_graph
+        from fw_calltree import build_graph
 
         nodes, calls = {}, []
         build_graph(
@@ -48,7 +48,7 @@ class TestBuildGraph:
         assert nodes[SIG_A]["sourceLineCount"] == 11
 
     def test_normal_call_edge_emitted(self):
-        from calltree import build_graph
+        from fw_calltree import build_graph
 
         nodes, calls = {}, []
         build_graph(
@@ -66,7 +66,7 @@ class TestBuildGraph:
         assert any(c["from"] == SIG_A and c["to"] == SIG_B for c in calls)
 
     def test_callsite_line_on_edge(self):
-        from calltree import build_graph
+        from fw_calltree import build_graph
 
         nodes, calls = {}, []
         build_graph(
@@ -85,7 +85,7 @@ class TestBuildGraph:
         assert edge["callSiteLine"] == 15
 
     def test_cycle_edge_flagged(self):
-        from calltree import build_graph
+        from fw_calltree import build_graph
 
         # A → B → A (cycle)
         nodes, calls = {}, []
@@ -105,7 +105,7 @@ class TestBuildGraph:
         assert any(c["to"] == SIG_A for c in cycle_edges)
 
     def test_out_of_scope_callee_emits_filtered_edge(self):
-        from calltree import build_graph
+        from fw_calltree import build_graph
 
         # SIG_D is in "other.pkg", not matching "com.example"
         SIG_OTHER = "<other.pkg.X: void run()>"
@@ -128,7 +128,7 @@ class TestBuildGraph:
         assert SIG_OTHER not in nodes
 
     def test_deduplicated_nodes_via_visited(self):
-        from calltree import build_graph
+        from fw_calltree import build_graph
 
         # A → B, A → C, B → C (C reached twice)
         nodes, calls = {}, []
@@ -147,7 +147,7 @@ class TestBuildGraph:
         assert list(nodes.keys()).count(SIG_C) == 1
 
     def test_no_linestart_when_method_lines_missing(self):
-        from calltree import build_graph
+        from fw_calltree import build_graph
 
         nodes, calls = {}, []
         build_graph(
@@ -165,7 +165,7 @@ class TestBuildGraph:
         assert "lineStart" not in nodes[SIG_A]
 
     def test_does_not_mutate_inputs(self):
-        from calltree import build_graph
+        from fw_calltree import build_graph
 
         cg = _cg([(SIG_A, [SIG_B]), (SIG_B, [])])
         callsites_in = {SIG_A: {SIG_B: 15}}
@@ -186,7 +186,7 @@ class TestBuildGraph:
         assert callsites_in == orig_callsites
 
     def test_node_has_node_type_java_method(self):
-        from calltree import build_graph
+        from fw_calltree import build_graph
 
         nodes, calls = {}, []
         build_graph(
@@ -204,7 +204,7 @@ class TestBuildGraph:
         assert nodes[SIG_A]["node_type"] == "java_method"
 
     def test_normal_edge_has_edge_info(self):
-        from calltree import build_graph
+        from fw_calltree import build_graph
 
         nodes, calls = {}, []
         build_graph(
@@ -223,7 +223,7 @@ class TestBuildGraph:
         assert edge["edge_info"] == {}
 
     def test_cycle_edge_has_edge_info(self):
-        from calltree import build_graph
+        from fw_calltree import build_graph
 
         nodes, calls = {}, []
         build_graph(
@@ -242,7 +242,7 @@ class TestBuildGraph:
         assert cycle_edge["edge_info"] == {}
 
     def test_filtered_edge_has_edge_info(self):
-        from calltree import build_graph
+        from fw_calltree import build_graph
 
         SIG_OTHER = "<other.pkg.X: void run()>"
         nodes, calls = {}, []

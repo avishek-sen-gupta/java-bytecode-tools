@@ -25,12 +25,12 @@ Key Java commands:
 
 Key Python commands:
 
-- `calltree`: walk call-graph JSON and emit a flat `{nodes, calls, metadata}` call graph reachable from a named method (methods only, no CFG)
-- `calltree-print`: render `calltree` output as an ASCII call tree
-- `calltree-to-dot`: render `calltree` output as a DOT/SVG call-tree diagram
-- `frames`: backward interprocedural trace to a target method; emits flat `{nodes, calls, metadata}` graph
+- `fw-calltree`: walk call-graph JSON and emit a flat `{nodes, calls, metadata}` call graph reachable from a named method (methods only, no CFG)
+- `calltree-print`: render `fw-calltree` output as an ASCII call tree
+- `calltree-to-dot`: render `fw-calltree` output as a DOT/SVG call-tree diagram
+- `rev-calltree`: backward interprocedural trace to a target method; emits flat `{nodes, calls, metadata}` graph
 - `frames-print`: pretty-print backward trace chains
-- `ftrace-slice`: extract a subtree or path-constrained slice from `xtrace` output
+- `ftrace-inter-slice`: extract a subtree or path-constrained slice from `xtrace` output
 - `ftrace-intra-slice`: slice a single method's CFG to the blocks on the path between two source lines
 - `ftrace-expand-refs`: replace `ref` leaves with full method bodies
 - `ftrace-semantic`: normalize raw `xtrace` JSON into a semantic graph (CFG-level)
@@ -52,8 +52,8 @@ flowchart TD
     end
 
     subgraph py_flat ["Flat schema pipeline"]
-        calltree[calltree]
-        frames[frames]
+        calltree[fw-calltree]
+        frames[rev-calltree]
         jspmap[jspmap]
         flat([flat nodes · calls · metadata])
         cp[calltree-print]
@@ -62,7 +62,7 @@ flowchart TD
     end
 
     subgraph py_cfg ["CFG pipeline"]
-        fslice["[ftrace-slice]"]
+        fslice["[ftrace-inter-slice]"]
         fisl["[ftrace-intra-slice]"]
         fexpand["[ftrace-expand-refs]"]
         fsem[ftrace-semantic]
@@ -73,10 +73,10 @@ flowchart TD
     classpath --> dump & buildcg & xtrace
     dump --> mrange([method ranges])
     buildcg --> cg([call graph JSON])
-    cg --> xtrace & calltree & frames & jspmap
+    cg --> xtrace & fw-calltree & rev-calltree & jspmap
     jsps --> jspmap
 
-    calltree & frames & jspmap --> flat
+    fw-calltree & rev-calltree & jspmap --> flat
     flat --> cp & fp & ctd
 
     xtrace --> env([envelope JSON])
@@ -191,7 +191,7 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
   dump com.example.app.OrderService --output order-service.json
 ```
 
-The output includes each method's `lineStart` and `lineEnd`. Those line numbers are how `xtrace` and `frames` identify entry and target methods.
+The output includes each method's `lineStart` and `lineEnd`. Those line numbers are how `xtrace` and `rev-calltree` identify entry and target methods.
 
 ### 3. Forward Trace From An Entry Point
 
@@ -251,17 +251,17 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
   buildcg --output callgraph.json
 ```
 
-Then use the Python `frames` command to find all call chains that reach a target method:
+Then use the Python `rev-calltree` command to find all call chains that reach a target method:
 
 ```bash
-uv --directory python run frames \
+uv --directory python run rev-calltree \
   --call-graph callgraph.json \
   --to-class com.example.app.JdbcOrderRepository \
   --to-line 7 \
   > backward.json
 ```
 
-`frames` performs a backward BFS over the call graph and emits a flat `{nodes, calls, metadata}` graph:
+`rev-calltree` performs a backward BFS over the call graph and emits a flat `{nodes, calls, metadata}` graph:
 
 ```json
 {
@@ -283,7 +283,7 @@ uv --directory python run frames \
     }
   ],
   "metadata": {
-    "tool": "frames",
+    "tool": "rev-calltree",
     "toClass": "com.example.app.JdbcOrderRepository",
     "toLine": 7
   }
@@ -299,7 +299,7 @@ uv --directory python run frames-print < backward.json
 You can also constrain the backward search to a known entry point:
 
 ```bash
-uv --directory python run frames \
+uv --directory python run rev-calltree \
   --call-graph callgraph.json \
   --from-class com.example.app.OrderController \
   --from-line 15 \
@@ -311,7 +311,7 @@ This finds all call chains from the `--from-class` method down to the `--to-clas
 
 ## Call Tree (Methods Only)
 
-`calltree` walks a call-graph JSON file and emits a flat `{nodes, calls, metadata}` graph of all methods transitively reachable from a named entry point — method nodes and caller→callee edges only, no CFG blocks or source lines. `calltree-to-dot` renders that graph as DOT/SVG; `calltree-print` renders it as an ASCII tree.
+`fw-calltree` walks a call-graph JSON file and emits a flat `{nodes, calls, metadata}` graph of all methods transitively reachable from a named entry point — method nodes and caller→callee edges only, no CFG blocks or source lines. `calltree-to-dot` renders that graph as DOT/SVG; `calltree-print` renders it as an ASCII tree.
 
 This is the right tool when you want to answer "what does this method transitively call?" as a clean method-level diagram.
 
@@ -325,7 +325,7 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
 ### 2. Emit The Call Tree
 
 ```bash
-cd python && uv run calltree \
+cd python && uv run fw-calltree \
   --callgraph ../callgraph.json \
   --class com.example.app.OrderService \
   --method processOrder \
@@ -348,7 +348,7 @@ cd python && uv run calltree-to-dot --input calltree.json --svg -o calltree.svg
 cd python && uv run calltree-to-dot --input calltree.json > calltree.dot
 
 # Piped end-to-end
-cd python && uv run calltree \
+cd python && uv run fw-calltree \
   --callgraph ../callgraph.json \
   --class com.example.app.OrderService \
   --method processOrder \
@@ -356,7 +356,7 @@ cd python && uv run calltree \
   | uv run calltree-to-dot --svg -o calltree.svg
 ```
 
-> **Note:** Do not pipe `calltree` output through `ftrace-semantic`. That pipeline is for CFG-level (`xtrace`) output; `calltree` nodes have no `blocks` or `sourceTrace`, so `ftrace-semantic` produces empty graphs.
+> **Note:** Do not pipe `fw-calltree` output through `ftrace-semantic`. That pipeline is for CFG-level (`xtrace`) output; `fw-calltree` nodes have no `blocks` or `sourceTrace`, so `ftrace-semantic` produces empty graphs.
 
 ## Post-Processing Pipeline
 
@@ -366,10 +366,10 @@ The Python tools operate on `xtrace` output or on derivatives of that output.
 
 The post-processing tools are designed to compose as Unix filters.
 
-- `calltree`, `calltree-print`, `calltree-to-dot`, `ftrace-slice`, `ftrace-intra-slice`, `ftrace-expand-refs`, `ftrace-semantic`, `ftrace-validate`, `ftrace-semantic-to-dot`, and `frames-print` read stdin if `--input` is omitted
+- `fw-calltree`, `calltree-print`, `calltree-to-dot`, `ftrace-inter-slice`, `ftrace-intra-slice`, `ftrace-expand-refs`, `ftrace-semantic`, `ftrace-validate`, `ftrace-semantic-to-dot`, and `frames-print` read stdin if `--input` is omitted
 - Those same tools write stdout if `--output` is omitted
 - Java CLI commands such as `buildcg`, `dump`, and `xtrace` write JSON to stdout when `--output` is omitted
-- The Python `frames` command writes JSON to stdout (pipe-friendly)
+- The Python `rev-calltree` command writes JSON to stdout (pipe-friendly)
 
 Examples:
 
@@ -381,7 +381,7 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
 ```
 
 ```bash
-uv --directory python run frames \
+uv --directory python run rev-calltree \
   --call-graph callgraph.json \
   --to-class com.example.app.JdbcOrderRepository \
   --to-line 7 \
@@ -392,7 +392,7 @@ uv --directory python run frames \
 scripts/bytecode.sh --prefix com.example. "$CP" \
   xtrace --call-graph callgraph.json \
   --from com.example.app.OrderService --from-line 17 \
-  | uv --directory python run ftrace-slice --to com.example.app.JdbcOrderRepository \
+  | uv --directory python run ftrace-inter-slice --to com.example.app.JdbcOrderRepository \
   | uv --directory python run ftrace-expand-refs \
   | uv --directory python run ftrace-semantic \
   | uv --directory python run ftrace-semantic-to-dot \
@@ -498,7 +498,7 @@ Dead branches — blocks that cannot reach `--to-line` — are pruned from `bloc
 uv --directory python run ftrace-expand-refs --input slice.json --output expanded.json
 ```
 
-This replaces `ref: true` leaves with full method bodies from `refIndex` while preserving `callSiteLine` metadata and avoiding cyclic expansion. Both sliced traces (from `ftrace-slice`) and raw envelopes (from `xtrace`) are accepted — so you can expand the whole trace without slicing first:
+This replaces `ref: true` leaves with full method bodies from `refIndex` while preserving `callSiteLine` metadata and avoiding cyclic expansion. Both sliced traces (from `ftrace-inter-slice`) and raw envelopes (from `xtrace`) are accepted — so you can expand the whole trace without slicing first:
 
 ```bash
 uv --directory python run ftrace-expand-refs --input forward.json --output expanded.json
@@ -575,7 +575,7 @@ The end-to-end suite:
 
 - compiles the fixture classes
 - builds a shared call graph
-- exercises `buildcg`, `dump`, `xtrace`, and `frames`
+- exercises `buildcg`, `dump`, `xtrace`, and `rev-calltree`
 - checks the slice, expand, semantic, and render pipeline (both file-based and fully piped via stdin/stdout)
 - validates outputs with `jq`
 
@@ -600,23 +600,23 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
   xtrace --call-graph callgraph.json --from com.example.app.OrderService --from-method processOrder
 
 # Backward trace
-uv --directory python run frames \
+uv --directory python run rev-calltree \
   --call-graph callgraph.json \
   --to-class com.example.app.JdbcOrderRepository \
   --to-line 7
 
 # Call tree (methods only, no CFG)
-uv --directory python run calltree \
+uv --directory python run fw-calltree \
   --callgraph callgraph.json --class com.example.app.OrderService --method processOrder \
   --pattern 'com\.example' \
   | uv --directory python run calltree-to-dot --svg -o calltree.svg
-uv --directory python run calltree \
+uv --directory python run fw-calltree \
   --callgraph callgraph.json --class com.example.app.OrderService --method processOrder \
   --pattern 'com\.example' \
   | uv --directory python run calltree-print
 
 # Python CFG post-processing pipeline
-uv --directory python run ftrace-slice            --input forward.json --from com.example.app.OrderService --output slice.json
+uv --directory python run ftrace-inter-slice            --input forward.json --from com.example.app.OrderService --output slice.json
 uv --directory python run ftrace-intra-slice      --input forward.json --method "<com.example.app.OrderService: java.lang.String processOrder(int)>" --from-line 17 --to-line 23 --output intra.json
 uv --directory python run ftrace-expand-refs      --input slice.json --output expanded.json
 uv --directory python run ftrace-semantic         --input expanded.json --output semantic.json
@@ -627,7 +627,7 @@ uv --directory python run frames-print            --input backward.json
 # Full CFG pipeline piped end-to-end
 scripts/bytecode.sh --prefix com.example. "$CP" \
   xtrace --call-graph callgraph.json --from com.example.app.OrderService --from-line 17 \
-  | uv --directory python run ftrace-slice --to com.example.app.JdbcOrderRepository \
+  | uv --directory python run ftrace-inter-slice --to com.example.app.JdbcOrderRepository \
   | uv --directory python run ftrace-expand-refs \
   | uv --directory python run ftrace-semantic \
   | uv --directory python run ftrace-semantic-to-dot --output trace.svg
@@ -637,5 +637,5 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
 
 - The Java launchers set `-Xss4m -Xmx8g`
 - The CLI expects compiled bytecode (`.class` files), not source files
-- The Python `frames` command supports `--max-depth` to cap backward BFS depth and `--max-chains` to cap the number of returned call chains (default: 50)
+- The Python `rev-calltree` command supports `--max-depth` to cap backward BFS depth and `--max-chains` to cap the number of returned call chains (default: 50)
 - Most JSON-writing commands create parent directories for `--output` automatically

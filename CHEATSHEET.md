@@ -53,24 +53,6 @@ jq '.methods[] | select(.method == "processOrder") | .lineStart' dump.json
 
 ---
 
-### `trace` — Intraprocedural path trace
-
-```bash
-$B trace com.example.app.OrderService 42 87
-$B trace com.example.app.OrderService 42 87 --output trace.json
-```
-
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `<FQCN>` | Yes | Fully qualified class name |
-| `<from-line>` | Yes | Source line to trace from |
-| `<to-line>` | Yes | Source line to trace to |
-| `--output <file>` | No | Write JSON to file (default: stdout) |
-
-Single method only. For cross-method traces use `xtrace`.
-
----
-
 ### `xtrace` — Forward interprocedural trace
 
 ```bash
@@ -146,17 +128,17 @@ All tools read stdin when `--input` is omitted, write stdout when `--output` is 
 
 ---
 
-### `ftrace-slice` — Slice a subtree from a forward trace
+### `ftrace-inter-slice` — Slice a subtree from a forward trace
 
 ```bash
 # --from only: subtree rooted at the matching node
-$UV ftrace-slice --from com.example.app.ExceptionService --input forward.json
+$UV ftrace-inter-slice --from com.example.app.ExceptionService --input forward.json
 
 # --to only: prune tree so only paths reaching target remain; target is a leaf
-$UV ftrace-slice --to com.example.app.JdbcOrderRepository
+$UV ftrace-inter-slice --to com.example.app.JdbcOrderRepository
 
 # --from + --to: subtree from --from, then pruned to --to
-$UV ftrace-slice \
+$UV ftrace-inter-slice \
   --from com.example.app.OrderController \
   --to com.example.app.JdbcOrderRepository \
   --output sliced.json
@@ -178,7 +160,7 @@ $UV ftrace-slice \
 ```bash
 $UV ftrace-expand-refs --input sliced.json --output expanded.json
 # or piped:
-$UV ftrace-slice ... | $UV ftrace-expand-refs
+$UV ftrace-inter-slice ... | $UV ftrace-expand-refs
 ```
 
 | Option | Required | Description |
@@ -314,7 +296,7 @@ $UV jspmap \
 ```bash
 $B xtrace --call-graph callgraph.json \
   --from com.example.app.OrderController --from-line 42 \
-| $UV ftrace-slice --to com.example.app.JdbcOrderRepository \
+| $UV ftrace-inter-slice --to com.example.app.JdbcOrderRepository \
 | $UV ftrace-expand-refs \
 | $UV ftrace-semantic \
 | $UV ftrace-to-dot --output trace.svg

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Test: frames --from-class --to-class finds path between two methods.
+# Test: rev-calltree --from-class --to-class finds path between two methods.
 source "$(cd "$(dirname "$0")/.." && pwd)/lib-test.sh"
 setup; load_line_numbers
 
-echo "frames --from-class --to-class (bidirectional)"
+echo "rev-calltree --from-class --to-class (bidirectional)"
 
-$UV frames \
+$UV rev-calltree \
   --call-graph "$OUT/callgraph.json" \
   --from-class com.example.app.OrderController \
   --from-line "$HANDLE_GET_LINE" \

@@ -153,7 +153,7 @@ def test_e2e_pipeline_with_cli():
 
 
 def test_ftrace_slice_output_flows_directly_into_ftrace_semantic():
-    """Verify ftrace-slice output is directly consumable by ftrace-semantic."""
+    """Verify ftrace-inter-slice output is directly consumable by ftrace-semantic."""
     xtrace_envelope = {
         "trace": {
             "class": "com.example.Root",
@@ -210,7 +210,7 @@ def test_ftrace_slice_output_flows_directly_into_ftrace_semantic():
             [
                 sys.executable,
                 "-m",
-                "ftrace_slice",
+                "ftrace_inter_slice",
                 "--input",
                 str(xtrace_file),
                 "--to",
@@ -222,7 +222,7 @@ def test_ftrace_slice_output_flows_directly_into_ftrace_semantic():
             capture_output=True,
             text=True,
         )
-        assert result.returncode == 0, f"ftrace-slice failed: {result.stderr}"
+        assert result.returncode == 0, f"ftrace-inter-slice failed: {result.stderr}"
 
         sliced = json.loads(slice_file.read_text())
         assert "trace" in sliced

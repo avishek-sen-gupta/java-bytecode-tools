@@ -7,7 +7,7 @@ import re
 import sys
 from pathlib import Path
 
-from calltree import build_graph as _calltree_build_graph
+from fw_calltree import build_graph as _calltree_build_graph
 from jspmap.jsf_bean_map import JsfBeanResolver
 from jspmap.jsp_parser import ELAction, parse_jsps
 from jspmap.protocols import BeanInfo, BeanResolver

@@ -19,7 +19,8 @@ import picocli.CommandLine.*;
       "",
       "JSON-producing commands write to stdout by default; use --output <file> to write a file.",
       "xtrace output can be piped into the Python post-processing tools:",
-      "  ftrace-slice | ftrace-intra-slice | ftrace-expand-refs | ftrace-semantic | ftrace-to-dot",
+      "  ftrace-inter-slice | ftrace-intra-slice | ftrace-expand-refs | ftrace-semantic |"
+          + " ftrace-to-dot",
       "  frames-print"
     },
     subcommands = {DumpCommand.class, BuildCgCommand.class, XtraceCommand.class})

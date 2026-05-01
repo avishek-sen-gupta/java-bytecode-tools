@@ -226,7 +226,7 @@ def main() -> None:
     nodes, calls = build_frames_graph(chains, callsites, method_lines)
 
     metadata: dict = {
-        "tool": "frames",
+        "tool": "rev-calltree",
         "toClass": args.to_class,
         "toLine": args.to_line,
     }

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Test: frames --to-class returns flat {nodes, calls, metadata} backward trace.
+# Test: rev-calltree --to-class returns flat {nodes, calls, metadata} backward trace.
 source "$(cd "$(dirname "$0")/.." && pwd)/lib-test.sh"
 setup; load_line_numbers
 
-echo "frames --to-class (backward trace)"
+echo "rev-calltree --to-class (backward trace)"
 
-$UV frames \
+$UV rev-calltree \
   --call-graph "$OUT/callgraph.json" \
   --to-class com.example.app.JdbcOrderRepository \
   --to-line "$FIND_BY_ID_LINE" \
@@ -20,8 +20,8 @@ assert_json_contains "$OUT/backward-chains.json" \
     "calls present"
 
 assert_json_contains "$OUT/backward-chains.json" \
-    '.metadata.tool == "frames"' \
-    "metadata.tool is frames"
+    '.metadata.tool == "rev-calltree"' \
+    "metadata.tool is rev-calltree"
 
 assert_json_contains "$OUT/backward-chains.json" \
     '.metadata.toClass == "com.example.app.JdbcOrderRepository"' \
@@ -32,9 +32,9 @@ assert_json_contains "$OUT/backward-chains.json" \
     "target class in nodes"
 
 echo ""
-echo "frames bridge deduplication (covariant return type)"
+echo "rev-calltree bridge deduplication (covariant return type)"
 
-$UV frames \
+$UV rev-calltree \
   --call-graph "$OUT/callgraph.json" \
   --to-class com.example.app.CovConcreteDao \
   --to-line "$COV_LOOKUP_LINE" \

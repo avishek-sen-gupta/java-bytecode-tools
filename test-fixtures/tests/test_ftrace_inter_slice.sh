@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Test: ftrace-slice + ftrace-expand-refs pipeline.
+# Test: ftrace-inter-slice + ftrace-expand-refs pipeline.
 source "$(cd "$(dirname "$0")/.." && pwd)/lib-test.sh"
 setup; load_line_numbers
 
-echo "ftrace-slice + ftrace-expand-refs pipeline"
+echo "ftrace-inter-slice + ftrace-expand-refs pipeline"
 
 # Generate a trace that has refs
 $B xtrace --call-graph "$OUT/callgraph.json" \
@@ -11,7 +11,7 @@ $B xtrace --call-graph "$OUT/callgraph.json" \
   --output "$OUT/complex.json"
 
 # Slice out handleException (now outputs SlicedTrace)
-$UV ftrace-slice --input "$OUT/complex.json" \
+$UV ftrace-inter-slice --input "$OUT/complex.json" \
   --from com.example.app.ExceptionService \
   --output "$OUT/sliced.json"
 
@@ -43,7 +43,7 @@ assert_json_contains "$OUT/expanded.json" \
     "RuntimeException handler has 4 blocks (no normal-flow leakage)"
 
 # --to only: prune from trace root to target class
-$UV ftrace-slice --input "$OUT/complex.json" \
+$UV ftrace-inter-slice --input "$OUT/complex.json" \
   --to com.example.app.ExceptionService \
   --output "$OUT/sliced-to.json"
 
@@ -68,7 +68,7 @@ assert_json_contains "$OUT/sliced-to.json" \
     "--to: refIndex populated for ref node"
 
 # --from + --to: find subtree at --from, prune to paths reaching --to
-$UV ftrace-slice --input "$OUT/complex.json" \
+$UV ftrace-inter-slice --input "$OUT/complex.json" \
   --from com.example.app.ComplexService \
   --to com.example.app.ExceptionService \
   --output "$OUT/sliced-from-to.json"
@@ -103,7 +103,7 @@ assert_file_contains "$OUT/sliced-pipeline.dot" "digraph" \
 
 # Fully piped: cat | slice | expand-refs | semantic | to-dot (all stdin/stdout)
 cat "$OUT/complex.json" \
-  | $UV ftrace-slice --from com.example.app.ExceptionService \
+  | $UV ftrace-inter-slice --from com.example.app.ExceptionService \
   | $UV ftrace-expand-refs \
   | $UV ftrace-semantic \
   | $UV ftrace-semantic-to-dot > "$OUT/piped.dot"
@@ -117,7 +117,7 @@ assert_file_contains "$OUT/piped.dot" "handleException" \
 # End-to-end piped: xtrace | slice | expand-refs | semantic | to-dot (no intermediate files)
 $B xtrace --call-graph "$OUT/callgraph.json" \
   --from com.example.app.ComplexService --from-line "$COMPLEX_LINE" \
-  | $UV ftrace-slice --from com.example.app.ExceptionService \
+  | $UV ftrace-inter-slice --from com.example.app.ExceptionService \
   | $UV ftrace-expand-refs \
   | $UV ftrace-semantic \
   | $UV ftrace-semantic-to-dot > "$OUT/e2e-piped.dot"

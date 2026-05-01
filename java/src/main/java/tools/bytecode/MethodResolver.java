@@ -69,6 +69,16 @@ class MethodResolver {
     return methods.get(0);
   }
 
+  /** Resolve a method by its full Soot signature string. Throws if not found. */
+  SootMethod resolveBySignature(String methodSignature) {
+    return view.getClasses()
+        .flatMap(clazz -> clazz.getMethods().stream())
+        .filter(
+            method -> method.hasBody() && method.getSignature().toString().equals(methodSignature))
+        .findFirst()
+        .orElseThrow(() -> new RuntimeException("Method not found: " + methodSignature));
+  }
+
   /**
    * Resolve a callee method by signature. Returns Optional.empty() if the class is not in the view
    * or if the method cannot be found, never returns null.

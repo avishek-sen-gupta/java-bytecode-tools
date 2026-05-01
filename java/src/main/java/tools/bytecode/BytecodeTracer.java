@@ -86,6 +86,10 @@ public class BytecodeTracer {
     return methodResolver.resolveByLine(className, line);
   }
 
+  SootMethod resolveMethod(String methodSignature) {
+    return methodResolver.resolveBySignature(methodSignature);
+  }
+
   CallFrame buildFrame(SootMethod method, String sig) {
     return frameBuilder.buildFrame(method, sig);
   }

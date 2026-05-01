@@ -90,12 +90,14 @@ class MethodResolver {
     }
 
     int paramCount = sig.getParameterTypes().size();
-    for (SootMethod m : cls.getMethods()) {
-      if (m.getName().equals(sig.getName()) && m.getParameterCount() == paramCount && m.hasBody()) {
-        return Optional.of(m);
-      }
-    }
-    return Optional.empty();
+    return cls.getMethods().stream()
+        .filter(
+            m ->
+                m.getName().equals(sig.getName())
+                    && m.getParameterCount() == paramCount
+                    && m.hasBody())
+        .findFirst()
+        .map(m -> (SootMethod) m);
   }
 
   /** Find all methods in a class that contain the given line number. */

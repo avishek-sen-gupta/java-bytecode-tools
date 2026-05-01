@@ -16,11 +16,12 @@ import sootup.java.core.views.JavaView;
 class MethodResolverTest {
 
   private static MethodResolver resolver;
+  private static JavaView view;
 
   @BeforeAll
   static void setUp() {
     String cp = Paths.get("../test-fixtures/classes").toAbsolutePath().toString();
-    JavaView view = new JavaView(List.of(new JavaClassPathAnalysisInputLocation(cp)));
+    view = new JavaView(List.of(new JavaClassPathAnalysisInputLocation(cp)));
     resolver = new MethodResolver(view);
   }
 
@@ -138,6 +139,34 @@ class MethodResolverTest {
               RuntimeException.class,
               () -> resolver.resolveByLine("com.example.app.OrderService", 999999));
       assertTrue(ex.getMessage().contains("999999"), "Got: " + ex.getMessage());
+    }
+  }
+
+  @Nested
+  class FindMethodsContainingLine {
+    @Test
+    void returnsSingleMethod_whenLineExistsInOneMethod() {
+      var classType = view.getIdentifierFactory().getClassType("com.example.app.OrderService");
+      var cls = view.getClass(classType).orElseThrow();
+      SootMethod known = resolver.resolveByName("com.example.app.OrderService", "processOrder");
+      int line =
+          known.getBody().getStmtGraph().getNodes().stream()
+              .mapToInt(StmtAnalyzer::stmtLine)
+              .filter(l -> l > 0)
+              .min()
+              .orElseThrow();
+
+      List<SootMethod> found = resolver.findMethodsContainingLine(cls, line);
+      assertEquals(1, found.size());
+      assertEquals("processOrder", found.get(0).getName());
+    }
+
+    @Test
+    void returnsEmpty_whenNoMethodContainsLine() {
+      var classType = view.getIdentifierFactory().getClassType("com.example.app.OrderService");
+      var cls = view.getClass(classType).orElseThrow();
+      List<SootMethod> found = resolver.findMethodsContainingLine(cls, 999999);
+      assertTrue(found.isEmpty());
     }
   }
 

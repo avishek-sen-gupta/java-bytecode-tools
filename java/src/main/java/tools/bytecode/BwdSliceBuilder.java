@@ -63,6 +63,28 @@ public class BwdSliceBuilder {
           }
         }
       }
+
+      // Cross boundary — return value: if this is an assign_invoke, follow the callee's return
+      // stmts
+      if ("assign_invoke".equals(stmt.get("kind"))) {
+        Map<?, ?> call = (Map<?, ?>) stmt.get("call");
+        if (call != null) {
+          String calleeSig = (String) call.get("targetMethodSignature");
+          Map<String, Object> calleeDdg = calleeSig != null ? ddgs.get(calleeSig) : null;
+          if (calleeDdg != null) {
+            List<String> returnIds =
+                (List<String>) calleeDdg.getOrDefault("return_stmt_ids", List.of());
+            for (String returnId : returnIds) {
+              Map<String, Object> returnStmt = findNode(calleeDdg, returnId);
+              if (returnStmt == null) continue;
+              String returnedLocal = extractReturnedLocal((String) returnStmt.get("stmt"));
+              resultEdges.add(
+                  buildReturnEdge(calleeSig, returnId, item.methodSig(), item.stmtId()));
+              worklist.add(new WorklistItem(calleeSig, returnId, returnedLocal));
+            }
+          }
+        }
+      }
     }
 
     Map<String, Object> result = new LinkedHashMap<>();
@@ -190,6 +212,21 @@ public class BwdSliceBuilder {
       index.computeIfAbsent(to, k -> new ArrayList<>()).add(from);
     }
     return index;
+  }
+
+  private String extractReturnedLocal(String stmt) {
+    // "return r2" -> "r2", "return" -> ""
+    String trimmed = stmt.trim();
+    if (!trimmed.startsWith("return ")) return "";
+    return trimmed.substring("return ".length()).trim();
+  }
+
+  private Map<String, Object> buildReturnEdge(
+      String calleeMethod, String returnStmtId, String callerMethod, String callSiteId) {
+    return Map.of(
+        "from", Map.of("method", calleeMethod, "stmtId", returnStmtId),
+        "to", Map.of("method", callerMethod, "stmtId", callSiteId),
+        "edge_info", Map.of("kind", "return"));
   }
 
   private record WorklistItem(String methodSig, String stmtId, String localVar) {}

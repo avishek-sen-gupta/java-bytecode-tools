@@ -176,4 +176,106 @@ class BwdSliceBuilderTest {
                 });
     assertTrue(hasParamEdge, "param edge from caller s2 to callee p0 expected");
   }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void crossMethodReturnCrossing() {
+    // Caller: r2 = callee()   [assign_invoke, seed on r2]
+    // Callee: return r5       [return stmt]
+    //         r5 = compute()  [some prior assign]
+    //         DDG: s0 --ddg--> s1
+    String CALLER = "<com.example.Caller: void main()>";
+    String CALLEE = "<com.example.Foo: int compute()>";
+
+    List<Map<String, Object>> callerNodes =
+        List.of(
+            Map.of(
+                "id",
+                "cs0",
+                "node_type",
+                "stmt",
+                "stmt",
+                "r2 = staticinvoke <com.example.Foo: int compute()>()",
+                "line",
+                -1,
+                "kind",
+                "assign_invoke",
+                "call",
+                Map.of("targetMethodSignature", CALLEE)));
+    Map<String, Object> callerPayload =
+        payload(callerNodes, List.of(), List.of(), List.of(), List.of("cs0"));
+
+    List<Map<String, Object>> calleeNodes =
+        List.of(stmtNode("s0", "r5 = 42", "assign"), stmtNode("s1", "return r5", "return"));
+    List<Map<String, Object>> calleeEdges = List.of(ddgEdge("s0", "s1"));
+    Map<String, Object> calleePayload =
+        payload(calleeNodes, calleeEdges, List.of(), List.of("s1"), List.of());
+
+    Map<String, Object> art =
+        artifact(
+            Map.of(CALLER, Map.of(), CALLEE, Map.of()),
+            List.of(Map.of("from", CALLER, "to", CALLEE)),
+            Map.of(CALLER, callerPayload, CALLEE, calleePayload));
+
+    Map<String, Object> result = new BwdSliceBuilder().build(art, CALLER, "r2");
+
+    List<Map<String, Object>> resultNodes = (List<Map<String, Object>>) result.get("nodes");
+    List<Map<String, Object>> resultEdges = (List<Map<String, Object>>) result.get("edges");
+
+    // cs0 (call site in caller), s1 (return in callee), s0 (def of r5 in callee)
+    assertEquals(3, resultNodes.size());
+
+    // return edge: from={CALLEE, s1} to={CALLER, cs0}
+    boolean hasReturnEdge =
+        resultEdges.stream()
+            .anyMatch(
+                e -> {
+                  Map<?, ?> from = (Map<?, ?>) e.get("from");
+                  Map<?, ?> to = (Map<?, ?>) e.get("to");
+                  Map<?, ?> info = (Map<?, ?>) e.get("edge_info");
+                  return CALLEE.equals(from.get("method"))
+                      && "s1".equals(from.get("stmtId"))
+                      && CALLER.equals(to.get("method"))
+                      && "cs0".equals(to.get("stmtId"))
+                      && "return".equals(info.get("kind"));
+                });
+    assertTrue(hasReturnEdge, "return edge from callee s1 to caller cs0 expected");
+  }
+
+  @Test
+  void cycleSafetyDoesNotLoopForever() {
+    // Recursive: METHOD calls itself. The call site is also a def.
+    // s0 = @parameter0 identity
+    // s1 = assign_invoke (recursive call)
+    // DDG: s0 -> s1
+    String METHOD = "<com.example.Foo: void bar()>";
+    List<Map<String, Object>> nodes =
+        List.of(
+            stmtNode("s0", "r0 := @parameter0: int", "identity"),
+            Map.of(
+                "id",
+                "s1",
+                "node_type",
+                "stmt",
+                "stmt",
+                "r1 = staticinvoke <com.example.Foo: void bar()>(r0)",
+                "line",
+                -1,
+                "kind",
+                "assign_invoke",
+                "call",
+                Map.of("targetMethodSignature", METHOD)));
+    List<Map<String, Object>> edges = List.of(ddgEdge("s0", "s1"));
+    Map<String, Object> ddg = payload(nodes, edges, List.of("s0"), List.of(), List.of("s1"));
+    // recursive: from=METHOD to=METHOD
+    Map<String, Object> art =
+        artifact(
+            Map.of(METHOD, Map.of()),
+            List.of(Map.of("from", METHOD, "to", METHOD)),
+            Map.of(METHOD, ddg));
+
+    // Should terminate, not loop
+    Map<String, Object> result = new BwdSliceBuilder().build(art, METHOD, "r1");
+    assertNotNull(result);
+  }
 }

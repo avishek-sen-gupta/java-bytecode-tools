@@ -12,7 +12,7 @@ import tools.bytecode.artifact.Artifact;
     name = "ddg-inter-cfg",
     mixinStandardHelpOptions = true,
     description = {
-      "Read a flat fw-calltree graph and emit a compound {nodes, calls, ddgs, metadata} artifact.",
+      "Read a fw-calltree JSON artifact and emit a typed {metadata, calltree, ddg} artifact.",
       "Input: stdin by default, or --input <file>",
       "Output: stdout by default, or --output <file>"
     })

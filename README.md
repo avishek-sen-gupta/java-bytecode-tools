@@ -40,41 +40,40 @@ Key Python commands:
 
 ## Tool Combinations
 
-```text
-classpath
-    |
-    +---> dump ------------------------------------------------> method ranges
-    |
-    +---> trace -----------------------------------------------> intra-method paths
-    |
-    +---> buildcg ---------------------------------------------> call graph JSON
-                                                                       |
-                +-----------------------+------------------+-----------+
-                |                       |                  |
-             calltree               frames              jspmap
-                \                   /                   /
-                 \                 /                   /
-                  v               v                   v
-           flat {nodes, calls, metadata}
-                       |
-         +-------------+-------------+
-         |             |             |
-  calltree-print  frames-print  calltree-to-dot
-    (ASCII)         (text)        (SVG/DOT)
-                                                                 |
-    +---> xtrace* --------------------------------------------> envelope JSON
-                                                              [ftrace-slice]
-                                                          [ftrace-expand-refs]
-                                                              ftrace-semantic
-                                                                   |
-                                                     +-------------+-------------+
-                                                     |                           |
-                                           ftrace-semantic-to-dot     ftrace-validate
-                                                     |
-                                                  SVG/DOT
+```mermaid
+flowchart TD
+    classpath([classpath])
 
-* also takes classpath directly
+    classpath --> dump[dump]
+    classpath --> trace[trace]
+    classpath --> buildcg[buildcg]
+    classpath --> xtrace["xtrace ①"]
+
+    dump --> method_ranges([method ranges])
+    trace --> intra([intra-method paths])
+    buildcg --> cg([call graph JSON])
+
+    cg --> calltree[calltree]
+    cg --> frames[frames]
+    cg --> jspmap[jspmap]
+
+    calltree --> flat([flat nodes · calls · metadata])
+    frames   --> flat
+    jspmap   --> flat
+
+    flat --> cp[calltree-print\nASCII]
+    flat --> fp[frames-print\ntext]
+    flat --> ctd[calltree-to-dot\nSVG / DOT]
+
+    xtrace --> env([envelope JSON])
+    env --> fslice["[ftrace-slice]"]
+    fslice --> fexpand["[ftrace-expand-refs]"]
+    fexpand --> fsem[ftrace-semantic]
+    fsem --> fsdot[ftrace-semantic-to-dot\nSVG / DOT]
+    fsem --> fval[ftrace-validate]
 ```
+
+① `xtrace` also accepts a classpath directly
 
 ## Setup
 

@@ -37,7 +37,14 @@ public class DdgInterCfgArtifactBuilder {
     Map<String, Object> inputMetadata =
         (Map<String, Object>) input.getOrDefault("metadata", Map.of());
     String root = (String) inputMetadata.getOrDefault("root", "");
-    Map<String, String> metadata = Map.of("root", root);
+    String inputTool = (String) inputMetadata.getOrDefault("tool", "");
+
+    Map<String, String> metadata = new java.util.LinkedHashMap<>();
+    metadata.put("root", root);
+    metadata.put("tool", "ddg-inter-cfg");
+    if (!inputTool.isEmpty()) {
+      metadata.put("inputTool", inputTool);
+    }
 
     List<Map<String, Object>> calls =
         (List<Map<String, Object>>) input.getOrDefault("calls", List.of());

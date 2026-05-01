@@ -12,31 +12,27 @@ $UV fw-calltree \
   | $B ddg-inter-cfg 2>/dev/null | tee "$OUT/ddg-inter-cfg.json" > /dev/null
 
 assert_json_contains "$OUT/ddg-inter-cfg.json" \
-  '.nodes | length > 0' \
-  "top-level nodes preserved"
+  '.calltree.nodes | length > 0' \
+  "calltree nodes present"
 
 assert_json_contains "$OUT/ddg-inter-cfg.json" \
-  '.calls | length >= 0' \
-  "top-level calls preserved"
+  '.calltree.edges | length >= 0' \
+  "calltree edges present"
 
 assert_json_contains "$OUT/ddg-inter-cfg.json" \
   '.metadata.tool == "ddg-inter-cfg"' \
   "metadata.tool is ddg-inter-cfg"
 
 assert_json_contains "$OUT/ddg-inter-cfg.json" \
-  '.ddgs | length > 0' \
-  "ddgs map present"
+  '.ddg.nodes | length > 0' \
+  "ddg statement nodes present"
 
 assert_json_contains "$OUT/ddg-inter-cfg.json" \
-  '.ddgs["<com.example.app.OrderService: java.lang.String processOrder(int)>"].nodes | length > 0' \
-  "statement nodes present for processOrder"
-
-assert_json_contains "$OUT/ddg-inter-cfg.json" \
-  '[.ddgs["<com.example.app.OrderService: java.lang.String processOrder(int)>"].edges[].edge_info.kind] | any(. == "LOCAL")' \
+  '[.ddg.edges[].edge_info.kind] | any(. == "LOCAL")' \
   "local edges present"
 
 assert_json_contains "$OUT/ddg-inter-cfg.json" \
-  '.ddgs["<com.example.app.OrderService: java.lang.String processOrder(int)>"].edges | length > 0' \
+  '.ddg.edges | length > 0' \
   "edges are populated"
 
 echo ""

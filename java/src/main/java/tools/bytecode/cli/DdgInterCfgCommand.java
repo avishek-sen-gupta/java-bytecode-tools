@@ -2,7 +2,6 @@ package tools.bytecode.cli;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Map;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -36,8 +35,7 @@ class DdgInterCfgCommand extends BaseCommand {
       tools.bytecode.BytecodeTracer tracer = createTracer();
       tools.bytecode.FieldDepEnricher enricher = buildEnricher(tracer, inputGraph);
       Artifact artifact = new DdgInterCfgArtifactBuilder(tracer, enricher).build(inputGraph);
-      Map<String, Object> legacyOutput = toLegacyFormat(artifact, inputGraph);
-      writeOutput(legacyOutput);
+      writeOutput(artifact);
     } catch (Exception e) {
       System.err.println("Error: " + e.getMessage());
       System.exit(1);
@@ -69,52 +67,5 @@ class DdgInterCfgCommand extends BaseCommand {
       return mapper.readValue(input.toFile(), Map.class);
     }
     return mapper.readValue(System.in, Map.class);
-  }
-
-  @SuppressWarnings("unchecked")
-  private Map<String, Object> toLegacyFormat(Artifact artifact, Map<String, Object> input) {
-    Map<String, Object> output = new java.util.LinkedHashMap<>();
-
-    // Preserve nodes and calls from input
-    output.put("nodes", input.getOrDefault("nodes", Map.of()));
-    output.put("calls", input.getOrDefault("calls", List.of()));
-
-    // Add metadata with tool information
-    Map<String, Object> metadata = new java.util.LinkedHashMap<>(artifact.metadata());
-    metadata.put("tool", "ddg-inter-cfg");
-    Map<String, Object> inputMetadata =
-        (Map<String, Object>) input.getOrDefault("metadata", Map.of());
-    if (inputMetadata.containsKey("tool")) {
-      metadata.put("inputTool", inputMetadata.get("tool"));
-    }
-    output.put("metadata", metadata);
-
-    // Build ddgs map: one entry per method signature
-    Map<String, Object> ddgsMap = new java.util.LinkedHashMap<>();
-    for (var calltreeNode : artifact.calltree().nodes()) {
-      Map<String, Object> methodDdg = new java.util.LinkedHashMap<>();
-      // Filter DDG nodes and edges for this method
-      var nodesForMethod =
-          artifact.ddg().nodes().stream()
-              .filter(n -> n.method().equals(calltreeNode.id()))
-              .collect(java.util.stream.Collectors.toList());
-      var edgesForMethod =
-          artifact.ddg().edges().stream()
-              .filter(
-                  e -> {
-                    var src =
-                        artifact.ddg().nodes().stream()
-                            .filter(n -> n.id().equals(e.from()))
-                            .findFirst();
-                    return src.isPresent() && src.get().method().equals(calltreeNode.id());
-                  })
-              .collect(java.util.stream.Collectors.toList());
-      methodDdg.put("nodes", nodesForMethod);
-      methodDdg.put("edges", edgesForMethod);
-      ddgsMap.put(calltreeNode.id(), methodDdg);
-    }
-    output.put("ddgs", ddgsMap);
-
-    return output;
   }
 }

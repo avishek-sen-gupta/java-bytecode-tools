@@ -32,6 +32,7 @@ Key Python commands:
 - `frames`: backward interprocedural trace to a target method; emits flat `{nodes, calls, metadata}` graph
 - `frames-print`: pretty-print backward trace chains
 - `ftrace-slice`: extract a subtree or path-constrained slice from `xtrace` output
+- `ftrace-intra-slice`: slice a single method's CFG to the blocks on the path between two source lines
 - `ftrace-expand-refs`: replace `ref` leaves with full method bodies
 - `ftrace-semantic`: normalize raw `xtrace` JSON into a semantic graph (CFG-level)
 - `ftrace-semantic-to-dot`: render semantic graph JSON as DOT/SVG
@@ -64,6 +65,7 @@ flowchart TD
 
     subgraph py_cfg ["CFG pipeline"]
         fslice["[ftrace-slice]"]
+        fisl["[ftrace-intra-slice]"]
         fexpand["[ftrace-expand-refs]"]
         fsem[ftrace-semantic]
         fsdot[ftrace-semantic-to-dot]
@@ -81,7 +83,7 @@ flowchart TD
     flat --> cp & fp & ctd
 
     xtrace --> env([envelope JSON])
-    env --> fslice --> fexpand --> fsem
+    env --> fslice --> fisl --> fexpand --> fsem
     fsem --> fsdot & fval
 ```
 
@@ -374,7 +376,7 @@ The Python tools operate on `xtrace` output or on derivatives of that output.
 
 The post-processing tools are designed to compose as Unix filters.
 
-- `calltree`, `calltree-print`, `calltree-to-dot`, `ftrace-slice`, `ftrace-expand-refs`, `ftrace-semantic`, `ftrace-validate`, `ftrace-semantic-to-dot`, and `frames-print` read stdin if `--input` is omitted
+- `calltree`, `calltree-print`, `calltree-to-dot`, `ftrace-slice`, `ftrace-intra-slice`, `ftrace-expand-refs`, `ftrace-semantic`, `ftrace-validate`, `ftrace-semantic-to-dot`, and `frames-print` read stdin if `--input` is omitted
 - Those same tools write stdout if `--output` is omitted
 - Java CLI commands such as `buildcg`, `dump`, `xtrace`, and `trace` write JSON to stdout when `--output` is omitted
 - The Python `frames` command writes JSON to stdout (pipe-friendly)
@@ -470,6 +472,35 @@ The sliced output has the same envelope shape as `xtrace` output:
 ```
 
 The bundled `refIndex` is reduced to only the signatures still referenced by the slice.
+
+### Intra-Procedural CFG Slice
+
+`ftrace-intra-slice` slices a single method's CFG to the blocks that lie on a path between two source lines, using a reachability-intersection algorithm: it keeps every block that is both forward-reachable from `--from-line`'s block and backward-reachable from `--to-line`'s block.
+
+```bash
+uv --directory python run ftrace-intra-slice \
+  --input forward.json \
+  --method "<com.example.app.OrderService: java.lang.String processOrder(int)>" \
+  --from-line 17 \
+  --to-line 23 \
+  --output intra.json
+```
+
+The tool searches `trace` first, then `refIndex`, for the named `--method`. The output is the same `SlicedTrace` envelope, so it feeds directly into the rest of the pipeline:
+
+```bash
+scripts/bytecode.sh --prefix com.example. "$CP" \
+  xtrace --call-graph callgraph.json \
+  --from com.example.app.OrderService --from-line 17 \
+  | uv --directory python run ftrace-intra-slice \
+      --method "<com.example.app.OrderService: java.lang.String processOrder(int)>" \
+      --from-line 17 --to-line 23 \
+  | uv --directory python run ftrace-expand-refs \
+  | uv --directory python run ftrace-semantic \
+  | uv --directory python run ftrace-semantic-to-dot --output intra.svg
+```
+
+Dead branches — blocks that cannot reach `--to-line` — are pruned from `blocks`, `edges`, `traps`, `sourceTrace`, and `children`.
 
 ### Expand Ref Nodes
 
@@ -599,6 +630,7 @@ uv --directory python run calltree \
 
 # Python CFG post-processing pipeline
 uv --directory python run ftrace-slice            --input forward.json --from com.example.app.OrderService --output slice.json
+uv --directory python run ftrace-intra-slice      --input forward.json --method "<com.example.app.OrderService: java.lang.String processOrder(int)>" --from-line 17 --to-line 23 --output intra.json
 uv --directory python run ftrace-expand-refs      --input slice.json --output expanded.json
 uv --directory python run ftrace-semantic         --input expanded.json --output semantic.json
 uv --directory python run ftrace-semantic-to-dot  --input semantic.json --output trace.svg

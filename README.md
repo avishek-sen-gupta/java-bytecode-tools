@@ -80,7 +80,9 @@ flowchart TD
     flat --> cp & fp & ctd
 
     xtrace --> env([envelope JSON])
-    env --> fslice --> fisl --> fexpand --> fsem
+    env --> fslice & fisl
+    fslice & fisl --> fexpand
+    fexpand --> fsem
     fsem --> fsdot & fval
 ```
 

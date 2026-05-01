@@ -70,43 +70,44 @@ final class StmtAnalyzer {
   }
 
   /**
-   * Merges consecutive statements at the same source line into one entry. Uses an imperative loop —
-   * merging requires comparing each entry to its predecessor, which is inherently sequential state
-   * with no functional equivalent.
+   * Merges consecutive statements at the same source line into one entry. Uses a fold via
+   * Stream.collect — accumulates into a growing list, merging into the last element when lines are
+   * consecutive.
    */
   static List<Map<String, Object>> deduplicateToSourceLines(List<Map<String, Object>> stmtDetails) {
-    List<Map<String, Object>> result = new ArrayList<>();
-    int prevLine = -2;
+    return stmtDetails.stream().collect(ArrayList::new, StmtAnalyzer::foldDetail, List::addAll);
+  }
 
-    for (Map<String, Object> detail : stmtDetails) {
-      int line = (int) detail.get(KEY_LINE);
-      if (line == prevLine && !result.isEmpty()) {
-        Map<String, Object> prev = result.get(result.size() - 1);
-        if (detail.containsKey(KEY_CALL_TARGET)) {
-          @SuppressWarnings("unchecked")
-          List<String> calls =
-              (List<String>) prev.computeIfAbsent(KEY_CALLS, k -> new ArrayList<>());
-          calls.add((String) detail.get(KEY_CALL_TARGET));
-        }
-        if (detail.containsKey(KEY_BRANCH)) {
-          prev.put(KEY_BRANCH, detail.get(KEY_BRANCH));
-        }
-      } else {
-        Map<String, Object> entry = new LinkedHashMap<>();
-        entry.put(KEY_LINE, line);
-        if (detail.containsKey(KEY_CALL_TARGET)) {
-          List<String> calls = new ArrayList<>();
-          calls.add((String) detail.get(KEY_CALL_TARGET));
-          entry.put(KEY_CALLS, calls);
-        }
-        if (detail.containsKey(KEY_BRANCH)) {
-          entry.put(KEY_BRANCH, detail.get(KEY_BRANCH));
-        }
-        result.add(entry);
-      }
-      prevLine = line;
+  private static void foldDetail(List<Map<String, Object>> acc, Map<String, Object> detail) {
+    int line = (int) detail.get(KEY_LINE);
+    if (!acc.isEmpty() && (int) acc.get(acc.size() - 1).get(KEY_LINE) == line) {
+      mergeDetail(acc.get(acc.size() - 1), detail);
+    } else {
+      acc.add(toEntry(detail));
     }
-    return result;
+  }
+
+  private static Map<String, Object> toEntry(Map<String, Object> detail) {
+    Map<String, Object> entry = new LinkedHashMap<>();
+    entry.put(KEY_LINE, detail.get(KEY_LINE));
+    if (detail.containsKey(KEY_CALL_TARGET)) {
+      entry.put(KEY_CALLS, new ArrayList<>(List.of((String) detail.get(KEY_CALL_TARGET))));
+    }
+    if (detail.containsKey(KEY_BRANCH)) {
+      entry.put(KEY_BRANCH, detail.get(KEY_BRANCH));
+    }
+    return entry;
+  }
+
+  private static void mergeDetail(Map<String, Object> target, Map<String, Object> detail) {
+    if (detail.containsKey(KEY_CALL_TARGET)) {
+      @SuppressWarnings("unchecked")
+      List<String> calls = (List<String>) target.computeIfAbsent(KEY_CALLS, k -> new ArrayList<>());
+      calls.add((String) detail.get(KEY_CALL_TARGET));
+    }
+    if (detail.containsKey(KEY_BRANCH)) {
+      target.put(KEY_BRANCH, detail.get(KEY_BRANCH));
+    }
   }
 
   static int findCallSiteLine(CallFrame caller, CallFrame callee) {

@@ -8,10 +8,10 @@ SIG_DAO = "<com.example.Dao: void save()>"
 SIG_UTIL = "<com.example.Util: int compute()>"
 
 METHOD_LINES = {
-    SIG_MAIN: {"lineStart": 5, "lineEnd": 15},
-    SIG_SVC: {"lineStart": 20, "lineEnd": 40},
-    SIG_DAO: {"lineStart": 50, "lineEnd": 70},
-    SIG_UTIL: {"lineStart": 80, "lineEnd": 90},
+    SIG_MAIN: {"line_start": 5, "line_end": 15},
+    SIG_SVC: {"line_start": 20, "line_end": 40},
+    SIG_DAO: {"line_start": 50, "line_end": 70},
+    SIG_UTIL: {"line_start": 80, "line_end": 90},
 }
 
 # call graph: main→svc→dao, main→util

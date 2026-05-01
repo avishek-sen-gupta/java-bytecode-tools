@@ -27,13 +27,13 @@ def extract_method(sig: str) -> str:
 
 
 def find_target_sig(cls: str, line: int, method_lines: dict[str, dict]) -> str:
-    """Return the sig of the method in cls whose [lineStart, lineEnd] contains line."""
+    """Return the sig of the method in cls whose [line_start, line_end] contains line."""
     return next(
         (
             sig
             for sig, lr in method_lines.items()
             if extract_class(sig) == cls
-            and lr.get("lineStart", -1) <= line <= lr.get("lineEnd", -1)
+            and lr.get("line_start", -1) <= line <= lr.get("line_end", -1)
         ),
         "",
     )
@@ -135,8 +135,8 @@ def _node_entry(sig: str, method_lines: dict[str, dict]) -> dict:
     }
     lr = method_lines.get(sig, {})
     if lr:
-        line_start = lr.get("lineStart", 0)
-        line_end = lr.get("lineEnd", 0)
+        line_start = lr.get("line_start", 0)
+        line_end = lr.get("line_end", 0)
         base["lineStart"] = line_start
         base["lineEnd"] = line_end
         base["sourceLineCount"] = max(0, line_end - line_start + 1)

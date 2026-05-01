@@ -1,6 +1,7 @@
 package tools.bytecode.cli;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -18,7 +19,10 @@ abstract class BaseCommand implements Runnable {
   @Option(names = "--output", description = "Write JSON to file instead of stdout")
   Path output;
 
-  final ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+  final ObjectMapper mapper =
+      new ObjectMapper()
+          .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
+          .enable(SerializationFeature.INDENT_OUTPUT);
 
   BytecodeTracer createTracer() {
     return new BytecodeTracer(parent.classpath, parent.prefix, null);

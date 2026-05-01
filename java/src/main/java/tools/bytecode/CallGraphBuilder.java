@@ -118,7 +118,7 @@ public class CallGraphBuilder {
           String mSig = method.getSignature().toString();
           Body body = method.getBody();
           for (Stmt stmt : body.getStmtGraph().getNodes()) {
-            Optional<AbstractInvokeExpr> invokeOpt = BytecodeTracer.extractInvoke(stmt);
+            Optional<AbstractInvokeExpr> invokeOpt = StmtAnalyzer.extractInvoke(stmt);
             if (invokeOpt.isEmpty()) continue;
             AbstractInvokeExpr invoke = invokeOpt.get();
             if (invoke instanceof JSpecialInvokeExpr) continue;
@@ -130,7 +130,7 @@ public class CallGraphBuilder {
             targetClasses.add(declClass);
             List<String> impls = ifaceToImpls.get(declClass);
             if (impls != null) targetClasses.addAll(impls);
-            int callLine = BytecodeTracer.stmtLine(stmt);
+            int callLine = StmtAnalyzer.stmtLine(stmt);
             for (String targetClass : targetClasses) {
               String key = targetClass + "#" + methodName + "#" + paramCount;
               List<String> candidates = index.nameIndex().get(key);
@@ -231,8 +231,8 @@ public class CallGraphBuilder {
           List<sootup.core.jimple.common.stmt.Stmt> stmts =
               new java.util.ArrayList<>(body.getStmtGraph().getNodes());
           int minL =
-              stmts.stream().mapToInt(BytecodeTracer::stmtLine).filter(l -> l > 0).min().orElse(-1);
-          int maxL = stmts.stream().mapToInt(BytecodeTracer::stmtLine).max().orElse(-1);
+              stmts.stream().mapToInt(StmtAnalyzer::stmtLine).filter(l -> l > 0).min().orElse(-1);
+          int maxL = stmts.stream().mapToInt(StmtAnalyzer::stmtLine).max().orElse(-1);
           if (minL > 0 && maxL > 0) {
             methodLines.put(sig, new MethodLineRange(minL, maxL));
           }

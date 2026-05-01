@@ -179,7 +179,7 @@ public class ForwardTracer {
     String calleeMethod = extractMethodName(calleeSig);
     CallFrame calleeFrame =
         new CallFrame(calleeClass, calleeMethod, calleeSig, -1, -1, List.of(), List.of());
-    return BytecodeTracer.findCallSiteLine(callerFrame, calleeFrame);
+    return StmtAnalyzer.findCallSiteLine(callerFrame, calleeFrame);
   }
 
   /**
@@ -324,10 +324,10 @@ public class ForwardTracer {
       List<Map<String, Object>> stmtList = new ArrayList<>();
       for (Stmt stmt : block.getStmts()) {
         Map<String, Object> s = new LinkedHashMap<>();
-        int line = BytecodeTracer.stmtLine(stmt);
+        int line = StmtAnalyzer.stmtLine(stmt);
         s.put("line", line);
 
-        Optional<AbstractInvokeExpr> invoke = BytecodeTracer.extractInvoke(stmt);
+        Optional<AbstractInvokeExpr> invoke = StmtAnalyzer.extractInvoke(stmt);
         if (invoke.isPresent()) {
           var msig = invoke.get().getMethodSignature();
           s.put("call", msig.getDeclClassType().getFullyQualifiedName() + "." + msig.getName());

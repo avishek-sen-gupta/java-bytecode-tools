@@ -28,8 +28,7 @@ class SootUpDataDependencyExperimentTest {
 
   @BeforeAll
   static void setUp() {
-    tracer = new BytecodeTracer(CLASSPATH);
-    tracer.setProjectPrefix("com.example.app");
+    tracer = new BytecodeTracer(CLASSPATH, "com.example.app", null);
   }
 
   @Test

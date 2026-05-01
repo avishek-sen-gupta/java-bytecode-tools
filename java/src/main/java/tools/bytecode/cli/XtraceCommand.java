@@ -5,6 +5,7 @@ import java.util.Map;
 import picocli.CommandLine.ArgGroup;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
+import tools.bytecode.BytecodeTracer;
 import tools.bytecode.FilterConfig;
 import tools.bytecode.ForwardTracer;
 
@@ -54,8 +55,9 @@ class XtraceCommand extends BaseCommand {
   @Override
   public void run() {
     try {
-      var tracer = createTracer();
-      tracer.setCallGraphCache(callGraphFile);
+      var tracer =
+          new BytecodeTracer(
+              parent.classpath, parent.prefix != null ? parent.prefix : "", callGraphFile);
       FilterConfig filter = FilterConfig.load(filterFile);
       Map<String, Object> result =
           entryPoint.fromMethod != null

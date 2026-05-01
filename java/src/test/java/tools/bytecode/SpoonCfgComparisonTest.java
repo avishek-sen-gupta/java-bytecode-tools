@@ -33,7 +33,7 @@ class SpoonCfgComparisonTest {
     // ----------------------------------------------------------------
     // SootUp side
     // ----------------------------------------------------------------
-    BytecodeTracer tracer = new BytecodeTracer(CLASSPATH);
+    BytecodeTracer tracer = new BytecodeTracer(CLASSPATH, "", null);
     SootMethod sootMethod = tracer.resolveMethodByName(CLASS_NAME, METHOD_NAME);
     StmtGraph<?> stmtGraph = sootMethod.getBody().getStmtGraph();
     List<Stmt> sootNodes = new ArrayList<>(stmtGraph.getNodes());

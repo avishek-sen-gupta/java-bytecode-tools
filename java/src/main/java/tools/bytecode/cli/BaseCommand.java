@@ -21,12 +21,7 @@ abstract class BaseCommand implements Runnable {
   final ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 
   BytecodeTracer createTracer() {
-    System.err.println("[createTracer] classpath=" + parent.classpath);
-    System.err.println("[createTracer] prefix=" + parent.prefix);
-    BytecodeTracer tracer = new BytecodeTracer(parent.classpath);
-    if (parent.prefix != null) tracer.setProjectPrefix(parent.prefix);
-    System.err.println("[createTracer] tracer ready");
-    return tracer;
+    return new BytecodeTracer(parent.classpath, parent.prefix != null ? parent.prefix : "", null);
   }
 
   void writeOutput(Map<String, Object> result) throws IOException {

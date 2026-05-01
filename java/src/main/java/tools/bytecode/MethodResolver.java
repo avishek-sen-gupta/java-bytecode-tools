@@ -3,6 +3,8 @@ package tools.bytecode;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import sootup.core.model.SootMethod;
 import sootup.core.signatures.MethodSignature;
 import sootup.core.types.ClassType;
@@ -11,6 +13,7 @@ import sootup.java.core.views.JavaView;
 
 class MethodResolver {
 
+  private static final Logger log = LoggerFactory.getLogger(MethodResolver.class);
   private final JavaView view;
 
   MethodResolver(JavaView view) {
@@ -86,7 +89,9 @@ class MethodResolver {
       if (mOpt.isPresent() && mOpt.get().hasBody()) {
         return mOpt.map(m -> (SootMethod) m);
       }
-    } catch (Exception ignored) {
+    } catch (RuntimeException e) {
+      log.debug(
+          "Signature lookup failed for {}, falling back to name match: {}", sig, e.getMessage());
     }
 
     int paramCount = sig.getParameterTypes().size();

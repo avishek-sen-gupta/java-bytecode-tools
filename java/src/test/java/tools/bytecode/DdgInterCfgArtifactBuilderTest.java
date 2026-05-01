@@ -5,9 +5,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import tools.bytecode.artifact.Artifact;
+import tools.bytecode.artifact.DdgGraph;
 
 class DdgInterCfgArtifactBuilderTest {
 
@@ -107,5 +109,81 @@ class DdgInterCfgArtifactBuilderTest {
                             "nodes", Map.of(MISSING_SIG, Map.of("methodSignature", MISSING_SIG)))));
     assertTrue(ex.getMessage().contains("Method not found"), ex.getMessage());
     assertTrue(ex.getMessage().contains(MISSING_SIG), ex.getMessage());
+  }
+
+  @Test
+  void enricherIsAppliedToRawDdg() {
+    Map<String, Object> input =
+        Map.of(
+            "nodes",
+            Map.of(
+                PROCESS_ORDER_SIG,
+                Map.of(
+                    "node_type",
+                    "java_method",
+                    "class",
+                    "com.example.app.OrderService",
+                    "method",
+                    "processOrder",
+                    "methodSignature",
+                    PROCESS_ORDER_SIG)),
+            "calls",
+            List.of(),
+            "metadata",
+            Map.of("root", PROCESS_ORDER_SIG));
+
+    // Use a test enricher that records the inScopeMethodSigs
+    TestFieldDepEnricher testEnricher = new TestFieldDepEnricher();
+    Artifact artifact = new DdgInterCfgArtifactBuilder(tracer, testEnricher).build(input);
+
+    assertNotNull(artifact, "Artifact should not be null");
+    assertNotNull(testEnricher.capturedScope, "Enricher should be called with inScopeMethodSigs");
+    assertTrue(
+        testEnricher.capturedScope.contains(PROCESS_ORDER_SIG),
+        "Enricher should receive PROCESS_ORDER_SIG in scope");
+  }
+
+  @Test
+  void nullEnricherLeavesRawDdg() {
+    Map<String, Object> input =
+        Map.of(
+            "nodes",
+            Map.of(
+                PROCESS_ORDER_SIG,
+                Map.of(
+                    "node_type",
+                    "java_method",
+                    "class",
+                    "com.example.app.OrderService",
+                    "method",
+                    "processOrder",
+                    "methodSignature",
+                    PROCESS_ORDER_SIG)),
+            "calls",
+            List.of(),
+            "metadata",
+            Map.of("root", PROCESS_ORDER_SIG));
+
+    Artifact artifact = new DdgInterCfgArtifactBuilder(tracer, null).build(input);
+
+    assertNotNull(artifact, "Artifact should not be null");
+    assertNotNull(artifact.ddg(), "DDG should not be null");
+    // With null enricher and single method with simple body, DDG should have some nodes
+    assertTrue(!artifact.ddg().nodes().isEmpty(), "DDG should have nodes from raw build");
+  }
+
+  // Test helper: records the inScopeMethodSigs passed to enrich()
+  static class TestFieldDepEnricher extends FieldDepEnricher {
+    Set<String> capturedScope = null;
+
+    TestFieldDepEnricher() {
+      super((a, b, c, d) -> false);
+    }
+
+    @Override
+    public DdgGraph enrich(DdgGraph ddg, Set<String> inScope) {
+      capturedScope = inScope;
+      return ddg; // pass-through
+    }
   }
 }

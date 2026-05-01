@@ -1,8 +1,10 @@
 package tools.bytecode;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import sootup.core.model.SootMethod;
 import tools.bytecode.artifact.Artifact;
 import tools.bytecode.artifact.CalltreeEdge;
@@ -15,9 +17,15 @@ import tools.bytecode.artifact.DdgNode;
 public class DdgInterCfgArtifactBuilder {
 
   private final BytecodeTracer tracer;
+  private final FieldDepEnricher enricher;
+
+  public DdgInterCfgArtifactBuilder(BytecodeTracer tracer, FieldDepEnricher enricher) {
+    this.tracer = tracer;
+    this.enricher = enricher;
+  }
 
   public DdgInterCfgArtifactBuilder(BytecodeTracer tracer) {
-    this.tracer = tracer;
+    this(tracer, null);
   }
 
   @SuppressWarnings("unchecked")
@@ -63,6 +71,10 @@ public class DdgInterCfgArtifactBuilder {
       ddgEdges.addAll(payload.edges());
     }
 
-    return new Artifact(metadata, calltree, new DdgGraph(ddgNodes, ddgEdges));
+    Set<String> inScopeMethodSigs = new HashSet<>(nodes.keySet());
+    DdgGraph rawDdg = new DdgGraph(ddgNodes, ddgEdges);
+    DdgGraph enrichedDdg = enricher != null ? enricher.enrich(rawDdg, inScopeMethodSigs) : rawDdg;
+
+    return new Artifact(metadata, calltree, enrichedDdg);
   }
 }

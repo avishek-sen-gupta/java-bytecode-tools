@@ -58,6 +58,10 @@ public class BytecodeTracer {
   // Configuration
   // ------------------------------------------------------------------
 
+  public JavaView getView() {
+    return view;
+  }
+
   public Path getCallGraphCache() {
     return callGraphCache;
   }

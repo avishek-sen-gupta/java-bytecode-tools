@@ -71,7 +71,7 @@ public class ForwardTracer {
       String rootSig,
       Map<String, List<String>> callGraph,
       Set<String> knownSignatures,
-      BytecodeTracer.FilterConfig filter) {
+      FilterConfig filter) {
     Set<String> normalMethods = new LinkedHashSet<>();
     Map<String, List<DiscoveryResult.CalleeEntry>> calleeMap = new LinkedHashMap<>();
     Set<String> pathAncestors = new LinkedHashSet<>();
@@ -94,7 +94,7 @@ public class ForwardTracer {
       String sig,
       Map<String, List<String>> callGraph,
       Set<String> knownSignatures,
-      BytecodeTracer.FilterConfig filter,
+      FilterConfig filter,
       Set<String> pathAncestors,
       Set<String> visited,
       Set<String> normalMethods,
@@ -132,7 +132,7 @@ public class ForwardTracer {
       String calleeSig,
       Set<String> pathAncestors,
       Set<String> knownSignatures,
-      BytecodeTracer.FilterConfig filter) {
+      FilterConfig filter) {
     if (pathAncestors.contains(calleeSig)) return Classification.CYCLE;
     if (!knownSignatures.contains(calleeSig)) return Classification.FILTERED;
     if (filter != null && filter.stop() != null) {
@@ -174,12 +174,11 @@ public class ForwardTracer {
    * Resolve the source line where a caller invokes a callee. Builds a lightweight CallFrame for the
    * callee (no body needed) and delegates to {@link BytecodeTracer#findCallSiteLine}.
    */
-  private static int resolveCallSiteLine(BytecodeTracer.CallFrame callerFrame, String calleeSig) {
+  private static int resolveCallSiteLine(CallFrame callerFrame, String calleeSig) {
     String calleeClass = extractClassName(calleeSig);
     String calleeMethod = extractMethodName(calleeSig);
-    BytecodeTracer.CallFrame calleeFrame =
-        new BytecodeTracer.CallFrame(
-            calleeClass, calleeMethod, calleeSig, -1, -1, List.of(), List.of());
+    CallFrame calleeFrame =
+        new CallFrame(calleeClass, calleeMethod, calleeSig, -1, -1, List.of(), List.of());
     return BytecodeTracer.findCallSiteLine(callerFrame, calleeFrame);
   }
 
@@ -192,7 +191,7 @@ public class ForwardTracer {
   private Map<String, Object> buildMethodCFG(
       String sig, Map<String, SootMethod> sigToMethod, DiscoveryResult discovery) {
     SootMethod method = sigToMethod.get(sig);
-    BytecodeTracer.CallFrame frame = tracer.buildFrame(method, sig);
+    CallFrame frame = tracer.buildFrame(method, sig);
 
     Map<String, Object> node = new LinkedHashMap<>();
     node.put(F_CLASS, frame.className());
@@ -225,20 +224,20 @@ public class ForwardTracer {
     this.tracer = tracer;
   }
 
-  public Map<String, Object> traceForward(
-      String fromClass, String fromMethod, BytecodeTracer.FilterConfig filter) throws IOException {
+  public Map<String, Object> traceForward(String fromClass, String fromMethod, FilterConfig filter)
+      throws IOException {
     return traceForwardFromMethod(
         tracer.resolveMethodByName(fromClass, fromMethod), fromClass, -1, filter);
   }
 
-  public Map<String, Object> traceForward(
-      String fromClass, int fromLine, BytecodeTracer.FilterConfig filter) throws IOException {
+  public Map<String, Object> traceForward(String fromClass, int fromLine, FilterConfig filter)
+      throws IOException {
     return traceForwardFromMethod(
         tracer.resolveMethod(fromClass, fromLine), fromClass, fromLine, filter);
   }
 
   private Map<String, Object> traceForwardFromMethod(
-      SootMethod entryMethod, String fromClass, int fromLine, BytecodeTracer.FilterConfig filter)
+      SootMethod entryMethod, String fromClass, int fromLine, FilterConfig filter)
       throws IOException {
     String entrySig = entryMethod.getSignature().toString();
 

@@ -1,7 +1,5 @@
 package tools.bytecode;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -79,48 +77,6 @@ public class BytecodeTracer {
     System.err.println(
         "[init] Found " + result.size() + " classes in " + (System.currentTimeMillis() - t) + "ms");
     return result;
-  }
-
-  // ------------------------------------------------------------------
-  // Records
-  // ------------------------------------------------------------------
-
-  record CallFrame(
-      String className,
-      String methodName,
-      String methodSignature,
-      int entryLine,
-      int exitLine,
-      List<Map<String, Object>> sourceTrace,
-      List<Map<String, Object>> stmtDetails) {}
-
-  public record FilterConfig(List<String> allow, List<String> stop) {
-    boolean shouldRecurse(String className) {
-      if (allow != null && !allow.isEmpty()) {
-        boolean allowed = false;
-        for (String prefix : allow) {
-          if (className.startsWith(prefix)) {
-            allowed = true;
-            break;
-          }
-        }
-        if (!allowed) return false;
-      }
-      if (stop != null && !stop.isEmpty()) {
-        for (String prefix : stop) {
-          if (className.startsWith(prefix)) return false;
-        }
-      }
-      return true;
-    }
-
-    public static FilterConfig load(Path path) throws IOException {
-      if (path == null) return new FilterConfig(null, null);
-      ObjectMapper m = new ObjectMapper();
-      @SuppressWarnings("unchecked")
-      Map<String, List<String>> raw = m.readValue(path.toFile(), Map.class);
-      return new FilterConfig(raw.get("allow"), raw.get("stop"));
-    }
   }
 
   // ------------------------------------------------------------------

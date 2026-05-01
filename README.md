@@ -63,8 +63,8 @@ flowchart LR
 
     ranges[method ranges JSON]:::artifact
     cg[call graph JSON]:::artifact
-    trace[trace envelope JSON<br/>{trace, refIndex}]:::artifact
-    flat[flat graph JSON<br/>{nodes, calls, metadata}]:::artifact
+    trace[trace envelope JSON<br/>trace + refIndex]:::artifact
+    flat[flat graph JSON<br/>nodes + calls + metadata]:::artifact
     semantic[semantic graph JSON]:::artifact
 
     fw[fw-calltree]:::entry

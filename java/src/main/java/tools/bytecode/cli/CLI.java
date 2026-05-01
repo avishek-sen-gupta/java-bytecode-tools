@@ -28,6 +28,7 @@ public class CLI implements Runnable {
 
   @Option(
       names = "--prefix",
+      defaultValue = "",
       description = "Limit analysis to classes whose FQCN starts with this prefix")
   String prefix;
 

@@ -55,9 +55,7 @@ class XtraceCommand extends BaseCommand {
   @Override
   public void run() {
     try {
-      var tracer =
-          new BytecodeTracer(
-              parent.classpath, parent.prefix != null ? parent.prefix : "", callGraphFile);
+      var tracer = new BytecodeTracer(parent.classpath, parent.prefix, callGraphFile);
       FilterConfig filter = FilterConfig.load(filterFile);
       Map<String, Object> result =
           entryPoint.fromMethod != null

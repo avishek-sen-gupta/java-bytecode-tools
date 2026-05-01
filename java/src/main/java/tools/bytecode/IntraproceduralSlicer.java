@@ -1,16 +1,17 @@
 package tools.bytecode;
 
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import sootup.core.graph.StmtGraph;
 import sootup.core.jimple.common.stmt.Stmt;
 import sootup.core.model.Body;
@@ -84,21 +85,31 @@ class IntraproceduralSlicer {
     return Optional.of(methodTrace);
   }
 
-  /**
-   * BFS backward from {@code toStmts}, collecting all stmts on any path that reaches {@code
-   * fromStmts}. Uses an imperative queue+visited pattern — this algorithm is inherently stateful
-   * and has no idiomatic functional equivalent in Java.
-   */
   private List<Stmt> backtrack(StmtGraph<?> graph, Set<Stmt> fromStmts, Set<Stmt> toStmts) {
-    Map<Stmt, Stmt> parentMap = new LinkedHashMap<>();
-    Queue<Stmt> queue = new ArrayDeque<>(toStmts);
-    Set<Stmt> visited = new LinkedHashSet<>(toStmts);
-    toStmts.forEach(s -> parentMap.put(s, null));
+    Map<Stmt, Stmt> parentMap = bfsParents(graph, toStmts);
+    Set<Stmt> reachedFrom =
+        parentMap.keySet().stream()
+            .filter(fromStmts::contains)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+    if (reachedFrom.isEmpty() && !fromStmts.isEmpty()) return Collections.emptyList();
+    return reachedFrom.stream()
+        .flatMap(root -> pathFromRoot(parentMap, root))
+        .distinct()
+        .collect(Collectors.toList());
+  }
 
-    Set<Stmt> reachedFrom = new LinkedHashSet<>();
+  /**
+   * BFS backward from {@code seeds}; returns a map of each visited stmt → its successor toward a
+   * seed (seeds themselves map to null). Uses an imperative queue+visited pattern — BFS is
+   * inherently stateful and has no idiomatic functional equivalent in Java.
+   */
+  private static Map<Stmt, Stmt> bfsParents(StmtGraph<?> graph, Set<Stmt> seeds) {
+    Map<Stmt, Stmt> parentMap = new LinkedHashMap<>();
+    Queue<Stmt> queue = new ArrayDeque<>(seeds);
+    Set<Stmt> visited = new LinkedHashSet<>(seeds);
+    seeds.forEach(s -> parentMap.put(s, null));
     while (!queue.isEmpty()) {
       Stmt current = queue.poll();
-      if (fromStmts.contains(current)) reachedFrom.add(current);
       for (Stmt pred : graph.predecessors(current)) {
         if (visited.add(pred)) {
           parentMap.put(pred, current);
@@ -106,18 +117,11 @@ class IntraproceduralSlicer {
         }
       }
     }
+    return parentMap;
+  }
 
-    if (reachedFrom.isEmpty() && !fromStmts.isEmpty()) return Collections.emptyList();
-
-    Set<Stmt> onPath = new LinkedHashSet<>();
-    Queue<Stmt> traceQueue = new ArrayDeque<>(reachedFrom);
-    while (!traceQueue.isEmpty()) {
-      Stmt s = traceQueue.poll();
-      if (onPath.add(s)) {
-        Stmt next = parentMap.get(s);
-        if (next != null) traceQueue.add(next);
-      }
-    }
-    return new ArrayList<>(onPath);
+  /** Follows the parent-map chain from {@code root} until the chain ends at a seed stmt. */
+  private static Stream<Stmt> pathFromRoot(Map<Stmt, Stmt> parentMap, Stmt root) {
+    return Stream.iterate(root, Objects::nonNull, parentMap::get);
   }
 }

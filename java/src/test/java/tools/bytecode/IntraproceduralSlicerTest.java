@@ -63,6 +63,38 @@ class IntraproceduralSlicerTest {
     }
   }
 
+  @Nested
+  class BacktrackBehavior {
+
+    @Test
+    void trace_sameFromAndToLine_sourceTraceHasExactlyOneLine() {
+      int line = anyLineIn(ORDER_SERVICE, "processOrder");
+      Map<String, Object> result = slicer.trace(ORDER_SERVICE, line, line);
+      @SuppressWarnings("unchecked")
+      List<Map<String, Object>> traces = (List<Map<String, Object>>) result.get("traces");
+      assertFalse(traces.isEmpty());
+      List<?> sourceTrace = (List<?>) traces.get(0).get("sourceTrace");
+      assertEquals(1, sourceTrace.size());
+    }
+
+    @Test
+    void trace_boundedFromBeforeTo_hasPositiveStmtCount() {
+      int minLine = minLineIn(ORDER_SERVICE, "processOrder");
+      int maxLine = anyLineIn(ORDER_SERVICE, "processOrder");
+      int stmtCount = totalStmtCount(slicer.trace(ORDER_SERVICE, minLine, maxLine));
+      assertTrue(stmtCount > 0, "Expected bounded trace to contain at least one statement");
+    }
+
+    @Test
+    void trace_bounded_toLineIsIncludedInSourceTrace() {
+      int minLine = minLineIn(ORDER_SERVICE, "processOrder");
+      int maxLine = anyLineIn(ORDER_SERVICE, "processOrder");
+      List<Integer> lines = sourceLinesIn(slicer.trace(ORDER_SERVICE, minLine, maxLine));
+      assertTrue(
+          lines.contains(maxLine), "Expected toLine " + maxLine + " in sourceTrace " + lines);
+    }
+  }
+
   private static int anyLineIn(String className, String methodName) {
     return resolver
         .resolveByName(className, methodName)
@@ -74,5 +106,33 @@ class IntraproceduralSlicerTest {
         .filter(l -> l > 0)
         .max()
         .orElseThrow();
+  }
+
+  private static int minLineIn(String className, String methodName) {
+    return resolver
+        .resolveByName(className, methodName)
+        .getBody()
+        .getStmtGraph()
+        .getNodes()
+        .stream()
+        .mapToInt(StmtAnalyzer::stmtLine)
+        .filter(l -> l > 0)
+        .min()
+        .orElseThrow();
+  }
+
+  @SuppressWarnings("unchecked")
+  private static int totalStmtCount(Map<String, Object> result) {
+    return ((List<Map<String, Object>>) result.get("traces"))
+        .stream().mapToInt(t -> (int) t.get("stmtCount")).sum();
+  }
+
+  @SuppressWarnings("unchecked")
+  private static List<Integer> sourceLinesIn(Map<String, Object> result) {
+    return ((List<Map<String, Object>>) result.get("traces"))
+        .stream()
+            .flatMap(t -> ((List<Map<String, Object>>) t.get("sourceTrace")).stream())
+            .map(entry -> (int) entry.get(StmtAnalyzer.KEY_LINE))
+            .collect(java.util.stream.Collectors.toList());
   }
 }

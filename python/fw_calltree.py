@@ -169,6 +169,7 @@ def main() -> None:
             "tool": "calltree",
             "entryClass": args.cls,
             "entryMethod": args.method,
+            "root": entries[0],
         },
     }
     json.dump(output, sys.stdout, indent=2)

@@ -102,4 +102,78 @@ class BwdSliceBuilderTest {
     assertTrue(resultNodes.isEmpty(), "nodes should be empty");
     assertTrue(resultEdges.isEmpty(), "edges should be empty");
   }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void crossMethodParameterCrossing() {
+    // Caller method: calls bar(a) at s2, where a is defined at s1
+    // s1 = "a = 1"  (assign)
+    // s2 = "virtualinvoke r0.<Bar: void bar(int)>(a)"  (invoke)
+    // DDG: s1 --ddg--> s2
+    String CALLER = "<com.example.Caller: void main()>";
+    String CALLEE = "<com.example.Bar: void bar(int)>";
+
+    // Caller DDG payload
+    List<Map<String, Object>> callerNodes =
+        List.of(
+            stmtNode("s1", "a = 1", "assign"),
+            Map.of(
+                "id",
+                "s2",
+                "node_type",
+                "stmt",
+                "stmt",
+                "virtualinvoke r0.<com.example.Bar: void bar(int)>(a)",
+                "line",
+                -1,
+                "kind",
+                "invoke",
+                "call",
+                Map.of("targetMethodSignature", CALLEE)));
+    List<Map<String, Object>> callerEdges = List.of(ddgEdge("s1", "s2"));
+    Map<String, Object> callerPayload =
+        payload(callerNodes, callerEdges, List.of(), List.of(), List.of("s2"));
+
+    // Callee DDG payload — seed starts here
+    // p0 = "@parameter0: int" identity stmt
+    List<Map<String, Object>> calleeNodes =
+        List.of(stmtNode("p0", "r1 := @parameter0: int", "identity"));
+    Map<String, Object> calleePayload =
+        payload(calleeNodes, List.of(), List.of("p0"), List.of(), List.of());
+
+    // calls: CALLER -> CALLEE
+    Map<String, Object> art =
+        artifact(
+            Map.of(CALLER, Map.of(), CALLEE, Map.of()),
+            List.of(Map.of("from", CALLER, "to", CALLEE)),
+            Map.of(CALLER, callerPayload, CALLEE, calleePayload));
+
+    // Seed: in CALLEE on r1
+    Map<String, Object> result = new BwdSliceBuilder().build(art, CALLEE, "r1");
+
+    List<Map<String, Object>> resultNodes = (List<Map<String, Object>>) result.get("nodes");
+    List<Map<String, Object>> resultEdges = (List<Map<String, Object>>) result.get("edges");
+
+    // Should have: p0 (callee identity), s2 (caller call site), s1 (caller def of a)
+    assertEquals(3, resultNodes.size());
+    List<String> stmtIds =
+        resultNodes.stream().map(n -> (String) n.get("stmtId")).sorted().toList();
+    assertEquals(List.of("p0", "s1", "s2"), stmtIds);
+
+    // Should have a param edge from s2 (caller) to p0 (callee)
+    boolean hasParamEdge =
+        resultEdges.stream()
+            .anyMatch(
+                e -> {
+                  Map<?, ?> from = (Map<?, ?>) e.get("from");
+                  Map<?, ?> to = (Map<?, ?>) e.get("to");
+                  Map<?, ?> info = (Map<?, ?>) e.get("edge_info");
+                  return CALLER.equals(from.get("method"))
+                      && "s2".equals(from.get("stmtId"))
+                      && CALLEE.equals(to.get("method"))
+                      && "p0".equals(to.get("stmtId"))
+                      && "param".equals(info.get("kind"));
+                });
+    assertTrue(hasParamEdge, "param edge from caller s2 to callee p0 expected");
+  }
 }

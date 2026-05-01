@@ -73,8 +73,7 @@ class MethodResolver {
   SootMethod resolveBySignature(String methodSignature) {
     return view.getClasses()
         .flatMap(clazz -> clazz.getMethods().stream())
-        .filter(
-            method -> method.hasBody() && method.getSignature().toString().equals(methodSignature))
+        .filter(method -> method.getSignature().toString().equals(methodSignature))
         .findFirst()
         .orElseThrow(() -> new RuntimeException("Method not found: " + methodSignature));
   }

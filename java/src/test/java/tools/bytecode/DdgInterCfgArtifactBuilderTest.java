@@ -15,6 +15,9 @@ class DdgInterCfgArtifactBuilderTest {
 
   private static final String PROCESS_ORDER_SIG =
       "<com.example.app.OrderService: java.lang.String processOrder(int)>";
+  private static final String REPO_FIND_BY_ID_SIG =
+      "<com.example.app.OrderRepository: java.lang.String findById(int)>";
+  private static final String MISSING_SIG = "<com.example.app.MissingService: void nope()>";
 
   private static BytecodeTracer tracer;
 
@@ -61,5 +64,36 @@ class DdgInterCfgArtifactBuilderTest {
             IllegalArgumentException.class,
             () -> new DdgInterCfgArtifactBuilder(tracer).build(Map.of("calls", List.of())));
     assertTrue(ex.getMessage().contains("nodes"), ex.getMessage());
+  }
+
+  @Test
+  void rejectsResolvedMethodWithoutBody() {
+    IllegalArgumentException ex =
+        assertThrows(
+            IllegalArgumentException.class,
+            () ->
+                new DdgInterCfgArtifactBuilder(tracer)
+                    .build(
+                        Map.of(
+                            "nodes",
+                            Map.of(
+                                REPO_FIND_BY_ID_SIG,
+                                Map.of("methodSignature", REPO_FIND_BY_ID_SIG)))));
+    assertTrue(ex.getMessage().contains("has no body"), ex.getMessage());
+    assertTrue(ex.getMessage().contains(REPO_FIND_BY_ID_SIG), ex.getMessage());
+  }
+
+  @Test
+  void rejectsUnresolvedMethodSignature() {
+    RuntimeException ex =
+        assertThrows(
+            RuntimeException.class,
+            () ->
+                new DdgInterCfgArtifactBuilder(tracer)
+                    .build(
+                        Map.of(
+                            "nodes", Map.of(MISSING_SIG, Map.of("methodSignature", MISSING_SIG)))));
+    assertTrue(ex.getMessage().contains("Method not found"), ex.getMessage());
+    assertTrue(ex.getMessage().contains(MISSING_SIG), ex.getMessage());
   }
 }

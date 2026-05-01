@@ -8,9 +8,6 @@ public class BwdSliceBuilder {
   public Map<String, Object> build(
       Map<String, Object> artifact, String methodSig, String localVar) {
     Map<String, Map<String, Object>> ddgs = (Map<String, Map<String, Object>>) artifact.get("ddgs");
-    List<Map<String, Object>> calls =
-        (List<Map<String, Object>>) artifact.getOrDefault("calls", List.of());
-    Map<String, List<String>> callerIndex = buildCallerIndex(calls);
 
     List<Map<String, Object>> resultNodes = new ArrayList<>();
     List<Map<String, Object>> resultEdges = new ArrayList<>();
@@ -51,17 +48,6 @@ public class BwdSliceBuilder {
     result.put("nodes", resultNodes);
     result.put("edges", resultEdges);
     return result;
-  }
-
-  @SuppressWarnings("unchecked")
-  private Map<String, List<String>> buildCallerIndex(List<Map<String, Object>> calls) {
-    Map<String, List<String>> index = new HashMap<>();
-    for (Map<String, Object> call : calls) {
-      String to = (String) call.get("to");
-      String from = (String) call.get("from");
-      index.computeIfAbsent(to, k -> new ArrayList<>()).add(from);
-    }
-    return index;
   }
 
   @SuppressWarnings("unchecked")

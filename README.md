@@ -405,7 +405,7 @@ If you want a rendered SVG directly, keep the upstream stages on stdout and give
 scripts/bytecode.sh --prefix com.example. "$CP" \
   xtrace --call-graph callgraph.json \
   --from com.example.app.OrderService --from-line 17 \
-  | uv --directory python run ftrace-slice --to com.example.app.JdbcOrderRepository \
+  | uv --directory python run ftrace-inter-slice --to com.example.app.JdbcOrderRepository \
   | uv --directory python run ftrace-expand-refs \
   | uv --directory python run ftrace-semantic \
   | uv --directory python run ftrace-semantic-to-dot --output trace.svg
@@ -414,7 +414,7 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
 ### Slice A Trace
 
 ```bash
-uv --directory python run ftrace-slice \
+uv --directory python run ftrace-inter-slice \
   --input forward.json \
   --from com.example.app.OrderService --from-line 17 \
   --output slice.json

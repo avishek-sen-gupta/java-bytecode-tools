@@ -135,6 +135,90 @@ Notes:
 - Output shape is `{ "trace": ..., "refIndex": ... }`
 - Non-root callees are usually emitted as `ref` leaves
 
+### `ddg-inter-cfg` — Build interprocedural data dependency graph
+
+Read a `fw-calltree` artifact and emit a typed `{metadata, calltree, ddg}` artifact:
+
+```bash
+$UV fw-calltree \
+  --callgraph callgraph.json \
+  --class com.example.app.OrderService \
+  --method processOrder \
+  --pattern 'com\.example' \
+  | $B ddg-inter-cfg > artifact.json
+```
+
+With heap edge analysis (field read/write dependencies across methods):
+
+```bash
+$UV fw-calltree \
+  --callgraph callgraph.json \
+  --class com.example.app.OrderService \
+  --method processOrder \
+  --pattern 'com\.example' \
+  | $B ddg-inter-cfg --unbounded > artifact.json
+```
+
+Read from file:
+
+```bash
+$B ddg-inter-cfg --input calltree.json > artifact.json
+$B ddg-inter-cfg --input calltree.json --unbounded > artifact.json
+```
+
+Inspect the output:
+
+```bash
+jq '.metadata' artifact.json
+jq '.ddg.nodes | length' artifact.json
+jq '.ddg.edges | map(.edge_info.kind) | unique' artifact.json
+```
+
+Notes:
+
+- Input: `fw-calltree` JSON (with `metadata.root` and `nodes`/`calls` fields)
+- Output: typed artifact with `metadata`, `calltree`, and `ddg` keys
+- `ddg.nodes` have compound IDs: `"<methodSig>#sN"` (globally unique)
+- Without `--unbounded`, only LOCAL, PARAM, and RETURN edges are emitted
+- `--unbounded` adds HEAP edges for field read/write pairs (conservative may-alias)
+
+### `bwd-slice` — Backward interprocedural data dependency slice
+
+Slice backward from a seed variable in a given method:
+
+```bash
+$B bwd-slice \
+  --method "<com.example.app.OrderService: java.lang.String processOrder(int)>" \
+  --local-var "orderId" \
+  < artifact.json
+```
+
+Read from file:
+
+```bash
+$B bwd-slice \
+  --input artifact.json \
+  --method "<com.example.app.OrderService: java.lang.String processOrder(int)>" \
+  --local-var "orderId" \
+  > slice.json
+```
+
+Inspect the result:
+
+```bash
+jq '.seed' slice.json
+jq '.nodes | length' slice.json
+jq '[.edges[].edge_info.kind] | unique' slice.json
+jq '.nodes[].stmt' slice.json
+```
+
+Notes:
+
+- Input: `ddg-inter-cfg` artifact (`--method` and `--local-var` are required)
+- `--local-var` is the Jimple local variable name (use `this` for the receiver, `$r0`-style for temporaries)
+- Output: `{seed, nodes, edges}` — the slice subgraph reachable backward from the seed
+- Edge kinds in output: `LOCAL`, `HEAP`, `PARAM`, `RETURN`
+
 ## Python Tools
 
 These tools read stdin when `--input` is omitted and write stdout when `--output` is omitted, so pipelines compose naturally.
@@ -613,4 +697,39 @@ $UV fw-calltree \
 
 $UV calltree-print --input calltree.json
 $UV calltree-to-dot --input calltree.json --svg --output calltree.svg
+```
+
+### Backward data dependency slice (interprocedural)
+
+Find all statements that `orderId` in `processOrder` depends on, across method boundaries:
+
+```bash
+$UV fw-calltree \
+  --callgraph callgraph.json \
+  --class com.example.app.OrderService \
+  --method processOrder \
+  --pattern 'com\.example' \
+  | $B ddg-inter-cfg --unbounded \
+  | $B bwd-slice \
+      --method "<com.example.app.OrderService: java.lang.String processOrder(int)>" \
+      --local-var "orderId" \
+  > slice.json
+
+jq '[.edges[].edge_info.kind] | unique' slice.json   # see which edge types appear
+jq '.nodes[].stmt' slice.json                        # statements in the slice
+```
+
+Without heap edges (LOCAL/PARAM/RETURN only):
+
+```bash
+$UV fw-calltree \
+  --callgraph callgraph.json \
+  --class com.example.app.OrderService \
+  --method processOrder \
+  --pattern 'com\.example' \
+  | $B ddg-inter-cfg \
+  | $B bwd-slice \
+      --method "<com.example.app.OrderService: java.lang.String processOrder(int)>" \
+      --local-var "orderId" \
+  > slice.json
 ```

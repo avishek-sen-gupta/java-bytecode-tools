@@ -43,11 +43,11 @@ Key Python commands:
 ```mermaid
 flowchart TD
     classpath([classpath])
+    jsps([JSP files\n+ faces-config])
 
     classpath --> dump[dump]
     classpath --> trace[trace]
     classpath --> buildcg[buildcg]
-    classpath --> xtrace["xtrace ①"]
 
     dump --> method_ranges([method ranges])
     trace --> intra([intra-method paths])
@@ -56,6 +56,10 @@ flowchart TD
     cg --> calltree[calltree]
     cg --> frames[frames]
     cg --> jspmap[jspmap]
+    cg --> xtrace[xtrace]
+    classpath --> xtrace
+
+    jsps --> jspmap
 
     calltree --> flat([flat nodes · calls · metadata])
     frames   --> flat
@@ -72,8 +76,6 @@ flowchart TD
     fsem --> fsdot[ftrace-semantic-to-dot\nSVG / DOT]
     fsem --> fval[ftrace-validate]
 ```
-
-① `xtrace` also accepts a classpath directly
 
 ## Setup
 

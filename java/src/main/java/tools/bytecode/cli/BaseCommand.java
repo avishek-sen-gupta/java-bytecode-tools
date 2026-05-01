@@ -33,4 +33,14 @@ abstract class BaseCommand implements Runnable {
       System.out.println(mapper.writeValueAsString(result));
     }
   }
+
+  protected void writeOutput(Object result) throws IOException {
+    if (output != null) {
+      Files.createDirectories(output.getParent());
+      mapper.writeValue(output.toFile(), result);
+      System.err.println("Output: " + output);
+    } else {
+      System.out.println(mapper.writeValueAsString(result));
+    }
+  }
 }

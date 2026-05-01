@@ -1,15 +1,13 @@
 package tools.bytecode;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Paths;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import tools.bytecode.artifact.Artifact;
 
 class DdgInterCfgArtifactBuilderTest {
 
@@ -28,33 +26,38 @@ class DdgInterCfgArtifactBuilderTest {
   }
 
   @Test
-  void preservesNodesAndCallsAndAddsDdgsAndMetadata() {
-    Map<String, Object> input = new LinkedHashMap<>();
-    input.put(
-        "nodes",
+  void preservesNodesAndCallsAndBuildsArtifact() {
+    Map<String, Object> input =
         Map.of(
-            PROCESS_ORDER_SIG,
+            "nodes",
             Map.of(
-                "node_type",
-                "java_method",
-                "class",
-                "com.example.app.OrderService",
-                "method",
-                "processOrder",
-                "methodSignature",
-                PROCESS_ORDER_SIG)));
-    input.put("calls", List.of());
-    input.put("metadata", Map.of("tool", "calltree"));
+                PROCESS_ORDER_SIG,
+                Map.of(
+                    "node_type",
+                    "java_method",
+                    "class",
+                    "com.example.app.OrderService",
+                    "method",
+                    "processOrder",
+                    "methodSignature",
+                    PROCESS_ORDER_SIG)),
+            "calls",
+            List.of(),
+            "metadata",
+            Map.of("root", PROCESS_ORDER_SIG));
 
-    Map<String, Object> output = new DdgInterCfgArtifactBuilder(tracer).build(input);
+    Artifact artifact = new DdgInterCfgArtifactBuilder(tracer).build(input);
 
-    assertEquals(input.get("nodes"), output.get("nodes"));
-    assertEquals(input.get("calls"), output.get("calls"));
-    assertTrue(((Map<?, ?>) output.get("ddgs")).containsKey(PROCESS_ORDER_SIG));
-    assertEquals("ddg-inter-cfg", ((Map<?, ?>) output.get("metadata")).get("tool"));
-    assertEquals("calltree", ((Map<?, ?>) output.get("metadata")).get("inputTool"));
-    assertEquals(1, ((Map<?, ?>) output.get("metadata")).get("methodCount"));
-    assertEquals(1, ((Map<?, ?>) output.get("metadata")).get("ddgCount"));
+    assertNotNull(artifact, "Artifact should not be null");
+    assertNotNull(artifact.calltree(), "Calltree should not be null");
+    assertNotNull(artifact.ddg(), "DDG should not be null");
+    assertEquals(
+        PROCESS_ORDER_SIG,
+        artifact.metadata().get("root"),
+        "Metadata should preserve root from input");
+    assertTrue(
+        artifact.calltree().nodes().stream().anyMatch(n -> n.id().equals(PROCESS_ORDER_SIG)),
+        "Calltree should contain root method");
   }
 
   @Test

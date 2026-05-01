@@ -6,6 +6,7 @@ import java.util.Map;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import tools.bytecode.DdgInterCfgArtifactBuilder;
+import tools.bytecode.artifact.Artifact;
 
 @Command(
     name = "ddg-inter-cfg",
@@ -24,8 +25,8 @@ class DdgInterCfgCommand extends BaseCommand {
   public void run() {
     try {
       Map<String, Object> inputGraph = readInputGraph();
-      Map<String, Object> result = new DdgInterCfgArtifactBuilder(createTracer()).build(inputGraph);
-      writeOutput(result);
+      Artifact artifact = new DdgInterCfgArtifactBuilder(createTracer()).build(inputGraph);
+      writeOutput(artifact);
     } catch (Exception e) {
       System.err.println("Error: " + e.getMessage());
       System.exit(1);

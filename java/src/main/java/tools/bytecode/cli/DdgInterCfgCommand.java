@@ -1,17 +1,17 @@
 package tools.bytecode.cli;
 
+import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Map;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
+import tools.bytecode.DdgInterCfgArtifactBuilder;
 
 @Command(
     name = "ddg-inter-cfg",
     mixinStandardHelpOptions = true,
     description = {
       "Read a flat fw-calltree graph and emit a compound {nodes, calls, ddgs, metadata} artifact.",
-      "",
-      "Scaffold only: runtime implementation will land in a later task.",
-      "",
       "Input: stdin by default, or --input <file>",
       "Output: stdout by default, or --output <file>"
     })
@@ -22,7 +22,21 @@ class DdgInterCfgCommand extends BaseCommand {
 
   @Override
   public void run() {
-    System.err.println("Error: ddg-inter-cfg is not implemented yet.");
-    System.exit(1);
+    try {
+      Map<String, Object> inputGraph = readInputGraph();
+      Map<String, Object> result = new DdgInterCfgArtifactBuilder(createTracer()).build(inputGraph);
+      writeOutput(result);
+    } catch (Exception e) {
+      System.err.println("Error: " + e.getMessage());
+      System.exit(1);
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  private Map<String, Object> readInputGraph() throws IOException {
+    if (input != null) {
+      return mapper.readValue(input.toFile(), Map.class);
+    }
+    return mapper.readValue(System.in, Map.class);
   }
 }

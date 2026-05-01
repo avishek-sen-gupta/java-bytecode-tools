@@ -1,88 +1,87 @@
 package tools.bytecode;
 
 import java.util.*;
+import tools.bytecode.artifact.*;
 
 public class BwdSliceBuilder {
 
-  @SuppressWarnings("unchecked")
-  public Map<String, Object> build(
-      Map<String, Object> artifact, String methodSig, String localVar) {
-    Map<String, Map<String, Object>> ddgs = (Map<String, Map<String, Object>>) artifact.get("ddgs");
-    List<Map<String, Object>> calls =
-        (List<Map<String, Object>>) artifact.getOrDefault("calls", List.of());
-    Map<String, List<String>> callerIndex = buildCallerIndex(calls);
+  public Map<String, Object> build(Artifact artifact, String methodSig, String localVar) {
+    Map<String, DdgNode> nodeIndex = buildNodeIndex(artifact.ddg().nodes());
+    Map<String, List<String>> callerIndex = buildCallerIndex(artifact.calltree().edges());
 
     List<Map<String, Object>> resultNodes = new ArrayList<>();
     List<Map<String, Object>> resultEdges = new ArrayList<>();
     Set<String> visited = new HashSet<>();
     Deque<WorklistItem> worklist = new ArrayDeque<>();
 
-    Map<String, Object> ddg = ddgs.get(methodSig);
-    if (ddg != null) {
-      findDefStmts(ddg, localVar)
-          .forEach(stmtId -> worklist.add(new WorklistItem(methodSig, stmtId, localVar)));
-    }
+    // Seed: find nodes in methodSig that define localVar
+    nodeIndex.values().stream()
+        .filter(n -> n.method().equals(methodSig))
+        .filter(n -> isDefinitionOf(n.stmt(), localVar))
+        .map(n -> new WorklistItem(n.id(), localVar))
+        .forEach(worklist::add);
 
     while (!worklist.isEmpty()) {
       WorklistItem item = worklist.poll();
-      String key = item.methodSig() + "#" + item.stmtId();
-      if (!visited.add(key)) continue;
+      if (!visited.add(item.nodeId())) continue;
 
-      Map<String, Object> ddgPayload = ddgs.get(item.methodSig());
-      if (ddgPayload == null) continue;
-      Map<String, Object> stmt = findNode(ddgPayload, item.stmtId());
-      if (stmt == null) continue;
+      DdgNode ddgNode = nodeIndex.get(item.nodeId());
+      if (ddgNode == null) continue;
 
-      resultNodes.add(buildResultNode(item.methodSig(), item.stmtId(), stmt, item.localVar()));
+      resultNodes.add(buildResultNode(ddgNode, item.localVar()));
 
-      // Intra-method: walk backward along DDG edges (find edges where to == stmtId)
-      for (Map<String, Object> edge : incomingDdgEdges(ddgPayload, item.stmtId())) {
-        String fromId = (String) edge.get("from");
-        Map<String, Object> fromStmt = findNode(ddgPayload, fromId);
-        if (fromStmt == null) continue;
-        String fromLocal = extractDefinedLocal(fromStmt);
-        resultEdges.add(buildDdgEdge(item.methodSig(), fromId, item.methodSig(), item.stmtId()));
-        worklist.add(new WorklistItem(item.methodSig(), fromId, fromLocal));
+      // Intra-method and cross-method: walk backward along LOCAL and HEAP edges
+      for (DdgEdge edge : incomingEdges(artifact.ddg().edges(), item.nodeId())) {
+        DdgNode fromNode = nodeIndex.get(edge.from());
+        if (fromNode == null) continue;
+
+        String fromLocal;
+        if (edge.edgeInfo() instanceof HeapEdge heapEdge) {
+          // Track the RHS of the field write: "obj.<C: T f> = val" -> extract "val"
+          fromLocal = extractFieldWriteRhs(fromNode.stmt());
+        } else {
+          fromLocal = extractDefinedLocal(fromNode.stmt());
+        }
+
+        resultEdges.add(
+            buildEdge(
+                edge.from(), fromNode.method(), item.nodeId(), ddgNode.method(), edge.edgeInfo()));
+        worklist.add(new WorklistItem(edge.from(), fromLocal));
       }
 
-      // Cross boundary — parameter: if this stmt is a @parameterN identity in entry_stmt_ids
-      List<String> entryIds = (List<String>) ddgPayload.getOrDefault("entry_stmt_ids", List.of());
-      if (entryIds.contains(item.stmtId())
-          && isParamIdentity((String) stmt.get("stmt"), item.localVar())) {
-        int paramIndex = extractParamIndex((String) stmt.get("stmt"));
-        List<String> callers = callerIndex.getOrDefault(item.methodSig(), List.of());
-        for (String callerSig : callers) {
-          Map<String, Object> callerDdg = ddgs.get(callerSig);
-          if (callerDdg == null) continue;
-          for (Map<String, Object> callSiteStmt : callSiteStmtsFor(callerDdg, item.methodSig())) {
-            String callSiteId = (String) callSiteStmt.get("id");
-            String argLocal = extractArgLocal((String) callSiteStmt.get("stmt"), paramIndex);
-            if (argLocal.isEmpty()) continue;
-            resultEdges.add(buildParamEdge(callerSig, callSiteId, item.methodSig(), item.stmtId()));
-            worklist.add(new WorklistItem(callerSig, callSiteId, argLocal));
-          }
+      // Cross boundary — parameter: IDENTITY stmt, check if localVar is @parameterN
+      if (ddgNode.kind() == StmtKind.IDENTITY && isParamIdentity(ddgNode.stmt(), item.localVar())) {
+        int paramIndex = extractParamIndex(ddgNode.stmt());
+        for (String callerSig : callerIndex.getOrDefault(ddgNode.method(), List.of())) {
+          nodeIndex.values().stream()
+              .filter(n -> n.method().equals(callerSig))
+              .filter(n -> isCallsiteTo(n, ddgNode.method()))
+              .forEach(
+                  callSiteNode -> {
+                    String argLocal = extractArgLocal(callSiteNode.stmt(), paramIndex);
+                    if (argLocal.isEmpty()) return;
+                    resultEdges.add(
+                        buildParamEdge(
+                            callSiteNode.id(), callerSig, item.nodeId(), ddgNode.method()));
+                    worklist.add(new WorklistItem(callSiteNode.id(), argLocal));
+                  });
         }
       }
 
-      // Cross boundary — return value: if this is an assign_invoke, follow the callee's return
-      // stmts
-      if ("assign_invoke".equals(stmt.get("kind"))) {
-        Map<?, ?> call = (Map<?, ?>) stmt.get("call");
-        if (call != null) {
-          String calleeSig = (String) call.get("targetMethodSignature");
-          Map<String, Object> calleeDdg = calleeSig != null ? ddgs.get(calleeSig) : null;
-          if (calleeDdg != null) {
-            List<String> returnIds =
-                (List<String>) calleeDdg.getOrDefault("return_stmt_ids", List.of());
-            for (String returnId : returnIds) {
-              Map<String, Object> returnStmt = findNode(calleeDdg, returnId);
-              if (returnStmt == null) continue;
-              String returnedLocal = extractReturnedLocal((String) returnStmt.get("stmt"));
-              resultEdges.add(
-                  buildReturnEdge(calleeSig, returnId, item.methodSig(), item.stmtId()));
-              worklist.add(new WorklistItem(calleeSig, returnId, returnedLocal));
-            }
-          }
+      // Cross boundary — return: ASSIGN_INVOKE callsite, follow callee's return stmts
+      if (ddgNode.kind() == StmtKind.ASSIGN_INVOKE) {
+        String calleeSig = ddgNode.call().get("targetMethodSignature");
+        if (calleeSig != null) {
+          nodeIndex.values().stream()
+              .filter(n -> n.method().equals(calleeSig) && n.kind() == StmtKind.RETURN)
+              .forEach(
+                  returnNode -> {
+                    String returnedLocal = extractReturnedLocal(returnNode.stmt());
+                    resultEdges.add(
+                        buildReturnEdge(
+                            returnNode.id(), calleeSig, item.nodeId(), ddgNode.method()));
+                    worklist.add(new WorklistItem(returnNode.id(), returnedLocal));
+                  });
         }
       }
     }
@@ -94,69 +93,54 @@ public class BwdSliceBuilder {
     return result;
   }
 
-  @SuppressWarnings("unchecked")
-  private List<String> findDefStmts(Map<String, Object> ddg, String localVar) {
-    List<Map<String, Object>> nodes = (List<Map<String, Object>>) ddg.get("nodes");
-    return nodes.stream()
-        .filter(n -> isDefinitionOf((String) n.get("stmt"), localVar))
-        .map(n -> (String) n.get("id"))
+  private Map<String, DdgNode> buildNodeIndex(List<DdgNode> nodes) {
+    Map<String, DdgNode> index = new HashMap<>();
+    for (DdgNode node : nodes) index.put(node.id(), node);
+    return index;
+  }
+
+  private Map<String, List<String>> buildCallerIndex(List<CalltreeEdge> edges) {
+    Map<String, List<String>> index = new HashMap<>();
+    for (CalltreeEdge edge : edges) {
+      index.computeIfAbsent(edge.to(), k -> new ArrayList<>()).add(edge.from());
+    }
+    return index;
+  }
+
+  private List<DdgEdge> incomingEdges(List<DdgEdge> edges, String nodeId) {
+    return edges.stream()
+        .filter(e -> nodeId.equals(e.to()))
+        .filter(e -> e.edgeInfo() instanceof LocalEdge || e.edgeInfo() instanceof HeapEdge)
         .toList();
   }
 
   private boolean isDefinitionOf(String stmt, String localVar) {
-    // Jimple assignment: "x = ...", identity: "x := @parameter0: ..."
     return stmt.startsWith(localVar + " = ") || stmt.startsWith(localVar + " := ");
-  }
-
-  @SuppressWarnings("unchecked")
-  private Map<String, Object> findNode(Map<String, Object> ddg, String stmtId) {
-    List<Map<String, Object>> nodes = (List<Map<String, Object>>) ddg.get("nodes");
-    return nodes.stream().filter(n -> stmtId.equals(n.get("id"))).findFirst().orElse(null);
-  }
-
-  @SuppressWarnings("unchecked")
-  private List<Map<String, Object>> incomingDdgEdges(Map<String, Object> ddg, String stmtId) {
-    List<Map<String, Object>> edges = (List<Map<String, Object>>) ddg.get("edges");
-    return edges.stream()
-        .filter(e -> stmtId.equals(e.get("to")))
-        .filter(e -> "ddg".equals(((Map<?, ?>) e.get("edge_info")).get("kind")))
-        .toList();
-  }
-
-  private String extractDefinedLocal(Map<String, Object> stmt) {
-    String text = (String) stmt.get("stmt");
-    int eq = text.indexOf(" = ");
-    int id = text.indexOf(" := ");
-    int cut = (id >= 0 && (eq < 0 || id < eq)) ? id : eq;
-    return cut >= 0 ? text.substring(0, cut) : text;
-  }
-
-  private Map<String, Object> buildResultNode(
-      String methodSig, String stmtId, Map<String, Object> stmt, String localVar) {
-    Map<String, Object> n = new LinkedHashMap<>();
-    n.put("method", methodSig);
-    n.put("stmtId", stmtId);
-    n.put("stmt", stmt.get("stmt"));
-    n.put("local_var", localVar);
-    n.put("line", stmt.getOrDefault("line", -1));
-    n.put("kind", stmt.get("kind"));
-    return n;
-  }
-
-  private Map<String, Object> buildDdgEdge(
-      String fromMethod, String fromStmt, String toMethod, String toStmt) {
-    return Map.of(
-        "from", Map.of("method", fromMethod, "stmtId", fromStmt),
-        "to", Map.of("method", toMethod, "stmtId", toStmt),
-        "edge_info", Map.of("kind", "ddg"));
   }
 
   private boolean isParamIdentity(String stmt, String localVar) {
     return stmt.startsWith(localVar + " := @parameter");
   }
 
+  private boolean isCallsiteTo(DdgNode node, String targetSig) {
+    return (node.kind() == StmtKind.ASSIGN_INVOKE || node.kind() == StmtKind.INVOKE)
+        && targetSig.equals(node.call().get("targetMethodSignature"));
+  }
+
+  private String extractDefinedLocal(String stmt) {
+    int eq = stmt.indexOf(" = ");
+    int id = stmt.indexOf(" := ");
+    int cut = (id >= 0 && (eq < 0 || id < eq)) ? id : eq;
+    return cut >= 0 ? stmt.substring(0, cut) : stmt;
+  }
+
+  private String extractFieldWriteRhs(String stmt) {
+    // "obj.<C: T f> = val" -> "val"
+    int eq = stmt.lastIndexOf(" = ");
+    return eq >= 0 ? stmt.substring(eq + 3).trim() : "";
+  }
+
   private int extractParamIndex(String stmt) {
-    // "r1 := @parameter0: int" -> 0
     int start = stmt.indexOf("@parameter") + "@parameter".length();
     int end = stmt.indexOf(":", start);
     if (start < "@parameter".length() || end < 0) return -1;
@@ -167,24 +151,7 @@ public class BwdSliceBuilder {
     }
   }
 
-  @SuppressWarnings("unchecked")
-  private List<Map<String, Object>> callSiteStmtsFor(
-      Map<String, Object> callerDdg, String targetSig) {
-    List<String> callsiteIds =
-        (List<String>) callerDdg.getOrDefault("callsite_stmt_ids", List.of());
-    List<Map<String, Object>> nodes = (List<Map<String, Object>>) callerDdg.get("nodes");
-    return nodes.stream()
-        .filter(n -> callsiteIds.contains(n.get("id")))
-        .filter(
-            n -> {
-              Map<?, ?> call = (Map<?, ?>) n.get("call");
-              return call != null && targetSig.equals(call.get("targetMethodSignature"));
-            })
-        .toList();
-  }
-
   private String extractArgLocal(String stmt, int paramIndex) {
-    // "r2 = virtualinvoke r0.<Sig>(a, b)" — extract arg at position paramIndex
     int open = stmt.lastIndexOf('(');
     int close = stmt.lastIndexOf(')');
     if (open < 0 || close < 0 || close <= open) return "";
@@ -195,38 +162,61 @@ public class BwdSliceBuilder {
     return parts[paramIndex].trim();
   }
 
-  private Map<String, Object> buildParamEdge(
-      String callerMethod, String callSiteId, String calleeMethod, String paramStmtId) {
-    return Map.of(
-        "from", Map.of("method", callerMethod, "stmtId", callSiteId),
-        "to", Map.of("method", calleeMethod, "stmtId", paramStmtId),
-        "edge_info", Map.of("kind", "param"));
-  }
-
-  private Map<String, List<String>> buildCallerIndex(List<Map<String, Object>> calls) {
-    Map<String, List<String>> index = new HashMap<>();
-    for (Map<String, Object> call : calls) {
-      String to = (String) call.get("to");
-      String from = (String) call.get("from");
-      index.computeIfAbsent(to, k -> new ArrayList<>()).add(from);
-    }
-    return index;
-  }
-
   private String extractReturnedLocal(String stmt) {
-    // "return r2" -> "r2", "return" -> ""
     String trimmed = stmt.trim();
     if (!trimmed.startsWith("return ")) return "";
     return trimmed.substring("return ".length()).trim();
   }
 
-  private Map<String, Object> buildReturnEdge(
-      String calleeMethod, String returnStmtId, String callerMethod, String callSiteId) {
-    return Map.of(
-        "from", Map.of("method", calleeMethod, "stmtId", returnStmtId),
-        "to", Map.of("method", callerMethod, "stmtId", callSiteId),
-        "edge_info", Map.of("kind", "return"));
+  private Map<String, Object> buildResultNode(DdgNode node, String localVar) {
+    Map<String, Object> n = new LinkedHashMap<>();
+    n.put("method", node.method());
+    n.put("stmtId", node.stmtId());
+    n.put("stmt", node.stmt());
+    n.put("local_var", localVar);
+    n.put("line", node.line());
+    n.put("kind", node.kind().name());
+    return n;
   }
 
-  private record WorklistItem(String methodSig, String stmtId, String localVar) {}
+  private Map<String, Object> buildEdge(
+      String fromId, String fromMethod, String toId, String toMethod, EdgeInfo edgeInfo) {
+    String kind =
+        switch (edgeInfo) {
+          case LocalEdge e -> "LOCAL";
+          case HeapEdge e -> "HEAP";
+          case ParamEdge e -> "PARAM";
+          case ReturnEdge e -> "RETURN";
+        };
+    Map<String, Object> edgeInfoMap = new LinkedHashMap<>();
+    edgeInfoMap.put("kind", kind);
+    if (edgeInfo instanceof HeapEdge he) edgeInfoMap.put("field", he.field());
+    return Map.of(
+        "from", Map.of("method", fromMethod, "stmtId", extractLocalId(fromId)),
+        "to", Map.of("method", toMethod, "stmtId", extractLocalId(toId)),
+        "edge_info", edgeInfoMap);
+  }
+
+  private Map<String, Object> buildParamEdge(
+      String callerNodeId, String callerMethod, String calleeNodeId, String calleeMethod) {
+    return Map.of(
+        "from", Map.of("method", callerMethod, "stmtId", extractLocalId(callerNodeId)),
+        "to", Map.of("method", calleeMethod, "stmtId", extractLocalId(calleeNodeId)),
+        "edge_info", Map.of("kind", "PARAM"));
+  }
+
+  private Map<String, Object> buildReturnEdge(
+      String calleeNodeId, String calleeMethod, String callerNodeId, String callerMethod) {
+    return Map.of(
+        "from", Map.of("method", calleeMethod, "stmtId", extractLocalId(calleeNodeId)),
+        "to", Map.of("method", callerMethod, "stmtId", extractLocalId(callerNodeId)),
+        "edge_info", Map.of("kind", "RETURN"));
+  }
+
+  private String extractLocalId(String compoundId) {
+    int hash = compoundId.lastIndexOf('#');
+    return hash >= 0 ? compoundId.substring(hash + 1) : compoundId;
+  }
+
+  private record WorklistItem(String nodeId, String localVar) {}
 }

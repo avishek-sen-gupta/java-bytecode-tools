@@ -6,6 +6,7 @@ import java.util.Map;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import tools.bytecode.BwdSliceBuilder;
+import tools.bytecode.artifact.Artifact;
 
 @Command(
     name = "bwd-slice",
@@ -29,7 +30,7 @@ class BwdSliceCommand extends BaseCommand {
   @Override
   public void run() {
     try {
-      Map<String, Object> artifact = readArtifact();
+      Artifact artifact = readArtifact();
       Map<String, Object> result = new BwdSliceBuilder().build(artifact, method, localVar);
       writeOutput(result);
     } catch (Exception e) {
@@ -38,11 +39,10 @@ class BwdSliceCommand extends BaseCommand {
     }
   }
 
-  @SuppressWarnings("unchecked")
-  private Map<String, Object> readArtifact() throws IOException {
+  private Artifact readArtifact() throws IOException {
     if (input != null) {
-      return mapper.readValue(input.toFile(), Map.class);
+      return mapper.readValue(input.toFile(), Artifact.class);
     }
-    return mapper.readValue(System.in, Map.class);
+    return mapper.readValue(System.in, Artifact.class);
   }
 }

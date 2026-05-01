@@ -22,6 +22,8 @@ Key Java commands:
 - `buildcg`: build caller → callee edges for project classes
 - `dump`: list methods in a class with source line ranges
 - `xtrace`: forward interprocedural trace from an entry point
+- `ddg-inter-cfg`: enrich a `fw-calltree` artifact with per-method data dependency graphs (DDGs) and CFG edges
+- `bwd-slice`: backward interprocedural data dependency slice — given a method signature and a Jimple local variable, walk DDG edges and method boundaries to produce the upstream dependency subgraph
 
 Key Python commands:
 
@@ -110,6 +112,16 @@ flowchart LR
     flat --> cpview
     flat --> fpview
     flat --> dotview
+
+    ddgcfg[ddg-inter-cfg]:::entry
+    bwdslice[bwd-slice]:::entry
+    ddgartifact[ddg-inter-cfg artifact JSON<br/>ddgs + nodes + calls]:::artifact
+    sliceresult[slice JSON<br/>seed + nodes + edges]:::artifact
+
+    flat --> ddgcfg
+    ddgcfg --> ddgartifact
+    ddgartifact --> bwdslice
+    bwdslice --> sliceresult
 ```
 
 ## Setup
@@ -384,6 +396,82 @@ cd python && uv run fw-calltree \
 
 > **Note:** Do not pipe `fw-calltree` output through `ftrace-semantic`. That pipeline is for CFG-level (`xtrace`) output; `fw-calltree` nodes have no `blocks` or `sourceTrace`, so `ftrace-semantic` produces empty graphs.
 
+## Backward Data Dependency Slice
+
+`ddg-inter-cfg` enriches a `fw-calltree` artifact with per-method data dependency graphs (DDGs) and CFG edges. `bwd-slice` then performs an interprocedural backward slice: given a seed method and a Jimple local variable, it walks DDG edges backward and crosses method boundaries via parameter identity statements and return values, producing a subgraph of all upstream dependencies.
+
+### 1. Build The DDG Artifact
+
+Pipe `fw-calltree` output through `ddg-inter-cfg`:
+
+```bash
+uv --directory python run fw-calltree \
+  --callgraph callgraph.json \
+  --class com.example.app.OrderController \
+  --method handleGet \
+  --pattern 'com\.example' \
+  | scripts/bytecode.sh --prefix com.example. "$CP" ddg-inter-cfg \
+  > ddg-artifact.json
+```
+
+Or write to a file:
+
+```bash
+scripts/bytecode.sh --prefix com.example. "$CP" ddg-inter-cfg \
+  --input calltree.json \
+  --output ddg-artifact.json
+```
+
+### 2. Run The Backward Slice
+
+Seed the slice with a method signature and a Jimple local variable name:
+
+```bash
+scripts/bytecode.sh --prefix com.example. "$CP" bwd-slice \
+  --input ddg-artifact.json \
+  --method '<com.example.app.OrderController: java.lang.String handleGet(int)>' \
+  --local-var '$stack3' \
+  --output slice.json
+```
+
+Or pipe end-to-end:
+
+```bash
+uv --directory python run fw-calltree \
+  --callgraph callgraph.json \
+  --class com.example.app.OrderController \
+  --method handleGet \
+  --pattern 'com\.example' \
+  | scripts/bytecode.sh --prefix com.example. "$CP" ddg-inter-cfg \
+  | scripts/bytecode.sh --prefix com.example. "$CP" bwd-slice \
+      --method '<com.example.app.OrderController: java.lang.String handleGet(int)>' \
+      --local-var '$stack3'
+```
+
+### Output
+
+```json
+{
+  "seed": { "method": "<com.example.app.OrderController: java.lang.String handleGet(int)>", "local_var": "$stack3" },
+  "nodes": [
+    { "method": "<...handleGet...>", "stmtId": "s3", "stmt": "$stack3 = virtualinvoke ...", "local_var": "$stack3", "line": 15, "kind": "assign_invoke" },
+    { "method": "<...processOrder...>", "stmtId": "s9", "stmt": "return result", "local_var": "result", "line": 21, "kind": "return" }
+  ],
+  "edges": [
+    { "from": { "method": "<...processOrder...>", "stmtId": "s9" }, "to": { "method": "<...handleGet...>", "stmtId": "s3" }, "edge_info": { "kind": "return" } },
+    { "from": { "method": "<...handleGet...>", "stmtId": "s1" }, "to": { "method": "<...processOrder...>", "stmtId": "s1" }, "edge_info": { "kind": "param" } }
+  ]
+}
+```
+
+Edge kinds:
+
+- `ddg` — intra-method data dependency (definition flows to use)
+- `param` — call site argument flows to the callee's `@parameterN` identity statement
+- `return` — callee return statement flows back to the call site assignment in the caller
+
+The slice crosses as many method boundaries as the call graph reaches. In the example above, seeding at `$stack3` in `handleGet` produces a 3-method chain through `processOrder` and into `transform`, with both `return` and `param` edges at each boundary.
+
 ## Post-Processing Pipeline
 
 The Python tools operate on `xtrace` output or on derivatives of that output.
@@ -657,6 +745,24 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
   | uv --directory python run ftrace-expand-refs \
   | uv --directory python run ftrace-semantic \
   | uv --directory python run ftrace-semantic-to-dot --output trace.svg
+
+# Backward data dependency slice (piped)
+uv --directory python run fw-calltree \
+  --callgraph callgraph.json --class com.example.app.OrderController --method handleGet \
+  --pattern 'com\.example' \
+  | scripts/bytecode.sh --prefix com.example. "$CP" ddg-inter-cfg \
+  | scripts/bytecode.sh --prefix com.example. "$CP" bwd-slice \
+      --method '<com.example.app.OrderController: java.lang.String handleGet(int)>' \
+      --local-var '$stack3'
+
+# Backward data dependency slice (file-based)
+scripts/bytecode.sh --prefix com.example. "$CP" ddg-inter-cfg \
+  --input calltree.json --output ddg-artifact.json
+scripts/bytecode.sh --prefix com.example. "$CP" bwd-slice \
+  --input ddg-artifact.json \
+  --method '<com.example.app.OrderService: java.lang.String processOrder(int)>' \
+  --local-var 'result' \
+  --output slice.json
 ```
 
 ## Practical Notes

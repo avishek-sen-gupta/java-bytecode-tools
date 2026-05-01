@@ -1,0 +1,148 @@
+package tools.bytecode;
+
+import java.util.*;
+import java.util.stream.Collectors;
+import sootup.core.graph.StmtGraph;
+import sootup.core.jimple.basic.StmtPositionInfo;
+import sootup.core.jimple.common.expr.AbstractInvokeExpr;
+import sootup.core.jimple.common.stmt.*;
+import sootup.core.jimple.javabytecode.stmt.JSwitchStmt;
+import sootup.core.model.Position;
+
+final class StmtAnalyzer {
+
+  static final String KEY_LINE = "line";
+  static final String KEY_JIMPLE = "jimple";
+  static final String KEY_CALL_TARGET = "callTarget";
+  static final String KEY_CALL_ARGS = "callArgCount";
+  static final String KEY_CALLS = "calls";
+  static final String KEY_BRANCH = "branch";
+
+  private StmtAnalyzer() {}
+
+  static int stmtLine(Stmt stmt) {
+    StmtPositionInfo posInfo = stmt.getPositionInfo();
+    if (posInfo == null) return -1;
+    Position pos = posInfo.getStmtPosition();
+    if (pos == null) return -1;
+    return pos.getFirstLine();
+  }
+
+  static Optional<AbstractInvokeExpr> extractInvoke(Stmt stmt) {
+    if (stmt instanceof JInvokeStmt) {
+      return ((JInvokeStmt) stmt).getInvokeExpr();
+    } else if (stmt instanceof JAssignStmt) {
+      return ((JAssignStmt) stmt).getInvokeExpr();
+    }
+    return Optional.empty();
+  }
+
+  static List<Stmt> stmtsAtLine(StmtGraph<?> graph, int line) {
+    return graph.getNodes().stream()
+        .filter(stmt -> stmtLine(stmt) == line)
+        .collect(Collectors.toList());
+  }
+
+  static List<Map<String, Object>> buildStmtDetails(List<Stmt> stmts) {
+    return stmts.stream()
+        .map(
+            stmt -> {
+              Map<String, Object> detail = new LinkedHashMap<>();
+              detail.put(KEY_LINE, stmtLine(stmt));
+              detail.put(KEY_JIMPLE, stmt.toString());
+
+              Optional<AbstractInvokeExpr> invoke = extractInvoke(stmt);
+              if (invoke.isPresent()) {
+                var sig = invoke.get().getMethodSignature();
+                detail.put(
+                    KEY_CALL_TARGET,
+                    sig.getDeclClassType().getFullyQualifiedName() + "." + sig.getName());
+                detail.put(KEY_CALL_ARGS, invoke.get().getArgCount());
+              }
+              if (stmt instanceof JIfStmt) {
+                detail.put(KEY_BRANCH, ((JIfStmt) stmt).getCondition().toString());
+              } else if (stmt instanceof JSwitchStmt) {
+                detail.put(KEY_BRANCH, "switch");
+              }
+              return detail;
+            })
+        .collect(Collectors.toList());
+  }
+
+  /**
+   * Merges consecutive statements at the same source line into one entry. Uses an imperative loop —
+   * merging requires comparing each entry to its predecessor, which is inherently sequential state
+   * with no functional equivalent.
+   */
+  static List<Map<String, Object>> deduplicateToSourceLines(List<Map<String, Object>> stmtDetails) {
+    List<Map<String, Object>> result = new ArrayList<>();
+    int prevLine = -2;
+
+    for (Map<String, Object> detail : stmtDetails) {
+      int line = (int) detail.get(KEY_LINE);
+      if (line == prevLine && !result.isEmpty()) {
+        Map<String, Object> prev = result.get(result.size() - 1);
+        if (detail.containsKey(KEY_CALL_TARGET)) {
+          @SuppressWarnings("unchecked")
+          List<String> calls =
+              (List<String>) prev.computeIfAbsent(KEY_CALLS, k -> new ArrayList<>());
+          calls.add((String) detail.get(KEY_CALL_TARGET));
+        }
+        if (detail.containsKey(KEY_BRANCH)) {
+          prev.put(KEY_BRANCH, detail.get(KEY_BRANCH));
+        }
+      } else {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put(KEY_LINE, line);
+        if (detail.containsKey(KEY_CALL_TARGET)) {
+          List<String> calls = new ArrayList<>();
+          calls.add((String) detail.get(KEY_CALL_TARGET));
+          entry.put(KEY_CALLS, calls);
+        }
+        if (detail.containsKey(KEY_BRANCH)) {
+          entry.put(KEY_BRANCH, detail.get(KEY_BRANCH));
+        }
+        result.add(entry);
+      }
+      prevLine = line;
+    }
+    return result;
+  }
+
+  static int findCallSiteLine(CallFrame caller, CallFrame callee) {
+    String calleeTarget = callee.className() + "." + callee.methodName();
+
+    // Exact match attempt
+    int line =
+        caller.sourceTrace().stream()
+            .filter(entry -> entry.containsKey(KEY_CALLS))
+            .flatMapToInt(
+                entry -> {
+                  @SuppressWarnings("unchecked")
+                  List<String> calls = (List<String>) entry.get(KEY_CALLS);
+                  if (calls.stream().anyMatch(call -> call.equals(calleeTarget))) {
+                    return java.util.stream.IntStream.of((int) entry.get(KEY_LINE));
+                  }
+                  return java.util.stream.IntStream.empty();
+                })
+            .findFirst()
+            .orElse(-1);
+
+    if (line != -1) return line;
+
+    // Fallback: match by method name only (interface→impl dispatch)
+    return caller.sourceTrace().stream()
+        .filter(entry -> entry.containsKey(KEY_CALLS))
+        .flatMapToInt(
+            entry -> {
+              @SuppressWarnings("unchecked")
+              List<String> calls = (List<String>) entry.get(KEY_CALLS);
+              if (calls.stream().anyMatch(call -> call.endsWith("." + callee.methodName()))) {
+                return java.util.stream.IntStream.of((int) entry.get(KEY_LINE));
+              }
+              return java.util.stream.IntStream.empty();
+            })
+        .findFirst()
+        .orElse(-1);
+  }
+}

@@ -41,7 +41,7 @@ class SpoonCfgComparisonTest {
     System.out.println("\n=== SOOTUP CFG NODES ===");
     for (int i = 0; i < sootNodes.size(); i++) {
       Stmt s = sootNodes.get(i);
-      System.out.printf("  [n%d, line %3d] %s%n", i, BytecodeTracer.stmtLine(s), s);
+      System.out.printf("  [n%d, line %3d] %s%n", i, StmtAnalyzer.stmtLine(s), s);
     }
 
     System.out.println("\n=== SOOTUP CFG EDGES ===");
@@ -113,7 +113,7 @@ class SpoonCfgComparisonTest {
     // Side-by-side comparison matched by source line
     // ----------------------------------------------------------------
     Map<Integer, List<Stmt>> sootupByLine =
-        sootNodes.stream().collect(Collectors.groupingBy(BytecodeTracer::stmtLine));
+        sootNodes.stream().collect(Collectors.groupingBy(StmtAnalyzer::stmtLine));
 
     Map<Integer, List<ControlFlowNode>> spoonByLine =
         spoonGraph.vertexSet().stream()
@@ -230,7 +230,7 @@ class SpoonCfgComparisonTest {
     for (int i = 0; i < nodes.size(); i++) {
       Stmt s = nodes.get(i);
       String label = s.toString().replace("\"", "\\\"").replace("\n", "\\n");
-      int line = BytecodeTracer.stmtLine(s);
+      int line = StmtAnalyzer.stmtLine(s);
       sb.append(String.format("  n%d [label=\"[L%d] %s\"];\n", i, line, label));
     }
     for (int i = 0; i < nodes.size(); i++) {

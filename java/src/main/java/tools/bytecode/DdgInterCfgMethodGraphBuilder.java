@@ -5,6 +5,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import sootup.analysis.intraprocedural.reachingdefs.ReachingDefs;
+import sootup.core.jimple.common.stmt.JAssignStmt;
+import sootup.core.jimple.common.stmt.JIdentityStmt;
+import sootup.core.jimple.common.stmt.JInvokeStmt;
+import sootup.core.jimple.common.stmt.JReturnStmt;
 import sootup.core.jimple.common.stmt.Stmt;
 import sootup.core.model.Body;
 import sootup.core.model.SootMethod;
@@ -42,12 +46,11 @@ public class DdgInterCfgMethodGraphBuilder {
   }
 
   private StmtKind classifyStmt(Stmt stmt) {
-    String text = stmt.toString();
-    if (text.contains(":= @parameter") || text.contains(":= @this")) return StmtKind.IDENTITY;
-    if (text.startsWith("return ")) return StmtKind.RETURN;
-    if ((text.startsWith("$") || text.matches("^[#\\w][\\w$#]* = .+")) && text.contains("invoke "))
+    if (stmt instanceof JIdentityStmt) return StmtKind.IDENTITY;
+    if (stmt instanceof JReturnStmt) return StmtKind.RETURN;
+    if (stmt instanceof JAssignStmt assign && assign.containsInvokeExpr())
       return StmtKind.ASSIGN_INVOKE;
-    if (text.contains("invoke ")) return StmtKind.INVOKE;
+    if (stmt instanceof JInvokeStmt) return StmtKind.INVOKE;
     return StmtKind.ASSIGN;
   }
 

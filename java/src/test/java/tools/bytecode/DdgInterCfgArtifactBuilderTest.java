@@ -497,6 +497,42 @@ class DdgInterCfgArtifactBuilderTest {
                 .toList());
   }
 
+  @Test
+  void classifyStmtMatchesForAllStmtKinds() {
+    Map<String, Object> input =
+        Map.of(
+            "nodes",
+            Map.of(
+                PROCESS_ORDER_SIG,
+                Map.of(
+                    "node_type", "java_method",
+                    "class", "com.example.app.OrderService",
+                    "method", "processOrder",
+                    "methodSignature", PROCESS_ORDER_SIG)),
+            "calls",
+            List.of(),
+            "metadata",
+            Map.of("root", PROCESS_ORDER_SIG));
+
+    DdgGraph ddg = new DdgInterCfgArtifactBuilder(tracer, null).build(input).ddg();
+
+    var kinds =
+        ddg.nodes().stream().map(DdgNode::kind).collect(java.util.stream.Collectors.toSet());
+
+    assertTrue(
+        kinds.contains(tools.bytecode.artifact.StmtKind.IDENTITY),
+        "Expected IDENTITY nodes, got: " + kinds);
+    assertTrue(
+        kinds.contains(tools.bytecode.artifact.StmtKind.RETURN),
+        "Expected RETURN nodes, got: " + kinds);
+    assertTrue(
+        kinds.contains(tools.bytecode.artifact.StmtKind.ASSIGN_INVOKE),
+        "Expected ASSIGN_INVOKE nodes, got: " + kinds);
+    assertTrue(
+        kinds.contains(tools.bytecode.artifact.StmtKind.ASSIGN),
+        "Expected ASSIGN nodes, got: " + kinds);
+  }
+
   // Test helper: records the inScopeMethodSigs passed to enrich()
   static class TestFieldDepEnricher extends FieldDepEnricher {
     Set<String> capturedScope = null;

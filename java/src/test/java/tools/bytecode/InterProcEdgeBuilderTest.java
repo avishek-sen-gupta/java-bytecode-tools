@@ -7,6 +7,8 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import tools.bytecode.artifact.DdgEdge;
 import tools.bytecode.artifact.DdgNode;
+import tools.bytecode.artifact.HeapEdge;
+import tools.bytecode.artifact.LocalEdge;
 import tools.bytecode.artifact.ReturnEdge;
 import tools.bytecode.artifact.StmtKind;
 
@@ -148,5 +150,87 @@ class InterProcEdgeBuilderTest {
         "null",
         InterProcEdgeBuilder.extractArgLocal(
             "virtualinvoke r0.<com.example.Bar: void bar(java.lang.Object)>(null)", 0));
+  }
+
+  // --- Reaching-def lookup ---
+
+  private static final String CALLER = "<com.example.Caller: void main()>";
+  private static final String CALLEE = "<com.example.Foo: int compute()>";
+
+  @Test
+  void findReachingDef_findsAssignEdge() {
+    DdgNode defNode = node(CALLER, "s0", "a = 1", StmtKind.ASSIGN);
+    DdgNode callSite =
+        callNode(
+            CALLER,
+            "s1",
+            "r2 = staticinvoke <com.example.Foo: int compute()>(a)",
+            StmtKind.ASSIGN_INVOKE,
+            CALLEE);
+    List<DdgEdge> localEdges = List.of(new DdgEdge(defNode.id(), callSite.id(), new LocalEdge()));
+    Map<String, DdgNode> nodeIndex = Map.of(defNode.id(), defNode, callSite.id(), callSite);
+
+    String result =
+        InterProcEdgeBuilder.findReachingDefId(callSite.id(), "a", localEdges, nodeIndex);
+
+    assertEquals(defNode.id(), result);
+  }
+
+  @Test
+  void findReachingDef_identityNode() {
+    DdgNode identity = node(CALLER, "p0", "a := @parameter0: int", StmtKind.IDENTITY);
+    DdgNode callSite =
+        callNode(
+            CALLER,
+            "s1",
+            "r2 = staticinvoke <com.example.Foo: int compute()>(a)",
+            StmtKind.ASSIGN_INVOKE,
+            CALLEE);
+    List<DdgEdge> localEdges = List.of(new DdgEdge(identity.id(), callSite.id(), new LocalEdge()));
+    Map<String, DdgNode> nodeIndex = Map.of(identity.id(), identity, callSite.id(), callSite);
+
+    String result =
+        InterProcEdgeBuilder.findReachingDefId(callSite.id(), "a", localEdges, nodeIndex);
+
+    assertEquals(identity.id(), result);
+  }
+
+  @Test
+  void findReachingDef_noMatchReturnsEmpty() {
+    DdgNode defNode = node(CALLER, "s0", "b = 1", StmtKind.ASSIGN);
+    DdgNode callSite =
+        callNode(
+            CALLER,
+            "s1",
+            "r2 = staticinvoke <com.example.Foo: int compute()>(a)",
+            StmtKind.ASSIGN_INVOKE,
+            CALLEE);
+    List<DdgEdge> localEdges = List.of(new DdgEdge(defNode.id(), callSite.id(), new LocalEdge()));
+    Map<String, DdgNode> nodeIndex = Map.of(defNode.id(), defNode, callSite.id(), callSite);
+
+    String result =
+        InterProcEdgeBuilder.findReachingDefId(callSite.id(), "a", localEdges, nodeIndex);
+
+    assertEquals("", result);
+  }
+
+  @Test
+  void findReachingDef_skipsNonLocalEdges() {
+    DdgNode defNode = node(CALLER, "s0", "a = 1", StmtKind.ASSIGN);
+    DdgNode callSite =
+        callNode(
+            CALLER,
+            "s1",
+            "r2 = staticinvoke <com.example.Foo: int compute()>(a)",
+            StmtKind.ASSIGN_INVOKE,
+            CALLEE);
+    List<DdgEdge> localEdges =
+        List.of(new DdgEdge(defNode.id(), callSite.id(), new HeapEdge("<F: int x>")));
+    Map<String, DdgNode> nodeIndex = Map.of(defNode.id(), defNode, callSite.id(), callSite);
+
+    String result =
+        InterProcEdgeBuilder.findReachingDefId(callSite.id(), "a", localEdges, nodeIndex);
+
+    assertEquals("", result);
   }
 }

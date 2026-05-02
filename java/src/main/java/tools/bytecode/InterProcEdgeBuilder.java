@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 import tools.bytecode.artifact.DdgEdge;
 import tools.bytecode.artifact.DdgNode;
+import tools.bytecode.artifact.LocalEdge;
 import tools.bytecode.artifact.ReturnEdge;
 import tools.bytecode.artifact.StmtKind;
 
@@ -72,5 +73,27 @@ public class InterProcEdgeBuilder {
     String[] parts = args.split(",");
     if (paramIndex >= parts.length) return "";
     return parts[paramIndex].trim();
+  }
+
+  /**
+   * Find the reaching-def node ID for a given local at a call site. Scans LOCAL edges pointing to
+   * {@code callSiteNodeId}, checks if the source node defines {@code argLocal} (via {@code x = ...}
+   * or {@code x := ...}). Returns empty string if no reaching-def found.
+   */
+  public static String findReachingDefId(
+      String callSiteNodeId, String argLocal, List<DdgEdge> edges, Map<String, DdgNode> nodeIndex) {
+    return edges.stream()
+        .filter(e -> callSiteNodeId.equals(e.to()))
+        .filter(e -> e.edgeInfo() instanceof LocalEdge)
+        .filter(
+            e -> {
+              DdgNode fromNode = nodeIndex.get(e.from());
+              if (fromNode == null) return false;
+              String stmt = fromNode.stmt();
+              return stmt.startsWith(argLocal + " = ") || stmt.startsWith(argLocal + " := ");
+            })
+        .map(DdgEdge::from)
+        .findFirst()
+        .orElse("");
   }
 }

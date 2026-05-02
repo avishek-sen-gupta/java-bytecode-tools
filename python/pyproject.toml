@@ -21,6 +21,7 @@ fw-calltree = "fw_calltree:main"
 reindex = "reindex:main"
 calltree-to-dot = "calltree_to_dot:main"
 calltree-print = "calltree_print:main"
+ddg-format = "ddg_format:main"
 ftrace-intra-slice = "ftrace_intra_slice:main"
 
 [build-system]

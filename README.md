@@ -38,6 +38,7 @@ Key Python commands:
 - `ftrace-semantic`: normalize raw `xtrace` JSON into a semantic graph (CFG-level)
 - `ftrace-semantic-to-dot`: render semantic graph JSON as DOT/SVG
 - `ftrace-validate`: validate semantic graph output
+- `ddg-format`: render backward-slice DDG output as ASCII tree, DOT, or SVG — with edge-kind labels and method clusters
 - `jspmap`: map JSP EL actions through a call graph; emits flat {nodes, calls, metadata} consumable by calltree-print, frames-print, calltree-to-dot
 
 ## Tool Combinations
@@ -117,11 +118,13 @@ flowchart LR
     bwdslice[bwd-slice]:::entry
     ddgartifact[ddg-inter-cfg artifact JSON<br/>ddgs + nodes + calls]:::artifact
     sliceresult[slice JSON<br/>seed + nodes + edges]:::artifact
+    ddgfmt[ddg-format]:::view
 
     flat --> ddgcfg
     ddgcfg --> ddgartifact
     ddgartifact --> bwdslice
     bwdslice --> sliceresult
+    sliceresult --> ddgfmt
 ```
 
 ## Setup
@@ -509,6 +512,36 @@ Edge kinds:
 
 The slice crosses as many method boundaries as the call graph reaches. In the example above, seeding at `$stack3` in `handleGet` produces a 3-method chain through `processOrder` and into `transform`, with both `return` and `param` edges at each boundary.
 
+### 3. Render The Slice
+
+`ddg-format` renders backward-slice output as an ASCII dependency tree, raw DOT, or SVG:
+
+```bash
+# ASCII tree with edge-kind labels
+scripts/bytecode.sh --prefix com.example. "$CP" bwd-slice \
+  --input ddg-artifact.json \
+  --method '<com.example.app.OrderController: java.lang.String handleGet(int)>' \
+  --local-var '$stack3' \
+  | uv --directory python run ddg-format --ascii
+
+# SVG with method clusters and colored edges (LOCAL=black, PARAM=blue, RETURN=green)
+uv --directory python run ddg-format --svg --input slice.json -o slice.svg
+
+# Raw DOT
+uv --directory python run ddg-format --dot --input slice.json
+```
+
+ASCII output shows the dependency chain as a tree rooted at origin nodes, with edge kinds inline:
+
+```
+[OrderController.handleGet L15] $stack3 = virtualinvoke svc.<OrderService: String processOrder(int)>(i0)
+└── --RETURN--> [OrderService.processOrder L21] return result
+    └── --LOCAL--> [OrderService.processOrder L17] result = virtualinvoke repo.<JdbcOrderRepository: String findById(int)>(id)
+        └── --PARAM--> [JdbcOrderRepository.findById L7] id := @parameter0: int
+```
+
+DOT/SVG output groups nodes into per-method subgraph clusters, with node shapes reflecting statement kind (invhouse for IDENTITY, house for RETURN, box3d for INVOKE/ASSIGN_INVOKE).
+
 ## Post-Processing Pipeline
 
 The Python tools operate on `xtrace` output or on derivatives of that output.
@@ -800,6 +833,11 @@ scripts/bytecode.sh --prefix com.example. "$CP" bwd-slice \
   --method '<com.example.app.OrderService: java.lang.String processOrder(int)>' \
   --local-var 'result' \
   --output slice.json
+
+# Render backward slice as ASCII / DOT / SVG
+uv --directory python run ddg-format --ascii --input slice.json
+uv --directory python run ddg-format --svg --input slice.json -o slice.svg
+uv --directory python run ddg-format --dot --input slice.json
 ```
 
 ## Practical Notes

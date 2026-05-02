@@ -328,6 +328,48 @@ class DdgInterCfgArtifactBuilderTest {
     }
   }
 
+  @Test
+  void interfaceDispatchGeneratesParamAndReturnEdges() {
+    // OrderService.processOrder calls repo.findById(id) via OrderRepository interface.
+    // Calltree resolves to JdbcOrderRepository (concrete).
+    // Jimple call site will reference OrderRepository (interface).
+    // Sub-signature matching should bridge the gap.
+    Map<String, Object> input =
+        Map.of(
+            "nodes",
+            Map.of(
+                PROCESS_ORDER_SIG,
+                Map.of(
+                    "node_type", "java_method",
+                    "class", "com.example.app.OrderService",
+                    "method", "processOrder",
+                    "methodSignature", PROCESS_ORDER_SIG),
+                JDBC_FIND_BY_ID_SIG,
+                Map.of(
+                    "node_type", "java_method",
+                    "class", "com.example.app.JdbcOrderRepository",
+                    "method", "findById",
+                    "methodSignature", JDBC_FIND_BY_ID_SIG)),
+            "calls",
+            List.of(Map.of("from", PROCESS_ORDER_SIG, "to", JDBC_FIND_BY_ID_SIG)),
+            "metadata",
+            Map.of("root", PROCESS_ORDER_SIG));
+
+    DdgGraph ddg = new DdgInterCfgArtifactBuilder(tracer, null).build(input).ddg();
+
+    long paramCount = ddg.edges().stream().filter(e -> e.edgeInfo() instanceof ParamEdge).count();
+    long returnCount = ddg.edges().stream().filter(e -> e.edgeInfo() instanceof ReturnEdge).count();
+
+    assertTrue(
+        paramCount > 0,
+        "Should have PARAM edges for interface-dispatched call. Nodes: "
+            + ddg.nodes().stream()
+                .filter(n -> n.stmt().contains("findById"))
+                .map(n -> n.kind() + ": " + n.stmt())
+                .toList());
+    assertTrue(returnCount > 0, "Should have RETURN edges for interface-dispatched call");
+  }
+
   // Test helper: records the inScopeMethodSigs passed to enrich()
   static class TestFieldDepEnricher extends FieldDepEnricher {
     Set<String> capturedScope = null;

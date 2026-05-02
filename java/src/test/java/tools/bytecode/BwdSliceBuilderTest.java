@@ -114,20 +114,23 @@ class BwdSliceBuilderTest {
     String CALLER = "<com.example.Caller: void main()>";
     String CALLEE = "<com.example.Bar: void bar(int)>";
 
-    List<DdgNode> nodes =
+    DdgNode defNode = node(CALLER, "s1", "a = 1", StmtKind.ASSIGN);
+    DdgNode callSiteNode =
+        invokeNode(CALLER, "s2", "virtualinvoke r0.<com.example.Bar: void bar(int)>(a)", CALLEE);
+    DdgNode identityNode = node(CALLEE, "p0", "r1 := @parameter0: int", StmtKind.IDENTITY);
+
+    List<DdgEdge> edges =
         List.of(
-            node(CALLER, "s1", "a = 1", StmtKind.ASSIGN),
-            invokeNode(
-                CALLER, "s2", "virtualinvoke r0.<com.example.Bar: void bar(int)>(a)", CALLEE),
-            node(CALLEE, "p0", "r1 := @parameter0: int", StmtKind.IDENTITY));
-    List<DdgEdge> edges = List.of(localEdge(CALLER, "s1", CALLER, "s2"));
+            localEdge(CALLER, "s1", CALLER, "s2"),
+            // Pre-computed PARAM edge: reaching-def of 'a' → @parameter0 identity
+            new DdgEdge(defNode.id(), identityNode.id(), new ParamEdge()));
 
     Artifact art =
         artifact(
             List.of(
                 new CalltreeNode(CALLER, "Caller", "main"), new CalltreeNode(CALLEE, "Bar", "bar")),
             List.of(new CalltreeEdge(CALLER, CALLEE)),
-            nodes,
+            List.of(defNode, callSiteNode, identityNode),
             edges);
 
     Map<String, Object> result = new BwdSliceBuilder().build(art, CALLEE, "r1");
@@ -135,10 +138,11 @@ class BwdSliceBuilderTest {
     List<Map<String, Object>> resultNodes = (List<Map<String, Object>>) result.get("nodes");
     List<Map<String, Object>> resultEdges = (List<Map<String, Object>>) result.get("edges");
 
-    assertEquals(3, resultNodes.size());
+    // Should reach: p0 (identity), then via PARAM edge to s1 (def of a)
+    assertEquals(2, resultNodes.size());
     List<String> stmtIds =
         resultNodes.stream().map(n -> (String) n.get("stmtId")).sorted().toList();
-    assertEquals(List.of("p0", "s1", "s2"), stmtIds);
+    assertEquals(List.of("p0", "s1"), stmtIds);
 
     boolean hasParamEdge =
         resultEdges.stream()
@@ -156,12 +160,16 @@ class BwdSliceBuilderTest {
     String CALLER = "<com.example.Caller: void main()>";
     String CALLEE = "<com.example.Foo: int compute()>";
 
-    List<DdgNode> nodes =
+    DdgNode callSiteNode =
+        callNode(CALLER, "cs0", "r2 = staticinvoke <com.example.Foo: int compute()>()", CALLEE);
+    DdgNode defNode = node(CALLEE, "s0", "r5 = 42", StmtKind.ASSIGN);
+    DdgNode returnNode = node(CALLEE, "s1", "return r5", StmtKind.RETURN);
+
+    List<DdgEdge> edges =
         List.of(
-            callNode(CALLER, "cs0", "r2 = staticinvoke <com.example.Foo: int compute()>()", CALLEE),
-            node(CALLEE, "s0", "r5 = 42", StmtKind.ASSIGN),
-            node(CALLEE, "s1", "return r5", StmtKind.RETURN));
-    List<DdgEdge> edges = List.of(localEdge(CALLEE, "s0", CALLEE, "s1"));
+            localEdge(CALLEE, "s0", CALLEE, "s1"),
+            // Pre-computed RETURN edge: return node → assign_invoke call site
+            new DdgEdge(returnNode.id(), callSiteNode.id(), new ReturnEdge()));
 
     Artifact art =
         artifact(
@@ -169,7 +177,7 @@ class BwdSliceBuilderTest {
                 new CalltreeNode(CALLER, "Caller", "main"),
                 new CalltreeNode(CALLEE, "Foo", "compute")),
             List.of(new CalltreeEdge(CALLER, CALLEE)),
-            nodes,
+            List.of(callSiteNode, defNode, returnNode),
             edges);
 
     Map<String, Object> result = new BwdSliceBuilder().build(art, CALLER, "r2");
@@ -192,17 +200,21 @@ class BwdSliceBuilderTest {
   @Test
   void cycleSafetyDoesNotLoopForever() {
     String M = "<com.example.Foo: void bar()>";
-    List<DdgNode> nodes =
+    DdgNode identityNode = node(M, "s0", "r0 := @parameter0: int", StmtKind.IDENTITY);
+    DdgNode callSiteNode =
+        callNode(M, "s1", "r1 = staticinvoke <com.example.Foo: void bar()>(r0)", M);
+
+    List<DdgEdge> edges =
         List.of(
-            node(M, "s0", "r0 := @parameter0: int", StmtKind.IDENTITY),
-            callNode(M, "s1", "r1 = staticinvoke <com.example.Foo: void bar()>(r0)", M));
-    List<DdgEdge> edges = List.of(localEdge(M, "s0", M, "s1"));
+            localEdge(M, "s0", M, "s1"),
+            // Pre-computed PARAM edge (recursive call)
+            new DdgEdge(identityNode.id(), identityNode.id(), new ParamEdge()));
 
     Artifact art =
         artifact(
             List.of(new CalltreeNode(M, "Foo", "bar")),
             List.of(new CalltreeEdge(M, M)),
-            nodes,
+            List.of(identityNode, callSiteNode),
             edges);
 
     Map<String, Object> result = new BwdSliceBuilder().build(art, M, "r1");

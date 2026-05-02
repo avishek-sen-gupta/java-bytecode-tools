@@ -107,4 +107,46 @@ class InterProcEdgeBuilderTest {
         edges.stream().allMatch(e -> e.to().equals(assignInvokeNode.id())),
         "All edges should be to the same ASSIGN_INVOKE node");
   }
+
+  // --- Arg parsing ---
+
+  @Test
+  void extractArgLocal_singleArg() {
+    assertEquals(
+        "a",
+        InterProcEdgeBuilder.extractArgLocal(
+            "r2 = virtualinvoke r0.<com.example.Bar: void bar(int)>(a)", 0));
+  }
+
+  @Test
+  void extractArgLocal_multipleArgs() {
+    String stmt = "r2 = virtualinvoke r0.<com.example.Bar: void bar(int,int)>(a, b)";
+    assertEquals("a", InterProcEdgeBuilder.extractArgLocal(stmt, 0));
+    assertEquals("b", InterProcEdgeBuilder.extractArgLocal(stmt, 1));
+  }
+
+  @Test
+  void extractArgLocal_outOfBounds() {
+    assertEquals(
+        "",
+        InterProcEdgeBuilder.extractArgLocal(
+            "r2 = virtualinvoke r0.<com.example.Bar: void bar(int)>(a)", 5));
+  }
+
+  @Test
+  void extractArgLocal_noArgs() {
+    assertEquals(
+        "",
+        InterProcEdgeBuilder.extractArgLocal(
+            "r2 = staticinvoke <com.example.Foo: int compute()>()", 0));
+  }
+
+  @Test
+  void extractArgLocal_constantArg() {
+    // "null" and numeric literals should still be returned — caller decides whether to skip
+    assertEquals(
+        "null",
+        InterProcEdgeBuilder.extractArgLocal(
+            "virtualinvoke r0.<com.example.Bar: void bar(java.lang.Object)>(null)", 0));
+  }
 }

@@ -58,4 +58,19 @@ public class InterProcEdgeBuilder {
             })
         .toList();
   }
+
+  /**
+   * Extract the argument name at position {@code paramIndex} from a Jimple call-site statement.
+   * Returns empty string if index is out of bounds or the arg list is empty.
+   */
+  public static String extractArgLocal(String stmt, int paramIndex) {
+    int open = stmt.lastIndexOf('(');
+    int close = stmt.lastIndexOf(')');
+    if (open < 0 || close < 0 || close <= open) return "";
+    String args = stmt.substring(open + 1, close).trim();
+    if (args.isEmpty()) return "";
+    String[] parts = args.split(",");
+    if (paramIndex >= parts.length) return "";
+    return parts[paramIndex].trim();
+  }
 }

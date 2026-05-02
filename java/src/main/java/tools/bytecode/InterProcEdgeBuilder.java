@@ -1,17 +1,26 @@
 package tools.bytecode;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import tools.bytecode.artifact.DdgEdge;
 import tools.bytecode.artifact.DdgNode;
 import tools.bytecode.artifact.LocalEdge;
+import tools.bytecode.artifact.ParamEdge;
 import tools.bytecode.artifact.ReturnEdge;
 import tools.bytecode.artifact.StmtKind;
 
 public class InterProcEdgeBuilder {
 
   private static final Pattern NUMERIC_LITERAL = Pattern.compile("^-?\\d+(\\.\\d+)?[LlFfDd]?$");
+  private static final Pattern PARAM_IDENTITY =
+      Pattern.compile("^\\w[\\w$#]* := @parameter(\\d+):");
+
+  private record ParamTarget(DdgNode node, int index) {}
 
   /**
    * Builds RETURN edges from callee RETURN nodes to caller ASSIGN_INVOKE call sites.
@@ -109,5 +118,62 @@ public class InterProcEdgeBuilder {
     if ("null".equals(arg) || "true".equals(arg) || "false".equals(arg)) return true;
     if (arg.startsWith("\"")) return true;
     return NUMERIC_LITERAL.matcher(arg).matches();
+  }
+
+  /**
+   * PARAM edges: connect reaching-def of each argument at the call site to the corresponding
+   *
+   * @parameterN IDENTITY node in the callee.
+   *     <p>Skips: @this identity, constant arguments, arguments with no reaching-def.
+   */
+  public static List<DdgEdge> buildParamEdges(
+      List<DdgNode> nodes, List<DdgEdge> localEdges, List<Map<String, Object>> calls) {
+
+    Map<String, DdgNode> nodeIndex = new HashMap<>();
+    for (DdgNode n : nodes) nodeIndex.put(n.id(), n);
+
+    List<DdgEdge> edges = new ArrayList<>();
+
+    for (Map<String, Object> call : calls) {
+      String callerSig = (String) call.get("from");
+      String calleeSig = (String) call.get("to");
+
+      // Find @parameterN IDENTITY nodes in callee (skip @this)
+      List<ParamTarget> paramTargets =
+          nodes.stream()
+              .filter(n -> n.method().equals(calleeSig) && n.kind() == StmtKind.IDENTITY)
+              .flatMap(
+                  n -> {
+                    Matcher m = PARAM_IDENTITY.matcher(n.stmt());
+                    if (!m.find()) return Stream.empty();
+                    int idx = Integer.parseInt(m.group(1));
+                    return Stream.of(new ParamTarget(n, idx));
+                  })
+              .toList();
+
+      // Find call-site nodes in caller targeting this callee
+      List<DdgNode> callSiteNodes =
+          nodes.stream()
+              .filter(
+                  n ->
+                      n.method().equals(callerSig)
+                          && (n.kind() == StmtKind.ASSIGN_INVOKE || n.kind() == StmtKind.INVOKE)
+                          && calleeSig.equals(n.call().get("targetMethodSignature")))
+              .toList();
+
+      for (DdgNode callSiteNode : callSiteNodes) {
+        for (ParamTarget pt : paramTargets) {
+          String argLocal = extractArgLocal(callSiteNode.stmt(), pt.index());
+          if (argLocal.isEmpty() || isConstantArg(argLocal)) continue;
+
+          String reachingDefId =
+              findReachingDefId(callSiteNode.id(), argLocal, localEdges, nodeIndex);
+          if (reachingDefId.isEmpty()) continue;
+
+          edges.add(new DdgEdge(reachingDefId, pt.node().id(), new ParamEdge()));
+        }
+      }
+    }
+    return edges;
   }
 }

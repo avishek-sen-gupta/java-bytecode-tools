@@ -9,6 +9,7 @@ import tools.bytecode.artifact.DdgEdge;
 import tools.bytecode.artifact.DdgNode;
 import tools.bytecode.artifact.HeapEdge;
 import tools.bytecode.artifact.LocalEdge;
+import tools.bytecode.artifact.ParamEdge;
 import tools.bytecode.artifact.ReturnEdge;
 import tools.bytecode.artifact.StmtKind;
 
@@ -274,5 +275,129 @@ class InterProcEdgeBuilderTest {
   @Test
   void isConstantArg_emptyIsConstant() {
     assertTrue(InterProcEdgeBuilder.isConstantArg(""));
+  }
+
+  // --- PARAM edges ---
+
+  private static final String CALLER2 = "<com.example.Caller: void main()>";
+  private static final String CALLEE2 = "<com.example.Bar: void bar(int)>";
+
+  @Test
+  void paramEdge_singleArgWithReachingDef() {
+    DdgNode defNode = node(CALLER2, "s0", "a = 1", StmtKind.ASSIGN);
+    DdgNode callSite =
+        callNode(
+            CALLER2,
+            "s1",
+            "virtualinvoke r0.<com.example.Bar: void bar(int)>(a)",
+            StmtKind.INVOKE,
+            CALLEE2);
+    DdgNode identity = node(CALLEE2, "p0", "r1 := @parameter0: int", StmtKind.IDENTITY);
+    List<DdgNode> nodes = List.of(defNode, callSite, identity);
+    List<DdgEdge> localEdges = List.of(new DdgEdge(defNode.id(), callSite.id(), new LocalEdge()));
+    List<Map<String, Object>> calls = List.of(Map.of("from", CALLER2, "to", CALLEE2));
+
+    List<DdgEdge> result = InterProcEdgeBuilder.buildParamEdges(nodes, localEdges, calls);
+
+    assertEquals(1, result.size());
+    DdgEdge edge = result.get(0);
+    assertEquals(defNode.id(), edge.from());
+    assertEquals(identity.id(), edge.to());
+    assertInstanceOf(ParamEdge.class, edge.edgeInfo());
+  }
+
+  @Test
+  void paramEdge_constantArgSkipped() {
+    DdgNode callSite =
+        callNode(
+            CALLER2,
+            "s0",
+            "virtualinvoke r0.<com.example.Bar: void bar(int)>(null)",
+            StmtKind.INVOKE,
+            CALLEE2);
+    DdgNode identity = node(CALLEE2, "p0", "r1 := @parameter0: int", StmtKind.IDENTITY);
+    List<DdgNode> nodes = List.of(callSite, identity);
+    List<Map<String, Object>> calls = List.of(Map.of("from", CALLER2, "to", CALLEE2));
+
+    List<DdgEdge> result = InterProcEdgeBuilder.buildParamEdges(nodes, List.of(), calls);
+
+    assertTrue(result.isEmpty(), "constant arg should not produce PARAM edge");
+  }
+
+  @Test
+  void paramEdge_thisIdentitySkipped() {
+    DdgNode defA = node(CALLER2, "s0", "a = 1", StmtKind.ASSIGN);
+    DdgNode callSite =
+        callNode(
+            CALLER2,
+            "s1",
+            "virtualinvoke r0.<com.example.Bar: void bar(int)>(a)",
+            StmtKind.INVOKE,
+            CALLEE2);
+    // @this identity node — should be skipped entirely
+    DdgNode thisIdentity = node(CALLEE2, "t0", "this := @this: com.example.Bar", StmtKind.IDENTITY);
+    DdgNode paramIdentity = node(CALLEE2, "p0", "r1 := @parameter0: int", StmtKind.IDENTITY);
+
+    List<DdgNode> nodes = List.of(defA, callSite, thisIdentity, paramIdentity);
+    List<DdgEdge> localEdges = List.of(new DdgEdge(defA.id(), callSite.id(), new LocalEdge()));
+    List<Map<String, Object>> calls = List.of(Map.of("from", CALLER2, "to", CALLEE2));
+
+    List<DdgEdge> result = InterProcEdgeBuilder.buildParamEdges(nodes, localEdges, calls);
+
+    // Should produce edge to paramIdentity, NOT to thisIdentity
+    assertEquals(1, result.size());
+    assertEquals(paramIdentity.id(), result.get(0).to());
+  }
+
+  @Test
+  void paramEdge_multipleArgs() {
+    String callee3 = "<com.example.Bar: void baz(int,int)>";
+    DdgNode defA = node(CALLER2, "s0", "a = 1", StmtKind.ASSIGN);
+    DdgNode defB = node(CALLER2, "s1", "b = 2", StmtKind.ASSIGN);
+    DdgNode callSite =
+        callNode(
+            CALLER2,
+            "s2",
+            "virtualinvoke r0.<com.example.Bar: void baz(int,int)>(a, b)",
+            StmtKind.INVOKE,
+            callee3);
+    DdgNode param0 = node(callee3, "p0", "r1 := @parameter0: int", StmtKind.IDENTITY);
+    DdgNode param1 = node(callee3, "p1", "r2 := @parameter1: int", StmtKind.IDENTITY);
+
+    List<DdgNode> nodes = List.of(defA, defB, callSite, param0, param1);
+    List<DdgEdge> localEdges =
+        List.of(
+            new DdgEdge(defA.id(), callSite.id(), new LocalEdge()),
+            new DdgEdge(defB.id(), callSite.id(), new LocalEdge()));
+    List<Map<String, Object>> calls = List.of(Map.of("from", CALLER2, "to", callee3));
+
+    List<DdgEdge> result = InterProcEdgeBuilder.buildParamEdges(nodes, localEdges, calls);
+
+    assertEquals(2, result.size());
+
+    boolean hasParam0Edge =
+        result.stream().anyMatch(e -> e.from().equals(defA.id()) && e.to().equals(param0.id()));
+    boolean hasParam1Edge =
+        result.stream().anyMatch(e -> e.from().equals(defB.id()) && e.to().equals(param1.id()));
+    assertTrue(hasParam0Edge, "PARAM edge from defA to param0");
+    assertTrue(hasParam1Edge, "PARAM edge from defB to param1");
+  }
+
+  @Test
+  void paramEdge_noReachingDefSkipped() {
+    DdgNode callSite =
+        callNode(
+            CALLER2,
+            "s0",
+            "virtualinvoke r0.<com.example.Bar: void bar(int)>(a)",
+            StmtKind.INVOKE,
+            CALLEE2);
+    DdgNode identity = node(CALLEE2, "p0", "r1 := @parameter0: int", StmtKind.IDENTITY);
+    List<DdgNode> nodes = List.of(callSite, identity);
+    List<Map<String, Object>> calls = List.of(Map.of("from", CALLER2, "to", CALLEE2));
+
+    List<DdgEdge> result = InterProcEdgeBuilder.buildParamEdges(nodes, List.of(), calls);
+
+    assertTrue(result.isEmpty(), "no PARAM edge when reaching-def not found");
   }
 }

@@ -1,10 +1,10 @@
 package tools.bytecode;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import tools.bytecode.artifact.DdgEdge;
 import tools.bytecode.artifact.DdgGraph;
 import tools.bytecode.artifact.DdgNode;
@@ -32,33 +32,35 @@ public class FieldDepEnricher {
   }
 
   public DdgGraph enrich(DdgGraph ddg, Set<String> inScopeMethodSigs) {
-    List<DdgEdge> newEdges = new ArrayList<>(ddg.edges());
+    List<DdgEdge> heapEdges =
+        ddg.nodes().stream()
+            .filter(readNode -> inScopeMethodSigs.contains(readNode.method()))
+            .flatMap(readNode -> matchFieldRead(readNode, ddg, inScopeMethodSigs))
+            .toList();
 
-    for (DdgNode readNode : ddg.nodes()) {
-      if (!inScopeMethodSigs.contains(readNode.method())) continue;
-      Matcher readMatcher = FIELD_READ.matcher(readNode.stmt());
-      if (!readMatcher.matches()) continue;
+    List<DdgEdge> allEdges = Stream.concat(ddg.edges().stream(), heapEdges.stream()).toList();
+    return new DdgGraph(ddg.nodes(), allEdges);
+  }
 
-      String readReceiver = readMatcher.group(2);
-      String fieldSig = "<" + readMatcher.group(3) + ">";
+  private Stream<DdgEdge> matchFieldRead(
+      DdgNode readNode, DdgGraph ddg, Set<String> inScopeMethodSigs) {
+    Matcher readMatcher = FIELD_READ.matcher(readNode.stmt());
+    if (!readMatcher.matches()) return Stream.empty();
 
-      for (DdgNode writeNode : ddg.nodes()) {
-        if (!inScopeMethodSigs.contains(writeNode.method())) continue;
-        Matcher writeMatcher = FIELD_WRITE.matcher(writeNode.stmt());
-        if (!writeMatcher.matches()) continue;
+    String readReceiver = readMatcher.group(2);
+    String fieldSig = "<" + readMatcher.group(3) + ">";
 
-        String writeFieldSig = writeMatcher.group(2);
-        if (!fieldSig.equals(writeFieldSig)) continue;
-
-        String writeReceiver = writeMatcher.group(1);
-
-        if (!aliasCheck.test(writeNode.method(), writeReceiver, readNode.method(), readReceiver))
-          continue;
-
-        newEdges.add(new DdgEdge(writeNode.id(), readNode.id(), new HeapEdge(fieldSig)));
-      }
-    }
-
-    return new DdgGraph(ddg.nodes(), newEdges);
+    return ddg.nodes().stream()
+        .filter(writeNode -> inScopeMethodSigs.contains(writeNode.method()))
+        .flatMap(
+            writeNode -> {
+              Matcher writeMatcher = FIELD_WRITE.matcher(writeNode.stmt());
+              if (!writeMatcher.matches()) return Stream.empty();
+              if (!fieldSig.equals(writeMatcher.group(2))) return Stream.empty();
+              if (!aliasCheck.test(
+                  writeNode.method(), writeMatcher.group(1), readNode.method(), readReceiver))
+                return Stream.empty();
+              return Stream.of(new DdgEdge(writeNode.id(), readNode.id(), new HeapEdge(fieldSig)));
+            });
   }
 }

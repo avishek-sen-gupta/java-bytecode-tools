@@ -304,7 +304,7 @@ public class CallGraphBuilder {
     return ifaceToImpls;
   }
 
-  private static String elapsedSecs(long startMs) {
+  private String elapsedSecs(long startMs) {
     return String.format("%.1fs", (System.currentTimeMillis() - startMs) / 1000.0);
   }
 
@@ -320,7 +320,7 @@ public class CallGraphBuilder {
    * @param bridgeSigs signatures of all bridge methods detected during class scanning
    * @return new graph with bridge entries removed and callers redirected
    */
-  static Map<String, List<String>> collapseBridgeMethods(
+  Map<String, List<String>> collapseBridgeMethods(
       Map<String, List<String>> graph, Set<String> bridgeSigs) {
     if (bridgeSigs.isEmpty()) return graph;
 
@@ -350,7 +350,7 @@ public class CallGraphBuilder {
    * Redirects callsite entries whose callee is a bridge method to the real target(s), preserving
    * the original callsite line number. Bridge caller entries are removed.
    */
-  static Map<String, Map<String, Integer>> collapseCallsiteBridges(
+  Map<String, Map<String, Integer>> collapseCallsiteBridges(
       Map<String, Map<String, Integer>> callsites,
       Set<String> bridgeSigs,
       Map<String, List<String>> rawGraph) {

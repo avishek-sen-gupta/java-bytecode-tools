@@ -23,6 +23,17 @@ public class InterProcEdgeBuilder {
   private record ParamTarget(DdgNode node, int index) {}
 
   /**
+   * Build all inter-procedural edges (PARAM + RETURN) from DDG nodes, LOCAL edges, and call list.
+   */
+  public static List<DdgEdge> build(
+      List<DdgNode> nodes, List<DdgEdge> localEdges, List<Map<String, Object>> calls) {
+    List<DdgEdge> result = new ArrayList<>();
+    result.addAll(buildParamEdges(nodes, localEdges, calls));
+    result.addAll(buildReturnEdges(nodes, calls));
+    return result;
+  }
+
+  /**
    * Builds RETURN edges from callee RETURN nodes to caller ASSIGN_INVOKE call sites.
    *
    * <p>For each call {from: callerSig, to: calleeSig}: - Find RETURN nodes in callee - Find

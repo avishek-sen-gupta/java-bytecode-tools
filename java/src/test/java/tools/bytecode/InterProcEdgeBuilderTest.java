@@ -400,4 +400,42 @@ class InterProcEdgeBuilderTest {
 
     assertTrue(result.isEmpty(), "no PARAM edge when reaching-def not found");
   }
+
+  // --- Top-level build ---
+
+  @Test
+  void build_emitsBothParamAndReturnEdges() {
+    String caller = "<com.example.Caller: void main()>";
+    String callee = "<com.example.Foo: int compute(int)>";
+
+    DdgNode defA = node(caller, "s0", "a = 1", StmtKind.ASSIGN);
+    DdgNode callSite =
+        callNode(
+            caller,
+            "s1",
+            "r2 = staticinvoke <com.example.Foo: int compute(int)>(a)",
+            StmtKind.ASSIGN_INVOKE,
+            callee);
+    DdgNode paramIdentity = node(callee, "p0", "r1 := @parameter0: int", StmtKind.IDENTITY);
+    DdgNode retNode = node(callee, "s2", "return r5", StmtKind.RETURN);
+
+    List<DdgNode> nodes = List.of(defA, callSite, paramIdentity, retNode);
+    List<DdgEdge> localEdges = List.of(new DdgEdge(defA.id(), callSite.id(), new LocalEdge()));
+    List<Map<String, Object>> calls = List.of(Map.of("from", caller, "to", callee));
+
+    List<DdgEdge> result = InterProcEdgeBuilder.build(nodes, localEdges, calls);
+
+    long paramCount = result.stream().filter(e -> e.edgeInfo() instanceof ParamEdge).count();
+    long returnCount = result.stream().filter(e -> e.edgeInfo() instanceof ReturnEdge).count();
+
+    assertEquals(1, paramCount, "one PARAM edge expected");
+    assertEquals(1, returnCount, "one RETURN edge expected");
+  }
+
+  @Test
+  void build_noCalls_noEdges() {
+    List<DdgNode> nodes = List.of(node(CALLER, "s0", "a = 1", StmtKind.ASSIGN));
+    List<DdgEdge> result = InterProcEdgeBuilder.build(nodes, List.of(), List.of());
+    assertTrue(result.isEmpty());
+  }
 }

@@ -6,7 +6,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import sootup.core.graph.BasicBlock;
 import sootup.core.jimple.common.stmt.Stmt;
+import sootup.core.model.Body;
 import sootup.core.model.SootMethod;
 import tools.bytecode.artifact.DdgEdge;
 import tools.bytecode.artifact.DdgNode;
@@ -40,7 +42,7 @@ public class DdgInterCfgMethodGraphBuilder {
       nodes.add(new DdgNode(compoundId, methodSig, localId, stmtText, line, kind, call));
     }
 
-    List<DdgEdge> edges = buildDdgEdges(stmts, stmtToLocalId, methodSig);
+    List<DdgEdge> edges = buildDdgEdges(method.getBody(), stmtToLocalId, methodSig);
 
     return new MethodDdgPayload(nodes, edges);
   }
@@ -62,28 +64,34 @@ public class DdgInterCfgMethodGraphBuilder {
   }
 
   private List<DdgEdge> buildDdgEdges(
-      List<Stmt> stmts, Map<Stmt, String> stmtToLocalId, String methodSig) {
-    // First pass: collect all definitions
-    Map<String, Stmt> localToDef = new HashMap<>();
-    for (Stmt stmt : stmts) {
-      String text = stmt.toString();
-      Matcher assign = ASSIGN_LOCAL.matcher(text);
-      Matcher identity = IDENTITY_LOCAL.matcher(text);
-      if (assign.matches()) localToDef.put(assign.group(1), stmt);
-      else if (identity.matches()) localToDef.put(identity.group(1), stmt);
-    }
-
-    // Second pass: create edges from definitions to uses
+      Body body, Map<Stmt, String> stmtToLocalId, String methodSig) {
+    // Single sequential pass in CFG block order: record use-edges using the current reaching
+    // definition, then update the reaching definition for this stmt's LHS.
+    // This ensures `x = x.replace(...)` connects the prior def of x (not itself).
+    Map<String, Stmt> reachingDef = new HashMap<>();
     List<DdgEdge> edges = new ArrayList<>();
-    for (Stmt stmt : stmts) {
-      String toId = methodSig + "#" + stmtToLocalId.get(stmt);
-      for (String usedLocal : extractUsedLocals(stmt)) {
-        Stmt defStmt = localToDef.get(usedLocal);
-        if (defStmt == null) continue;
-        String fromId = methodSig + "#" + stmtToLocalId.get(defStmt);
-        edges.add(new DdgEdge(fromId, toId, new LocalEdge()));
+
+    for (BasicBlock<?> block : body.getStmtGraph().getBlocksSorted()) {
+      for (Stmt stmt : block.getStmts()) {
+        String toId = methodSig + "#" + stmtToLocalId.get(stmt);
+
+        // Step 1: record use-edges BEFORE updating reachingDef with this stmt's LHS.
+        for (String usedLocal : extractUsedLocals(stmt)) {
+          Stmt defStmt = reachingDef.get(usedLocal);
+          if (defStmt == null) continue;
+          String fromId = methodSig + "#" + stmtToLocalId.get(defStmt);
+          edges.add(new DdgEdge(fromId, toId, new LocalEdge()));
+        }
+
+        // Step 2: update reaching def for this stmt's LHS (after recording uses).
+        String text = stmt.toString();
+        Matcher assign = ASSIGN_LOCAL.matcher(text);
+        Matcher identity = IDENTITY_LOCAL.matcher(text);
+        if (assign.matches()) reachingDef.put(assign.group(1), stmt);
+        else if (identity.matches()) reachingDef.put(identity.group(1), stmt);
       }
     }
+
     return edges;
   }
 

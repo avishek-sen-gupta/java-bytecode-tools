@@ -120,7 +120,7 @@ def test_e2e_pipeline_with_cli():
                 "--output",
                 str(semantic_file),
             ],
-            cwd="/Users/asgupta/code/java-bytecode-tools/python",
+            cwd=str(Path(__file__).resolve().parent.parent),
             capture_output=True,
             text=True,
         )
@@ -137,7 +137,7 @@ def test_e2e_pipeline_with_cli():
                 "--output",
                 str(validated_file),
             ],
-            cwd="/Users/asgupta/code/java-bytecode-tools/python",
+            cwd=str(Path(__file__).resolve().parent.parent),
             capture_output=True,
             text=True,
         )
@@ -218,7 +218,7 @@ def test_ftrace_slice_output_flows_directly_into_ftrace_semantic():
                 "--output",
                 str(slice_file),
             ],
-            cwd="/Users/asgupta/code/java-bytecode-tools/python",
+            cwd=str(Path(__file__).resolve().parent.parent),
             capture_output=True,
             text=True,
         )
@@ -239,7 +239,7 @@ def test_ftrace_slice_output_flows_directly_into_ftrace_semantic():
                 "--output",
                 str(semantic_file),
             ],
-            cwd="/Users/asgupta/code/java-bytecode-tools/python",
+            cwd=str(Path(__file__).resolve().parent.parent),
             capture_output=True,
             text=True,
         )

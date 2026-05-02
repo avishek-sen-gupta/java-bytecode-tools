@@ -103,13 +103,7 @@ public class BwdSliceBuilder {
 
   private Map<String, Object> buildEdge(
       String fromId, String fromMethod, String toId, String toMethod, EdgeInfo edgeInfo) {
-    String kind =
-        switch (edgeInfo) {
-          case LocalEdge e -> "LOCAL";
-          case HeapEdge e -> "HEAP";
-          case ParamEdge e -> "PARAM";
-          case ReturnEdge e -> "RETURN";
-        };
+    String kind = edgeInfo.kindName();
     Map<String, Object> edgeInfoMap = new LinkedHashMap<>();
     edgeInfoMap.put("kind", kind);
     if (edgeInfo instanceof HeapEdge he) edgeInfoMap.put("field", he.field());

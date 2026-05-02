@@ -10,4 +10,6 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
   @JsonSubTypes.Type(value = ParamEdge.class, name = "PARAM"),
   @JsonSubTypes.Type(value = ReturnEdge.class, name = "RETURN")
 })
-public sealed interface EdgeInfo permits LocalEdge, HeapEdge, ParamEdge, ReturnEdge {}
+public sealed interface EdgeInfo permits LocalEdge, HeapEdge, ParamEdge, ReturnEdge {
+  String kindName();
+}

@@ -5,4 +5,9 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 public record LocalEdge() implements EdgeInfo {
   @JsonCreator
   public LocalEdge {}
+
+  @Override
+  public String kindName() {
+    return "LOCAL";
+  }
 }

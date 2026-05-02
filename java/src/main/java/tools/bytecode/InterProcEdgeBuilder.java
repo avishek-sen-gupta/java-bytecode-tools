@@ -2,6 +2,7 @@ package tools.bytecode;
 
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 import tools.bytecode.artifact.DdgEdge;
 import tools.bytecode.artifact.DdgNode;
 import tools.bytecode.artifact.LocalEdge;
@@ -9,6 +10,8 @@ import tools.bytecode.artifact.ReturnEdge;
 import tools.bytecode.artifact.StmtKind;
 
 public class InterProcEdgeBuilder {
+
+  private static final Pattern NUMERIC_LITERAL = Pattern.compile("^-?\\d+(\\.\\d+)?[LlFfDd]?$");
 
   /**
    * Builds RETURN edges from callee RETURN nodes to caller ASSIGN_INVOKE call sites.
@@ -95,5 +98,16 @@ public class InterProcEdgeBuilder {
         .map(DdgEdge::from)
         .findFirst()
         .orElse("");
+  }
+
+  /**
+   * Returns true if the argument string is a Jimple constant (no reaching-def to track). Constants:
+   * null, true, false, numeric literals, string literals, empty string.
+   */
+  public static boolean isConstantArg(String arg) {
+    if (arg.isEmpty()) return true;
+    if ("null".equals(arg) || "true".equals(arg) || "false".equals(arg)) return true;
+    if (arg.startsWith("\"")) return true;
+    return NUMERIC_LITERAL.matcher(arg).matches();
   }
 }

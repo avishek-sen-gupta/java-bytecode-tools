@@ -233,4 +233,46 @@ class InterProcEdgeBuilderTest {
 
     assertEquals("", result);
   }
+
+  // --- Constant detection ---
+
+  @Test
+  void isConstantArg_nullIsConstant() {
+    assertTrue(InterProcEdgeBuilder.isConstantArg("null"));
+  }
+
+  @Test
+  void isConstantArg_numericConstants() {
+    assertTrue(InterProcEdgeBuilder.isConstantArg("0"));
+    assertTrue(InterProcEdgeBuilder.isConstantArg("42"));
+    assertTrue(InterProcEdgeBuilder.isConstantArg("-1"));
+    assertTrue(InterProcEdgeBuilder.isConstantArg("3L"));
+    assertTrue(InterProcEdgeBuilder.isConstantArg("1.5"));
+    assertTrue(InterProcEdgeBuilder.isConstantArg("1.5F"));
+  }
+
+  @Test
+  void isConstantArg_stringLiterals() {
+    assertTrue(InterProcEdgeBuilder.isConstantArg("\"hello\""));
+    assertTrue(InterProcEdgeBuilder.isConstantArg("\"\""));
+  }
+
+  @Test
+  void isConstantArg_booleans() {
+    assertTrue(InterProcEdgeBuilder.isConstantArg("true"));
+    assertTrue(InterProcEdgeBuilder.isConstantArg("false"));
+  }
+
+  @Test
+  void isConstantArg_localVarsAreNotConstants() {
+    assertFalse(InterProcEdgeBuilder.isConstantArg("r0"));
+    assertFalse(InterProcEdgeBuilder.isConstantArg("$i0"));
+    assertFalse(InterProcEdgeBuilder.isConstantArg("value"));
+    assertFalse(InterProcEdgeBuilder.isConstantArg("value#1"));
+  }
+
+  @Test
+  void isConstantArg_emptyIsConstant() {
+    assertTrue(InterProcEdgeBuilder.isConstantArg(""));
+  }
 }

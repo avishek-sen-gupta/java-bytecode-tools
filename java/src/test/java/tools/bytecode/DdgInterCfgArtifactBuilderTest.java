@@ -105,11 +105,13 @@ class DdgInterCfgArtifactBuilderTest {
 
     DdgGraph ddg = new DdgInterCfgArtifactBuilder(tracer).build(input).ddg();
 
-    // Find the IDENTITY node: "value#0 := @parameter0: java.lang.String"
+    // Find the IDENTITY node: "value := @parameter0: java.lang.String"
+    // The fixture uses a conditional branch so SootUp emits non-SSA Jimple (unversioned
+    // locals), matching the real-world pattern where the bug manifests.
     var identityNode =
         ddg.nodes().stream()
             .filter(n -> n.method().equals(SANITIZE_SIG))
-            .filter(n -> n.stmt().startsWith("value#0 :="))
+            .filter(n -> n.stmt().contains(":= @parameter0"))
             .findFirst();
 
     if (identityNode.isEmpty()) {
@@ -122,22 +124,17 @@ class DdgInterCfgArtifactBuilderTest {
 
     DdgNode identity = identityNode.get();
 
-    // Find the replace() reassignment node: "value#1 = virtualinvoke value#0.<...replace...>(...)"
+    // Find the replace() reassignment node: "value = virtualinvoke value.<...replace...>(...)"
     var replaceNodeOpt =
         ddg.nodes().stream()
             .filter(n -> n.method().equals(SANITIZE_SIG))
-            .filter(
-                n ->
-                    n.stmt().startsWith("value#")
-                        && n.stmt().contains("=")
-                        && n.stmt().contains("replace"))
+            .filter(n -> n.stmt().contains("replace") && n.stmt().contains(" = "))
             .findFirst();
 
     if (replaceNodeOpt.isEmpty()) {
-      System.out.println("\n!!! Replace node not found. Available assignment nodes:");
+      System.out.println("\n!!! Replace node not found. Available nodes:");
       ddg.nodes().stream()
           .filter(n -> n.method().equals(SANITIZE_SIG))
-          .filter(n -> n.stmt().contains("="))
           .forEach(n -> System.out.println("  " + n.stmt()));
       throw new AssertionError("replace() reassignment node not found in DDG");
     }

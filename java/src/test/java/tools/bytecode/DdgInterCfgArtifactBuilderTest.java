@@ -370,6 +370,74 @@ class DdgInterCfgArtifactBuilderTest {
     assertTrue(returnCount > 0, "Should have RETURN edges for interface-dispatched call");
   }
 
+  @Test
+  void castAssignmentToHashPrefixedLocalProducesLocalEdge() {
+    // SootUp emits cast assignments as #l-prefixed locals:
+    //   #l0 = (java.lang.CharSequence) "*"
+    //   #l1 = (java.lang.CharSequence) "%"
+    // These are then used as arguments in:
+    //   value = virtualinvoke value.<...replace...>(#l0, #l1)
+    //
+    // Bug: the ASSIGN_LOCAL regex ^(\w[\w$#]*) requires the first character to be \w,
+    // but # is not a word character. So #l0/#l1 definitions are never tracked in
+    // reachingDef, and no LOCAL edge is created from the cast to the call-site use.
+    // Similarly, extractLocalsFromExpr uses [a-z$] as first char, missing #l0 in the
+    // RHS of the replace() call.
+    Map<String, Object> input =
+        Map.of(
+            "nodes",
+            Map.of(
+                SANITIZE_SIG,
+                Map.of(
+                    "node_type", "java_method",
+                    "class", "com.example.app.VarReassignService",
+                    "method", "sanitize",
+                    "methodSignature", SANITIZE_SIG)),
+            "calls",
+            List.of(),
+            "metadata",
+            Map.of("root", SANITIZE_SIG));
+
+    DdgGraph ddg = new DdgInterCfgArtifactBuilder(tracer, null).build(input).ddg();
+
+    // Find the cast assignment node: "#l0 = (java.lang.CharSequence) ..."
+    var castNode =
+        ddg.nodes().stream()
+            .filter(n -> n.method().equals(SANITIZE_SIG))
+            .filter(n -> n.stmt().startsWith("#l") && n.stmt().contains(" = "))
+            .findFirst();
+
+    assertTrue(castNode.isPresent(), "Should have a #l-prefixed cast assignment node");
+
+    // Find the replace() call node that uses #l0/#l1 as arguments
+    var replaceNode =
+        ddg.nodes().stream()
+            .filter(n -> n.method().equals(SANITIZE_SIG))
+            .filter(n -> n.stmt().contains("replace") && n.stmt().contains("#l"))
+            .findFirst();
+
+    assertTrue(replaceNode.isPresent(), "Should have a replace() call using #l-prefixed args");
+
+    // Assert: LOCAL edge from cast definition to the replace() call site
+    boolean hasLocalEdge =
+        ddg.edges().stream()
+            .filter(e -> e.edgeInfo() instanceof LocalEdge)
+            .anyMatch(
+                e -> e.from().equals(castNode.get().id()) && e.to().equals(replaceNode.get().id()));
+
+    assertTrue(
+        hasLocalEdge,
+        "Expected LOCAL edge from #l cast definition to replace() call: "
+            + castNode.get().id()
+            + " -> "
+            + replaceNode.get().id()
+            + "\nAll LOCAL edges: "
+            + ddg.edges().stream()
+                .filter(e -> e.edgeInfo() instanceof LocalEdge)
+                .map(e -> e.from() + " -> " + e.to())
+                .toList());
+  }
+
   // Test helper: records the inScopeMethodSigs passed to enrich()
   static class TestFieldDepEnricher extends FieldDepEnricher {
     Set<String> capturedScope = null;

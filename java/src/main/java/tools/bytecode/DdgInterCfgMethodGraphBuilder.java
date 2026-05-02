@@ -19,9 +19,9 @@ public class DdgInterCfgMethodGraphBuilder {
 
   public record MethodDdgPayload(List<DdgNode> nodes, List<DdgEdge> edges) {}
 
-  private static final Pattern ASSIGN_LOCAL = Pattern.compile("^(\\w[\\w$#]*) = (.+)$");
-  private static final Pattern IDENTITY_LOCAL = Pattern.compile("^(\\w[\\w$#]*) := .+$");
-  private static final Pattern RETURN_VAL = Pattern.compile("^return (\\w[\\w$#]*)$");
+  private static final Pattern ASSIGN_LOCAL = Pattern.compile("^([#\\w][\\w$#]*) = (.+)$");
+  private static final Pattern IDENTITY_LOCAL = Pattern.compile("^([#\\w][\\w$#]*) := .+$");
+  private static final Pattern RETURN_VAL = Pattern.compile("^return ([#\\w][\\w$#]*)$");
 
   public MethodDdgPayload build(SootMethod method, String methodSig) {
     List<Stmt> stmts = new ArrayList<>(method.getBody().getStmtGraph().getNodes());
@@ -51,7 +51,7 @@ public class DdgInterCfgMethodGraphBuilder {
     String text = stmt.toString();
     if (text.contains(":= @parameter") || text.contains(":= @this")) return StmtKind.IDENTITY;
     if (text.startsWith("return ")) return StmtKind.RETURN;
-    if ((text.startsWith("$") || text.matches("^\\w[\\w$#]* = .+")) && text.contains("invoke "))
+    if ((text.startsWith("$") || text.matches("^[#\\w][\\w$#]* = .+")) && text.contains("invoke "))
       return StmtKind.ASSIGN_INVOKE;
     if (text.contains("invoke ")) return StmtKind.INVOKE;
     return StmtKind.ASSIGN;
@@ -117,7 +117,7 @@ public class DdgInterCfgMethodGraphBuilder {
 
   private void extractLocalsFromExpr(String expr, List<String> out) {
     // Match SSA variables: lowercase/$ start, followed by word chars and optional #<number>
-    Pattern localRef = Pattern.compile("\\b([a-z$][\\w$#]*)\\b");
+    Pattern localRef = Pattern.compile("(?:^|(?<=\\s|,|\\())([#a-z$][\\w$#]*)");
     Matcher m = localRef.matcher(expr);
     while (m.find()) {
       String candidate = m.group(1);

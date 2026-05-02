@@ -97,6 +97,7 @@ setup() {
     $B dump com.example.app.RecursionService > "$OUT/dump-rec.json"
     $B dump com.example.app.NestedExceptionService > "$OUT/dump-nested.json"
     $B dump com.example.app.CovConcreteDao > "$OUT/dump-covdao.json"
+    $B dump com.example.app.VarReassignService > "$OUT/dump-var-reassign.json"
 }
 
 # Extract line numbers from dumps (call after setup)

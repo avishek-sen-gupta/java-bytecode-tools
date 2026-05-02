@@ -17,3 +17,5 @@ fileignoreconfig:
     checksum: 6454cf4f1929d845cdf3485ff84d30dab4665dac8451d092874665328b37f898
   - filename: java/src/main/java/tools/bytecode/DdgInterCfgMethodGraphBuilder.java
     checksum: 0b24119a445729300450c69fec9d9f1b9b807f99963b2ceea55bde141a520a8a
+  - filename: docs/superpowers/plans/2026-05-02-inter-proc-edge-bugs.md
+    checksum: a18b056a5c0c31f69c79ef7b54e8d83ac514faa9f77b2a13fe82ce814bc6bb79

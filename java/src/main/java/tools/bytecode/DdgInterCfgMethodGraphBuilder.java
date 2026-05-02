@@ -19,6 +19,12 @@ import tools.bytecode.artifact.StmtKind;
 
 public class DdgInterCfgMethodGraphBuilder {
 
+  private final StmtAnalyzer stmtAnalyzer;
+
+  public DdgInterCfgMethodGraphBuilder(StmtAnalyzer stmtAnalyzer) {
+    this.stmtAnalyzer = stmtAnalyzer;
+  }
+
   public record MethodDdgPayload(List<DdgNode> nodes, List<DdgEdge> edges) {}
 
   public MethodDdgPayload build(SootMethod method, String methodSig) {
@@ -36,7 +42,7 @@ public class DdgInterCfgMethodGraphBuilder {
       String stmtText = stmt.toString();
       StmtKind kind = classifyStmt(stmt);
       Map<String, String> call = extractCallInfo(stmt);
-      int line = StmtAnalyzer.stmtLine(stmt);
+      int line = stmtAnalyzer.stmtLine(stmt);
       nodes.add(new DdgNode(compoundId, methodSig, localId, stmtText, line, kind, call));
     }
 
@@ -55,7 +61,8 @@ public class DdgInterCfgMethodGraphBuilder {
   }
 
   private Map<String, String> extractCallInfo(Stmt stmt) {
-    return StmtAnalyzer.extractInvoke(stmt)
+    return stmtAnalyzer
+        .extractInvoke(stmt)
         .map(invoke -> Map.of("targetMethodSignature", invoke.getMethodSignature().toString()))
         .orElse(Map.of());
   }

@@ -20,8 +20,9 @@ class FrameBuilderTest {
   static void setUp() {
     String cp = Paths.get("../test-fixtures/classes").toAbsolutePath().toString();
     JavaView view = new JavaView(List.of(new JavaClassPathAnalysisInputLocation(cp)));
-    MethodResolver resolver = new MethodResolver(view);
-    builder = new FrameBuilder();
+    StmtAnalyzer stmtAnalyzer = new StmtAnalyzer();
+    MethodResolver resolver = new MethodResolver(view, stmtAnalyzer);
+    builder = new FrameBuilder(stmtAnalyzer);
     processOrder = resolver.resolveByName("com.example.app.OrderService", "processOrder");
   }
 

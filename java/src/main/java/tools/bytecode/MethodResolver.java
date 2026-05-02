@@ -15,9 +15,11 @@ class MethodResolver {
 
   private static final Logger log = LoggerFactory.getLogger(MethodResolver.class);
   private final JavaView view;
+  private final StmtAnalyzer stmtAnalyzer;
 
-  MethodResolver(JavaView view) {
+  MethodResolver(JavaView view, StmtAnalyzer stmtAnalyzer) {
     this.view = view;
+    this.stmtAnalyzer = stmtAnalyzer;
   }
 
   /** Resolve a method in a class by name. Throws if not found or ambiguous. */
@@ -46,7 +48,7 @@ class MethodResolver {
       for (SootMethod m : matches) {
         int lineStart =
             m.getBody().getStmtGraph().getNodes().stream()
-                .mapToInt(StmtAnalyzer::stmtLine)
+                .mapToInt(stmtAnalyzer::stmtLine)
                 .filter(l -> l > 0)
                 .min()
                 .orElse(-1);
@@ -129,7 +131,7 @@ class MethodResolver {
 
   private boolean containsLine(SootMethod method, int line) {
     return method.getBody().getStmtGraph().getNodes().stream()
-        .anyMatch(stmt -> StmtAnalyzer.stmtLine(stmt) == line);
+        .anyMatch(stmt -> stmtAnalyzer.stmtLine(stmt) == line);
   }
 
   private Optional<String> extractDeclaringClass(String methodSignature) {

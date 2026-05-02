@@ -67,7 +67,8 @@ public class DdgInterCfgArtifactBuilder {
     List<DdgNode> ddgNodes = new ArrayList<>();
     List<DdgEdge> ddgEdges = new ArrayList<>();
 
-    DdgInterCfgMethodGraphBuilder methodBuilder = new DdgInterCfgMethodGraphBuilder();
+    DdgInterCfgMethodGraphBuilder methodBuilder =
+        new DdgInterCfgMethodGraphBuilder(tracer.getStmtAnalyzer());
     for (String sig : nodes.keySet()) {
       SootMethod method = tracer.resolveMethod(sig);
       if (!method.hasBody()) {

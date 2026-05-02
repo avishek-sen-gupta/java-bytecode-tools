@@ -24,10 +24,12 @@ class IntraproceduralSlicer {
 
   private final JavaView view;
   private final MethodResolver resolver;
+  private final StmtAnalyzer stmtAnalyzer;
 
-  IntraproceduralSlicer(JavaView view, MethodResolver resolver) {
+  IntraproceduralSlicer(JavaView view, MethodResolver resolver, StmtAnalyzer stmtAnalyzer) {
     this.view = view;
     this.resolver = resolver;
+    this.stmtAnalyzer = stmtAnalyzer;
   }
 
   Map<String, Object> trace(String className, int fromLine, int toLine) {
@@ -62,8 +64,8 @@ class IntraproceduralSlicer {
       SootMethod method, int fromLine, int toLine) {
     Body body = method.getBody();
     StmtGraph<?> graph = body.getStmtGraph();
-    Set<Stmt> fromStmts = new LinkedHashSet<>(StmtAnalyzer.stmtsAtLine(graph, fromLine));
-    Set<Stmt> toStmts = new LinkedHashSet<>(StmtAnalyzer.stmtsAtLine(graph, toLine));
+    Set<Stmt> fromStmts = new LinkedHashSet<>(stmtAnalyzer.stmtsAtLine(graph, fromLine));
+    Set<Stmt> toStmts = new LinkedHashSet<>(stmtAnalyzer.stmtsAtLine(graph, toLine));
     if (toStmts.isEmpty()) return Optional.empty();
 
     List<Stmt> pathStmts =
@@ -72,8 +74,8 @@ class IntraproceduralSlicer {
             : backtrack(graph, fromStmts, toStmts);
     if (pathStmts.isEmpty() && !fromStmts.isEmpty()) return Optional.empty();
 
-    List<Map<String, Object>> stmtDetails = StmtAnalyzer.buildStmtDetails(pathStmts);
-    List<Map<String, Object>> sourceTrace = StmtAnalyzer.deduplicateToSourceLines(stmtDetails);
+    List<Map<String, Object>> stmtDetails = stmtAnalyzer.buildStmtDetails(pathStmts);
+    List<Map<String, Object>> sourceTrace = stmtAnalyzer.deduplicateToSourceLines(stmtDetails);
 
     Map<String, Object> methodTrace = new LinkedHashMap<>();
     methodTrace.put("method", method.getName());

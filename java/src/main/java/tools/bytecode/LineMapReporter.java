@@ -17,9 +17,11 @@ import sootup.java.core.views.JavaView;
 class LineMapReporter {
 
   private final JavaView view;
+  private final StmtAnalyzer stmtAnalyzer;
 
-  LineMapReporter(JavaView view) {
+  LineMapReporter(JavaView view, StmtAnalyzer stmtAnalyzer) {
     this.view = view;
+    this.stmtAnalyzer = stmtAnalyzer;
   }
 
   Map<String, Object> dumpLineMap(String className) {
@@ -45,9 +47,9 @@ class LineMapReporter {
     List<Stmt> nodes = new ArrayList<>(graph.getNodes());
     Map<Integer, Integer> lineCounts =
         nodes.stream()
-            .collect(Collectors.toMap(StmtAnalyzer::stmtLine, s -> 1, Integer::sum, TreeMap::new));
-    int minLine = StmtAnalyzer.minLine(nodes);
-    int maxLine = StmtAnalyzer.maxLine(nodes);
+            .collect(Collectors.toMap(stmtAnalyzer::stmtLine, s -> 1, Integer::sum, TreeMap::new));
+    int minLine = stmtAnalyzer.minLine(nodes);
+    int maxLine = stmtAnalyzer.maxLine(nodes);
     Map<String, Object> m = new LinkedHashMap<>();
     m.put("method", method.getName());
     m.put("signature", method.getSignature().toString());

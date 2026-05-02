@@ -18,11 +18,14 @@ class MethodResolverTest {
   private static MethodResolver resolver;
   private static JavaView view;
 
+  private static StmtAnalyzer stmtAnalyzer;
+
   @BeforeAll
   static void setUp() {
     String cp = Paths.get("../test-fixtures/classes").toAbsolutePath().toString();
     view = new JavaView(List.of(new JavaClassPathAnalysisInputLocation(cp)));
-    resolver = new MethodResolver(view);
+    stmtAnalyzer = new StmtAnalyzer();
+    resolver = new MethodResolver(view, stmtAnalyzer);
   }
 
   @Nested
@@ -123,7 +126,7 @@ class MethodResolverTest {
       SootMethod byName = resolver.resolveByName("com.example.app.OrderService", "processOrder");
       int startLine =
           byName.getBody().getStmtGraph().getNodes().stream()
-              .mapToInt(StmtAnalyzer::stmtLine)
+              .mapToInt(stmtAnalyzer::stmtLine)
               .filter(l -> l > 0)
               .min()
               .orElseThrow();
@@ -151,7 +154,7 @@ class MethodResolverTest {
       SootMethod known = resolver.resolveByName("com.example.app.OrderService", "processOrder");
       int line =
           known.getBody().getStmtGraph().getNodes().stream()
-              .mapToInt(StmtAnalyzer::stmtLine)
+              .mapToInt(stmtAnalyzer::stmtLine)
               .filter(l -> l > 0)
               .min()
               .orElseThrow();

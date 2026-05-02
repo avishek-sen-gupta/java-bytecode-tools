@@ -16,7 +16,7 @@ class DdgInterCfgMethodGraphBuilderTest {
   @Test
   void nodeIdsAreCompoundMethodSigPlusLocalId() {
     // Verify that node IDs use compound "<sig>#<localId>" format
-    DdgInterCfgMethodGraphBuilder builder = new DdgInterCfgMethodGraphBuilder();
+    DdgInterCfgMethodGraphBuilder builder = new DdgInterCfgMethodGraphBuilder(new StmtAnalyzer());
     // Note: this test is structural — the actual SootUp parsing is tested via integration.
     // Here we verify the ID formatting contract via the public MethodDdgPayload type.
     // Since we can't easily build a real SootMethod in unit tests, we verify the format

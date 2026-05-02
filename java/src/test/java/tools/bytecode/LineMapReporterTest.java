@@ -20,7 +20,7 @@ class LineMapReporterTest {
   static void setUp() {
     String cp = Paths.get("../test-fixtures/classes").toAbsolutePath().toString();
     JavaView view = new JavaView(List.of(new JavaClassPathAnalysisInputLocation(cp)));
-    reporter = new LineMapReporter(view);
+    reporter = new LineMapReporter(view, new StmtAnalyzer());
   }
 
   @Nested

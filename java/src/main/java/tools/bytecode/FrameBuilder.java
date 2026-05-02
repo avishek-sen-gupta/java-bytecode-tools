@@ -13,14 +13,20 @@ import sootup.core.signatures.MethodSignature;
 
 class FrameBuilder {
 
+  private final StmtAnalyzer stmtAnalyzer;
+
+  FrameBuilder(StmtAnalyzer stmtAnalyzer) {
+    this.stmtAnalyzer = stmtAnalyzer;
+  }
+
   CallFrame buildFrame(SootMethod method, String sig) {
     String methodClass = method.getDeclaringClassType().getFullyQualifiedName();
     Body body = method.getBody();
     List<Stmt> stmts = new ArrayList<>(body.getStmtGraph().getNodes());
-    List<Map<String, Object>> details = StmtAnalyzer.buildStmtDetails(stmts);
-    List<Map<String, Object>> srcTrace = StmtAnalyzer.deduplicateToSourceLines(details);
-    int minL = StmtAnalyzer.minLine(stmts);
-    int maxL = StmtAnalyzer.maxLine(stmts);
+    List<Map<String, Object>> details = stmtAnalyzer.buildStmtDetails(stmts);
+    List<Map<String, Object>> srcTrace = stmtAnalyzer.deduplicateToSourceLines(details);
+    int minL = stmtAnalyzer.minLine(stmts);
+    int maxL = stmtAnalyzer.maxLine(stmts);
     return new CallFrame(methodClass, method.getName(), sig, minL, maxL, srcTrace, details);
   }
 
@@ -29,15 +35,15 @@ class FrameBuilder {
     String methodClass = method.getDeclaringClassType().getFullyQualifiedName();
     Body body = method.getBody();
     List<Stmt> stmts = new ArrayList<>(body.getStmtGraph().getNodes());
-    int minL = StmtAnalyzer.minLine(stmts);
-    int maxL = StmtAnalyzer.maxLine(stmts);
+    int minL = stmtAnalyzer.minLine(stmts);
+    int maxL = stmtAnalyzer.maxLine(stmts);
     List<Map<String, Object>> callTrace =
         stmts.stream()
             .flatMap(
                 stmt -> {
-                  int line = StmtAnalyzer.stmtLine(stmt);
+                  int line = stmtAnalyzer.stmtLine(stmt);
                   if (line <= 0) return Stream.empty();
-                  return StmtAnalyzer.extractInvoke(stmt).stream()
+                  return stmtAnalyzer.extractInvoke(stmt).stream()
                       .map(
                           invoke -> {
                             MethodSignature callSig = invoke.getMethodSignature();

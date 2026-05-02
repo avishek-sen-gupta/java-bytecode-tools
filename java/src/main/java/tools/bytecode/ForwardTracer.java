@@ -174,12 +174,12 @@ public class ForwardTracer {
    * Resolve the source line where a caller invokes a callee. Builds a lightweight CallFrame for the
    * callee (no body needed) and delegates to {@link BytecodeTracer#findCallSiteLine}.
    */
-  private static int resolveCallSiteLine(CallFrame callerFrame, String calleeSig) {
+  private int resolveCallSiteLine(CallFrame callerFrame, String calleeSig) {
     String calleeClass = extractClassName(calleeSig);
     String calleeMethod = extractMethodName(calleeSig);
     CallFrame calleeFrame =
         new CallFrame(calleeClass, calleeMethod, calleeSig, -1, -1, List.of(), List.of());
-    return StmtAnalyzer.findCallSiteLine(callerFrame, calleeFrame);
+    return tracer.getStmtAnalyzer().findCallSiteLine(callerFrame, calleeFrame);
   }
 
   /**
@@ -219,9 +219,11 @@ public class ForwardTracer {
   }
 
   private final BytecodeTracer tracer;
+  private final StmtAnalyzer stmtAnalyzer;
 
   public ForwardTracer(BytecodeTracer tracer) {
     this.tracer = tracer;
+    this.stmtAnalyzer = tracer.getStmtAnalyzer();
   }
 
   public Map<String, Object> traceForward(String fromClass, String fromMethod, FilterConfig filter)
@@ -324,10 +326,10 @@ public class ForwardTracer {
       List<Map<String, Object>> stmtList = new ArrayList<>();
       for (Stmt stmt : block.getStmts()) {
         Map<String, Object> s = new LinkedHashMap<>();
-        int line = StmtAnalyzer.stmtLine(stmt);
+        int line = stmtAnalyzer.stmtLine(stmt);
         s.put("line", line);
 
-        Optional<AbstractInvokeExpr> invoke = StmtAnalyzer.extractInvoke(stmt);
+        Optional<AbstractInvokeExpr> invoke = stmtAnalyzer.extractInvoke(stmt);
         if (invoke.isPresent()) {
           var msig = invoke.get().getMethodSignature();
           s.put("call", msig.getDeclClassType().getFullyQualifiedName() + "." + msig.getName());

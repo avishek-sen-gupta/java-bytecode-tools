@@ -15,14 +15,16 @@ class IntraproceduralSlicerTest {
 
   private static IntraproceduralSlicer slicer;
   private static MethodResolver resolver;
+  private static StmtAnalyzer stmtAnalyzer;
   private static final String ORDER_SERVICE = "com.example.app.OrderService";
 
   @BeforeAll
   static void setUp() {
     String cp = Paths.get("../test-fixtures/classes").toAbsolutePath().toString();
     JavaView view = new JavaView(List.of(new JavaClassPathAnalysisInputLocation(cp)));
-    resolver = new MethodResolver(view);
-    slicer = new IntraproceduralSlicer(view, resolver);
+    stmtAnalyzer = new StmtAnalyzer();
+    resolver = new MethodResolver(view, stmtAnalyzer);
+    slicer = new IntraproceduralSlicer(view, resolver, stmtAnalyzer);
   }
 
   @Nested
@@ -102,7 +104,7 @@ class IntraproceduralSlicerTest {
         .getStmtGraph()
         .getNodes()
         .stream()
-        .mapToInt(StmtAnalyzer::stmtLine)
+        .mapToInt(stmtAnalyzer::stmtLine)
         .filter(l -> l > 0)
         .max()
         .orElseThrow();
@@ -115,7 +117,7 @@ class IntraproceduralSlicerTest {
         .getStmtGraph()
         .getNodes()
         .stream()
-        .mapToInt(StmtAnalyzer::stmtLine)
+        .mapToInt(stmtAnalyzer::stmtLine)
         .filter(l -> l > 0)
         .min()
         .orElseThrow();

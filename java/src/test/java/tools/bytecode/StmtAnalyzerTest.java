@@ -20,6 +20,7 @@ import sootup.java.core.views.JavaView;
 
 class StmtAnalyzerTest {
 
+  private static final StmtAnalyzer analyzer = new StmtAnalyzer();
   private static JavaView view;
   private static List<Stmt> orderServiceStmts;
 
@@ -41,13 +42,13 @@ class StmtAnalyzerTest {
   class BuildStmtDetails {
     @Test
     void returnsOneEntryPerStmt() {
-      List<Map<String, Object>> details = StmtAnalyzer.buildStmtDetails(orderServiceStmts);
+      List<Map<String, Object>> details = analyzer.buildStmtDetails(orderServiceStmts);
       assertEquals(orderServiceStmts.size(), details.size());
     }
 
     @Test
     void everyEntryHasLineAndJimpleKeys() {
-      List<Map<String, Object>> details = StmtAnalyzer.buildStmtDetails(orderServiceStmts);
+      List<Map<String, Object>> details = analyzer.buildStmtDetails(orderServiceStmts);
       assertTrue(details.stream().allMatch(d -> d.containsKey(StmtAnalyzer.KEY_LINE)));
       assertTrue(details.stream().allMatch(d -> d.containsKey(StmtAnalyzer.KEY_JIMPLE)));
     }
@@ -55,7 +56,7 @@ class StmtAnalyzerTest {
     @Test
     void doesNotMutateInput() {
       List<Stmt> copy = new ArrayList<>(orderServiceStmts);
-      StmtAnalyzer.buildStmtDetails(orderServiceStmts);
+      analyzer.buildStmtDetails(orderServiceStmts);
       assertEquals(copy, orderServiceStmts);
     }
   }
@@ -69,7 +70,7 @@ class StmtAnalyzerTest {
               mapOf(StmtAnalyzer.KEY_LINE, 10, StmtAnalyzer.KEY_CALL_TARGET, "com.Foo.bar"),
               mapOf(StmtAnalyzer.KEY_LINE, 10, StmtAnalyzer.KEY_CALL_TARGET, "com.Foo.baz"),
               mapOf(StmtAnalyzer.KEY_LINE, 11));
-      List<Map<String, Object>> result = StmtAnalyzer.deduplicateToSourceLines(input);
+      List<Map<String, Object>> result = analyzer.deduplicateToSourceLines(input);
       assertEquals(2, result.size());
       assertEquals(10, result.get(0).get(StmtAnalyzer.KEY_LINE));
       @SuppressWarnings("unchecked")
@@ -81,7 +82,7 @@ class StmtAnalyzerTest {
     void doesNotMergeDifferentLines() {
       List<Map<String, Object>> input =
           List.of(mapOf(StmtAnalyzer.KEY_LINE, 10), mapOf(StmtAnalyzer.KEY_LINE, 11));
-      assertEquals(2, StmtAnalyzer.deduplicateToSourceLines(input).size());
+      assertEquals(2, analyzer.deduplicateToSourceLines(input).size());
     }
   }
 
@@ -89,26 +90,24 @@ class StmtAnalyzerTest {
   class MinMaxLine {
     @Test
     void minLine_returnsSmallestPositiveLine() {
-      int min = StmtAnalyzer.minLine(orderServiceStmts);
+      int min = analyzer.minLine(orderServiceStmts);
       assertTrue(min > 0);
       assertTrue(
           orderServiceStmts.stream()
-              .mapToInt(StmtAnalyzer::stmtLine)
+              .mapToInt(analyzer::stmtLine)
               .filter(l -> l > 0)
               .allMatch(l -> l >= min));
     }
 
     @Test
     void maxLine_returnsLargestLine() {
-      int max = StmtAnalyzer.maxLine(orderServiceStmts);
-      assertTrue(
-          orderServiceStmts.stream().mapToInt(StmtAnalyzer::stmtLine).allMatch(l -> l <= max));
+      int max = analyzer.maxLine(orderServiceStmts);
+      assertTrue(orderServiceStmts.stream().mapToInt(analyzer::stmtLine).allMatch(l -> l <= max));
     }
 
     @Test
     void minLine_isAtMostMaxLine() {
-      assertTrue(
-          StmtAnalyzer.minLine(orderServiceStmts) <= StmtAnalyzer.maxLine(orderServiceStmts));
+      assertTrue(analyzer.minLine(orderServiceStmts) <= analyzer.maxLine(orderServiceStmts));
     }
   }
 
@@ -128,15 +127,15 @@ class StmtAnalyzerTest {
       StmtGraph<?> graph = method.getBody().getStmtGraph();
       int anyLine =
           orderServiceStmts.stream()
-              .mapToInt(StmtAnalyzer::stmtLine)
+              .mapToInt(analyzer::stmtLine)
               .filter(l -> l > 0)
               .findFirst()
               .orElseThrow();
 
-      List<Stmt> result = StmtAnalyzer.stmtsAtLine(graph, anyLine);
+      List<Stmt> result = analyzer.stmtsAtLine(graph, anyLine);
 
       assertFalse(result.isEmpty());
-      assertTrue(result.stream().allMatch(s -> StmtAnalyzer.stmtLine(s) == anyLine));
+      assertTrue(result.stream().allMatch(s -> analyzer.stmtLine(s) == anyLine));
     }
   }
 
@@ -166,14 +165,14 @@ class StmtAnalyzerTest {
               List.of(),
               List.of());
 
-      assertEquals(42, StmtAnalyzer.findCallSiteLine(caller, callee));
+      assertEquals(42, analyzer.findCallSiteLine(caller, callee));
     }
 
     @Test
     void returnsNegativeOneWhenNoCallFound() {
       CallFrame caller = new CallFrame("com.A", "m", "<s>", 1, 5, List.of(), List.of());
       CallFrame callee = new CallFrame("com.B", "n", "<s>", 1, 5, List.of(), List.of());
-      assertEquals(-1, StmtAnalyzer.findCallSiteLine(caller, callee));
+      assertEquals(-1, analyzer.findCallSiteLine(caller, callee));
     }
 
     @Test
@@ -185,7 +184,7 @@ class StmtAnalyzerTest {
       CallFrame callee =
           new CallFrame("com.example.app.OtherImpl", "process", "<s>", 1, 5, List.of(), List.of());
 
-      assertEquals(55, StmtAnalyzer.findCallSiteLine(caller, callee));
+      assertEquals(55, analyzer.findCallSiteLine(caller, callee));
     }
   }
 

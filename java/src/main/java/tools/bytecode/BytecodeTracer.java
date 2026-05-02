@@ -24,6 +24,7 @@ public class BytecodeTracer {
   private final JavaView view;
   private final String projectPrefix;
   private final Path callGraphCache;
+  private final StmtAnalyzer stmtAnalyzer;
   private final MethodResolver methodResolver;
   private final FrameBuilder frameBuilder;
   private final IntraproceduralSlicer slicer;
@@ -33,10 +34,15 @@ public class BytecodeTracer {
     this.view = buildView(classpath);
     this.projectPrefix = prefix;
     this.callGraphCache = callGraphCache;
-    this.methodResolver = new MethodResolver(view);
-    this.frameBuilder = new FrameBuilder();
-    this.slicer = new IntraproceduralSlicer(view, methodResolver);
-    this.lineMapReporter = new LineMapReporter(view);
+    this.stmtAnalyzer = new StmtAnalyzer();
+    this.methodResolver = new MethodResolver(view, stmtAnalyzer);
+    this.frameBuilder = new FrameBuilder(stmtAnalyzer);
+    this.slicer = new IntraproceduralSlicer(view, methodResolver, stmtAnalyzer);
+    this.lineMapReporter = new LineMapReporter(view, stmtAnalyzer);
+  }
+
+  public StmtAnalyzer getStmtAnalyzer() {
+    return stmtAnalyzer;
   }
 
   private static JavaView buildView(String classpath) {

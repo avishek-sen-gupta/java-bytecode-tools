@@ -18,9 +18,7 @@ final class StmtAnalyzer {
   static final String KEY_CALLS = "calls";
   static final String KEY_BRANCH = "branch";
 
-  private StmtAnalyzer() {}
-
-  static int stmtLine(Stmt stmt) {
+  int stmtLine(Stmt stmt) {
     StmtPositionInfo posInfo = stmt.getPositionInfo();
     if (posInfo == null) return -1;
     Position pos = posInfo.getStmtPosition();
@@ -28,15 +26,15 @@ final class StmtAnalyzer {
     return pos.getFirstLine();
   }
 
-  static int minLine(Collection<Stmt> stmts) {
-    return stmts.stream().mapToInt(StmtAnalyzer::stmtLine).filter(l -> l > 0).min().orElse(-1);
+  int minLine(Collection<Stmt> stmts) {
+    return stmts.stream().mapToInt(this::stmtLine).filter(l -> l > 0).min().orElse(-1);
   }
 
-  static int maxLine(Collection<Stmt> stmts) {
-    return stmts.stream().mapToInt(StmtAnalyzer::stmtLine).max().orElse(-1);
+  int maxLine(Collection<Stmt> stmts) {
+    return stmts.stream().mapToInt(this::stmtLine).max().orElse(-1);
   }
 
-  static Optional<AbstractInvokeExpr> extractInvoke(Stmt stmt) {
+  Optional<AbstractInvokeExpr> extractInvoke(Stmt stmt) {
     if (stmt instanceof JInvokeStmt) {
       return ((JInvokeStmt) stmt).getInvokeExpr();
     } else if (stmt instanceof JAssignStmt) {
@@ -45,13 +43,13 @@ final class StmtAnalyzer {
     return Optional.empty();
   }
 
-  static List<Stmt> stmtsAtLine(StmtGraph<?> graph, int line) {
+  List<Stmt> stmtsAtLine(StmtGraph<?> graph, int line) {
     return graph.getNodes().stream()
         .filter(stmt -> stmtLine(stmt) == line)
         .collect(Collectors.toList());
   }
 
-  static List<Map<String, Object>> buildStmtDetails(List<Stmt> stmts) {
+  List<Map<String, Object>> buildStmtDetails(List<Stmt> stmts) {
     return stmts.stream()
         .map(
             stmt -> {
@@ -82,11 +80,11 @@ final class StmtAnalyzer {
    * Stream.collect — accumulates into a growing list, merging into the last element when lines are
    * consecutive.
    */
-  static List<Map<String, Object>> deduplicateToSourceLines(List<Map<String, Object>> stmtDetails) {
-    return stmtDetails.stream().collect(ArrayList::new, StmtAnalyzer::foldDetail, List::addAll);
+  List<Map<String, Object>> deduplicateToSourceLines(List<Map<String, Object>> stmtDetails) {
+    return stmtDetails.stream().collect(ArrayList::new, this::foldDetail, List::addAll);
   }
 
-  private static void foldDetail(List<Map<String, Object>> acc, Map<String, Object> detail) {
+  private void foldDetail(List<Map<String, Object>> acc, Map<String, Object> detail) {
     int line = (int) detail.get(KEY_LINE);
     if (!acc.isEmpty() && (int) acc.get(acc.size() - 1).get(KEY_LINE) == line) {
       mergeDetail(acc.get(acc.size() - 1), detail);
@@ -95,7 +93,7 @@ final class StmtAnalyzer {
     }
   }
 
-  private static Map<String, Object> toEntry(Map<String, Object> detail) {
+  private Map<String, Object> toEntry(Map<String, Object> detail) {
     Map<String, Object> entry = new LinkedHashMap<>();
     entry.put(KEY_LINE, detail.get(KEY_LINE));
     if (detail.containsKey(KEY_CALL_TARGET)) {
@@ -107,7 +105,7 @@ final class StmtAnalyzer {
     return entry;
   }
 
-  private static void mergeDetail(Map<String, Object> target, Map<String, Object> detail) {
+  private void mergeDetail(Map<String, Object> target, Map<String, Object> detail) {
     if (detail.containsKey(KEY_CALL_TARGET)) {
       @SuppressWarnings("unchecked")
       List<String> calls = (List<String>) target.computeIfAbsent(KEY_CALLS, k -> new ArrayList<>());
@@ -118,7 +116,7 @@ final class StmtAnalyzer {
     }
   }
 
-  static int findCallSiteLine(CallFrame caller, CallFrame callee) {
+  int findCallSiteLine(CallFrame caller, CallFrame callee) {
     String calleeTarget = callee.className() + "." + callee.methodName();
 
     // Exact match attempt

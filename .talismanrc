@@ -19,3 +19,5 @@ fileignoreconfig:
     checksum: 0b24119a445729300450c69fec9d9f1b9b807f99963b2ceea55bde141a520a8a
   - filename: docs/superpowers/plans/2026-05-02-inter-proc-edge-bugs.md
     checksum: a18b056a5c0c31f69c79ef7b54e8d83ac514faa9f77b2a13fe82ce814bc6bb79
+  - filename: docs/superpowers/plans/2026-05-02-sootup-reaching-defs.md
+    checksum: 53f49189be2c0b4523d1ecaabd8bf808b9f654d7eaa75b5ce63eabc0f5b46a12

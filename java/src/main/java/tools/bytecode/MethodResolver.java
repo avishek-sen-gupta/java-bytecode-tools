@@ -132,7 +132,7 @@ class MethodResolver {
         .anyMatch(stmt -> StmtAnalyzer.stmtLine(stmt) == line);
   }
 
-  private static Optional<String> extractDeclaringClass(String methodSignature) {
+  private Optional<String> extractDeclaringClass(String methodSignature) {
     if (!methodSignature.startsWith("<") || !methodSignature.endsWith(">")) {
       return Optional.empty();
     }
@@ -143,7 +143,7 @@ class MethodResolver {
     return Optional.of(methodSignature.substring(1, colonIndex));
   }
 
-  private static RuntimeException methodNotFound(String methodSignature) {
+  private RuntimeException methodNotFound(String methodSignature) {
     return new RuntimeException("Method not found: " + methodSignature);
   }
 }

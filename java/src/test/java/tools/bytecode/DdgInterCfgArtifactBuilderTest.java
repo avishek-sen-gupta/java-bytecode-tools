@@ -438,6 +438,65 @@ class DdgInterCfgArtifactBuilderTest {
                 .toList());
   }
 
+  @Test
+  void crossBlockReachingDefProducesLocalEdge() {
+    // VarReassignService.sanitize has an if-branch that splits the CFG.
+    // The parameter identity "value := @parameter0" must reach "return value"
+    // even though they are in different basic blocks.
+    // The current single-pass analysis fails this because it walks blocks linearly
+    // and loses the reaching-def across the branch merge point.
+    Map<String, Object> input =
+        Map.of(
+            "nodes",
+            Map.of(
+                SANITIZE_SIG,
+                Map.of(
+                    "node_type", "java_method",
+                    "class", "com.example.app.VarReassignService",
+                    "method", "sanitize",
+                    "methodSignature", SANITIZE_SIG)),
+            "calls",
+            List.of(),
+            "metadata",
+            Map.of("root", SANITIZE_SIG));
+
+    DdgGraph ddg = new DdgInterCfgArtifactBuilder(tracer, null).build(input).ddg();
+
+    // Find the IDENTITY node: "value := @parameter0: java.lang.String"
+    DdgNode identityNode =
+        ddg.nodes().stream()
+            .filter(n -> n.method().equals(SANITIZE_SIG))
+            .filter(n -> n.stmt().contains(":= @parameter0"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("IDENTITY node for 'value' not found"));
+
+    // Find the return node: "return value"
+    DdgNode returnNode =
+        ddg.nodes().stream()
+            .filter(n -> n.method().equals(SANITIZE_SIG))
+            .filter(n -> n.stmt().startsWith("return "))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("RETURN node not found"));
+
+    // Assert: LOCAL edge from identity → return (cross-block reaching-def)
+    boolean hasEdge =
+        ddg.edges().stream()
+            .filter(e -> e.edgeInfo() instanceof LocalEdge)
+            .anyMatch(e -> e.from().equals(identityNode.id()) && e.to().equals(returnNode.id()));
+
+    assertTrue(
+        hasEdge,
+        "Expected cross-block LOCAL edge from IDENTITY to RETURN: "
+            + identityNode.id()
+            + " -> "
+            + returnNode.id()
+            + "\nAll LOCAL edges: "
+            + ddg.edges().stream()
+                .filter(e -> e.edgeInfo() instanceof LocalEdge)
+                .map(e -> e.from() + " -> " + e.to())
+                .toList());
+  }
+
   // Test helper: records the inScopeMethodSigs passed to enrich()
   static class TestFieldDepEnricher extends FieldDepEnricher {
     Set<String> capturedScope = null;

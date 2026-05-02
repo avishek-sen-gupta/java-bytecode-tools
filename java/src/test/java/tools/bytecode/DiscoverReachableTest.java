@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 class DiscoverReachableTest {
 
   private static final FilterConfig NO_FILTER = new FilterConfig(List.of(), List.of());
+  private final ForwardTracer tracer = new ForwardTracer();
 
   @Nested
   class SimpleChainTest {
@@ -22,7 +23,7 @@ class DiscoverReachableTest {
       callGraph.put("C", List.of());
       Set<String> known = Set.of("A", "B", "C");
 
-      DiscoveryResult result = ForwardTracer.discoverReachable("A", callGraph, known, NO_FILTER);
+      DiscoveryResult result = tracer.discoverReachable("A", callGraph, known, NO_FILTER);
 
       assertEquals(Set.of("A", "B", "C"), result.normalMethods());
       // A has callee B (NORMAL)
@@ -48,7 +49,7 @@ class DiscoverReachableTest {
       callGraph.put("B", List.of("A"));
       Set<String> known = Set.of("A", "B");
 
-      DiscoveryResult result = ForwardTracer.discoverReachable("A", callGraph, known, NO_FILTER);
+      DiscoveryResult result = tracer.discoverReachable("A", callGraph, known, NO_FILTER);
 
       // Both are NORMAL (cycle is per-call-site, not per-method)
       assertEquals(Set.of("A", "B"), result.normalMethods());
@@ -65,7 +66,7 @@ class DiscoverReachableTest {
       callGraph.put("A", List.of("A"));
       Set<String> known = Set.of("A");
 
-      DiscoveryResult result = ForwardTracer.discoverReachable("A", callGraph, known, NO_FILTER);
+      DiscoveryResult result = tracer.discoverReachable("A", callGraph, known, NO_FILTER);
 
       assertEquals(Set.of("A"), result.normalMethods());
       assertEquals(1, result.calleeMap().get("A").size());
@@ -83,7 +84,7 @@ class DiscoverReachableTest {
       callGraph.put("A", List.of("B"));
       Set<String> known = Set.of("A");
 
-      DiscoveryResult result = ForwardTracer.discoverReachable("A", callGraph, known, NO_FILTER);
+      DiscoveryResult result = tracer.discoverReachable("A", callGraph, known, NO_FILTER);
 
       assertEquals(Set.of("A"), result.normalMethods());
       assertEquals(1, result.calleeMap().get("A").size());
@@ -99,7 +100,7 @@ class DiscoverReachableTest {
       Set<String> known = Set.of("A", calleeSig);
       FilterConfig filter = new FilterConfig(List.of(), List.of("com.ext"));
 
-      DiscoveryResult result = ForwardTracer.discoverReachable("A", callGraph, known, filter);
+      DiscoveryResult result = tracer.discoverReachable("A", callGraph, known, filter);
 
       assertEquals(Set.of("A"), result.normalMethods());
       assertEquals(Classification.FILTERED, result.calleeMap().get("A").get(0).classification());
@@ -119,7 +120,7 @@ class DiscoverReachableTest {
       callGraph.put("D", List.of());
       Set<String> known = Set.of("A", "B", "C", "D");
 
-      DiscoveryResult result = ForwardTracer.discoverReachable("A", callGraph, known, NO_FILTER);
+      DiscoveryResult result = tracer.discoverReachable("A", callGraph, known, NO_FILTER);
 
       assertEquals(Set.of("A", "B", "C", "D"), result.normalMethods());
       // A has two callees, both NORMAL
@@ -139,7 +140,7 @@ class DiscoverReachableTest {
       callGraph.put("A", List.of());
       Set<String> known = Set.of("A");
 
-      DiscoveryResult result = ForwardTracer.discoverReachable("A", callGraph, known, NO_FILTER);
+      DiscoveryResult result = tracer.discoverReachable("A", callGraph, known, NO_FILTER);
 
       assertEquals(Set.of("A"), result.normalMethods());
       assertTrue(result.calleeMap().get("A").isEmpty());
@@ -151,7 +152,7 @@ class DiscoverReachableTest {
       Map<String, List<String>> callGraph = Map.of();
       Set<String> known = Set.of("A");
 
-      DiscoveryResult result = ForwardTracer.discoverReachable("A", callGraph, known, NO_FILTER);
+      DiscoveryResult result = tracer.discoverReachable("A", callGraph, known, NO_FILTER);
 
       assertEquals(Set.of("A"), result.normalMethods());
       assertTrue(result.calleeMap().get("A").isEmpty());

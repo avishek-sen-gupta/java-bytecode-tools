@@ -9,13 +9,14 @@ import org.junit.jupiter.api.Test;
 class BuildRefChildTest {
 
   private static final String SIG = "<com.example.Foo: void bar(int)>";
+  private final ForwardTracer tracer = new ForwardTracer();
 
   @Nested
   class NormalRefTest {
 
     @Test
     void normalClassificationProducesRefNode() {
-      Map<String, Object> node = ForwardTracer.buildChildNode(SIG, Classification.NORMAL, 42);
+      Map<String, Object> node = tracer.buildChildNode(SIG, Classification.NORMAL, 42);
 
       assertEquals("com.example.Foo", node.get(ForwardTracer.F_CLASS));
       assertEquals("bar", node.get(ForwardTracer.F_METHOD));
@@ -32,7 +33,7 @@ class BuildRefChildTest {
 
     @Test
     void cycleClassificationProducesCycleNode() {
-      Map<String, Object> node = ForwardTracer.buildChildNode(SIG, Classification.CYCLE, 10);
+      Map<String, Object> node = tracer.buildChildNode(SIG, Classification.CYCLE, 10);
 
       assertEquals(true, node.get(ForwardTracer.F_CYCLE));
       assertNull(node.get(ForwardTracer.F_REF));
@@ -45,7 +46,7 @@ class BuildRefChildTest {
 
     @Test
     void filteredClassificationProducesFilteredNode() {
-      Map<String, Object> node = ForwardTracer.buildChildNode(SIG, Classification.FILTERED, 5);
+      Map<String, Object> node = tracer.buildChildNode(SIG, Classification.FILTERED, 5);
 
       assertEquals(true, node.get(ForwardTracer.F_FILTERED));
       assertNull(node.get(ForwardTracer.F_REF));
@@ -58,21 +59,21 @@ class BuildRefChildTest {
 
     @Test
     void positiveCallSiteLineIncluded() {
-      Map<String, Object> node = ForwardTracer.buildChildNode(SIG, Classification.NORMAL, 42);
+      Map<String, Object> node = tracer.buildChildNode(SIG, Classification.NORMAL, 42);
 
       assertEquals(42, node.get(ForwardTracer.F_CALL_SITE_LINE));
     }
 
     @Test
     void negativeCallSiteLineOmitted() {
-      Map<String, Object> node = ForwardTracer.buildChildNode(SIG, Classification.NORMAL, -1);
+      Map<String, Object> node = tracer.buildChildNode(SIG, Classification.NORMAL, -1);
 
       assertNull(node.get(ForwardTracer.F_CALL_SITE_LINE));
     }
 
     @Test
     void zeroCallSiteLineOmitted() {
-      Map<String, Object> node = ForwardTracer.buildChildNode(SIG, Classification.NORMAL, 0);
+      Map<String, Object> node = tracer.buildChildNode(SIG, Classification.NORMAL, 0);
 
       assertNull(node.get(ForwardTracer.F_CALL_SITE_LINE));
     }
@@ -84,7 +85,7 @@ class BuildRefChildTest {
     @Test
     void extractsClassAndMethodFromSignature() {
       Map<String, Object> node =
-          ForwardTracer.buildChildNode(
+          tracer.buildChildNode(
               "<com.example.app.OrderService: void processOrder(int)>", Classification.NORMAL, 7);
 
       assertEquals("com.example.app.OrderService", node.get(ForwardTracer.F_CLASS));

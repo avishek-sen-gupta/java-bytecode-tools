@@ -45,14 +45,14 @@ public class ForwardTracer {
    * Extract the fully qualified class name from a SootUp signature like {@code <com.example.Foo:
    * void bar(int)>}.
    */
-  static String extractClassName(String sig) {
+  String extractClassName(String sig) {
     return sig.substring(1, sig.indexOf(':'));
   }
 
   /**
    * Extract the method name from a SootUp signature like {@code <com.example.Foo: void bar(int)>}.
    */
-  static String extractMethodName(String sig) {
+  String extractMethodName(String sig) {
     return sig.substring(sig.lastIndexOf(' ') + 1, sig.indexOf('('));
   }
 
@@ -67,7 +67,7 @@ public class ForwardTracer {
    * @param filter class-level allow/stop filter (null-safe)
    * @return discovery result with classifications and callee lists
    */
-  static DiscoveryResult discoverReachable(
+  DiscoveryResult discoverReachable(
       String rootSig,
       Map<String, List<String>> callGraph,
       Set<String> knownSignatures,
@@ -90,7 +90,7 @@ public class ForwardTracer {
     return new DiscoveryResult(normalMethods, calleeMap);
   }
 
-  private static void discoverDFS(
+  private void discoverDFS(
       String sig,
       Map<String, List<String>> callGraph,
       Set<String> knownSignatures,
@@ -128,7 +128,7 @@ public class ForwardTracer {
     calleeMap.put(sig, List.copyOf(entries));
   }
 
-  private static Classification classifyCallee(
+  private Classification classifyCallee(
       String calleeSig,
       Set<String> pathAncestors,
       Set<String> knownSignatures,
@@ -150,7 +150,7 @@ public class ForwardTracer {
    * @param callSiteLine source line of the call site (omitted if <= 0)
    * @return map suitable for inclusion in the "children" list
    */
-  static Map<String, Object> buildChildNode(
+  Map<String, Object> buildChildNode(
       String calleeSig, Classification classification, int callSiteLine) {
     Map<String, Object> node = new LinkedHashMap<>();
     node.put(F_CLASS, extractClassName(calleeSig));
@@ -224,6 +224,12 @@ public class ForwardTracer {
   public ForwardTracer(BytecodeTracer tracer) {
     this.tracer = tracer;
     this.stmtAnalyzer = tracer.getStmtAnalyzer();
+  }
+
+  /** Package-private constructor for unit-testing pure helper methods without a BytecodeTracer. */
+  ForwardTracer() {
+    this.tracer = null;
+    this.stmtAnalyzer = null;
   }
 
   public Map<String, Object> traceForward(String fromClass, String fromMethod, FilterConfig filter)
@@ -527,7 +533,7 @@ public class ForwardTracer {
 
   /** Extract positive source line numbers from a block's stmts. */
   @SuppressWarnings("unchecked")
-  static Set<Integer> sourceLines(Map<String, Object> blockMap) {
+  Set<Integer> sourceLines(Map<String, Object> blockMap) {
     Set<Integer> lines = new LinkedHashSet<>();
     for (Map<String, Object> stmt : (List<Map<String, Object>>) blockMap.get("stmts")) {
       int line = ((Number) stmt.get("line")).intValue();
@@ -537,7 +543,7 @@ public class ForwardTracer {
   }
 
   /** Invert a successor map to produce a predecessor map. */
-  static Map<String, Set<String>> buildPredecessorMap(Map<String, List<String>> succMap) {
+  Map<String, Set<String>> buildPredecessorMap(Map<String, List<String>> succMap) {
     Map<String, Set<String>> predMap = new LinkedHashMap<>();
     for (Map.Entry<String, List<String>> entry : succMap.entrySet()) {
       for (String succ : entry.getValue()) {
@@ -552,7 +558,7 @@ public class ForwardTracer {
    * can be reached from a covered block going backward, without crossing handler entries. Returns a
    * new set; does not mutate the input.
    */
-  static Set<String> fillCoverageGaps(
+  Set<String> fillCoverageGaps(
       Set<String> coveredBlocks,
       Map<String, List<String>> succMap,
       Map<String, Set<String>> predMap,
@@ -590,7 +596,7 @@ public class ForwardTracer {
   }
 
   /** BFS from seed blocks through adjacency map, not crossing blocked entries. */
-  private static Set<String> bfsReachable(
+  private Set<String> bfsReachable(
       Set<String> seeds, Map<String, List<String>> adjMap, Set<String> blocked) {
     Set<String> visited = new LinkedHashSet<>();
     Queue<String> queue = new ArrayDeque<>(seeds);

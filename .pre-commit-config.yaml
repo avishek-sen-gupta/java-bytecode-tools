@@ -59,3 +59,11 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-commit]
+
+  - repo: local
+    hooks:
+      - id: terminology-guard
+        name: Terminology Guard
+        entry: precommit-scripts/check-terminology
+        language: script
+        types: [text]

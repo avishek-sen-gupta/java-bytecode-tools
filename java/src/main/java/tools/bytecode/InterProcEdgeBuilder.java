@@ -64,7 +64,8 @@ public class InterProcEdgeBuilder {
                           n ->
                               n.method().equals(caller)
                                   && n.kind() == StmtKind.ASSIGN_INVOKE
-                                  && callee.equals(n.call().get("targetMethodSignature")))
+                                  && matchesSubSignature(
+                                      callee, (String) n.call().get("targetMethodSignature")))
                       .toList();
 
               // Create RETURN edges from each return node to each assign-invoke node
@@ -80,6 +81,24 @@ public class InterProcEdgeBuilder {
                                           new ReturnEdge())));
             })
         .toList();
+  }
+
+  /**
+   * Extract the sub-signature (method name + parameter types) from a full Soot method signature.
+   * E.g., from {@code <com.example.Foo: int bar(String,int)>} returns {@code bar(String,int)}.
+   */
+  public String extractSubSignature(String methodSignature) {
+    int parenOpen = methodSignature.indexOf('(');
+    if (parenOpen < 0) return methodSignature;
+    int nameStart = methodSignature.lastIndexOf(' ', parenOpen) + 1;
+    int parenClose = methodSignature.lastIndexOf(')');
+    if (parenClose < 0) return methodSignature;
+    return methodSignature.substring(nameStart, parenClose + 1);
+  }
+
+  private boolean matchesSubSignature(String calltreeSig, String callSiteSig) {
+    if (callSiteSig == null) return false;
+    return extractSubSignature(calltreeSig).equals(extractSubSignature(callSiteSig));
   }
 
   /**
@@ -168,7 +187,8 @@ public class InterProcEdgeBuilder {
                   n ->
                       n.method().equals(callerSig)
                           && (n.kind() == StmtKind.ASSIGN_INVOKE || n.kind() == StmtKind.INVOKE)
-                          && calleeSig.equals(n.call().get("targetMethodSignature")))
+                          && matchesSubSignature(
+                              calleeSig, (String) n.call().get("targetMethodSignature")))
               .toList();
 
       for (DdgNode callSiteNode : callSiteNodes) {

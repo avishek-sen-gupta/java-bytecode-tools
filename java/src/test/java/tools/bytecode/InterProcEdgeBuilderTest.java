@@ -113,6 +113,64 @@ class InterProcEdgeBuilderTest {
         "All edges should be to the same ASSIGN_INVOKE node");
   }
 
+  @Test
+  void returnEdge_interfaceDispatch_subSignatureMatch() {
+    String caller = "<com.example.Caller: void main()>";
+    String concreteCallee = "<com.example.JdbcRepo: java.lang.String findById(int)>";
+    String interfaceCallee = "<com.example.Repo: java.lang.String findById(int)>";
+
+    DdgNode returnNode = node(concreteCallee, "return_0", "return r0", StmtKind.RETURN);
+    DdgNode assignInvokeNode =
+        callNode(
+            caller,
+            "invoke_1",
+            "$r0 = interfaceinvoke r1.<com.example.Repo: java.lang.String findById(int)>(i0)",
+            StmtKind.ASSIGN_INVOKE,
+            interfaceCallee);
+
+    List<DdgNode> nodes = List.of(returnNode, assignInvokeNode);
+    List<Map<String, Object>> calls = List.of(Map.of("from", caller, "to", concreteCallee));
+
+    List<DdgEdge> edges = builder.buildReturnEdges(nodes, calls);
+
+    assertEquals(1, edges.size(), "Should produce RETURN edge via sub-signature match");
+    assertEquals(returnNode.id(), edges.get(0).from());
+    assertEquals(assignInvokeNode.id(), edges.get(0).to());
+    assertInstanceOf(ReturnEdge.class, edges.get(0).edgeInfo());
+  }
+
+  // --- Sub-signature extraction ---
+
+  @Test
+  void extractSubSignature_simpleMethod() {
+    assertEquals(
+        "findById(int)",
+        builder.extractSubSignature(
+            "<com.example.app.JdbcOrderRepository: java.lang.String findById(int)>"));
+  }
+
+  @Test
+  void extractSubSignature_multipleParams() {
+    assertEquals(
+        "bar(java.lang.String,int)",
+        builder.extractSubSignature("<com.example.Foo: void bar(java.lang.String,int)>"));
+  }
+
+  @Test
+  void extractSubSignature_noParams() {
+    assertEquals(
+        "toString()",
+        builder.extractSubSignature("<java.lang.Object: java.lang.String toString()>"));
+  }
+
+  @Test
+  void extractSubSignature_interfaceSignature() {
+    assertEquals(
+        "findById(int)",
+        builder.extractSubSignature(
+            "<com.example.app.OrderRepository: java.lang.String findById(int)>"));
+  }
+
   // --- Arg parsing ---
 
   @Test
@@ -393,6 +451,34 @@ class InterProcEdgeBuilderTest {
     List<DdgEdge> result = builder.buildParamEdges(nodes, List.of(), calls);
 
     assertTrue(result.isEmpty(), "no PARAM edge when reaching-def not found");
+  }
+
+  @Test
+  void paramEdge_interfaceDispatch_subSignatureMatch() {
+    String caller = "<com.example.Caller: void main()>";
+    String concreteCallee = "<com.example.JdbcRepo: java.lang.String findById(int)>";
+    String interfaceCallee = "<com.example.Repo: java.lang.String findById(int)>";
+
+    DdgNode defNode = node(caller, "s0", "i0 = 42", StmtKind.ASSIGN);
+    DdgNode callSite =
+        callNode(
+            caller,
+            "s1",
+            "$r0 = interfaceinvoke r1.<com.example.Repo: java.lang.String findById(int)>(i0)",
+            StmtKind.ASSIGN_INVOKE,
+            interfaceCallee);
+    DdgNode paramIdentity = node(concreteCallee, "p0", "r1 := @parameter0: int", StmtKind.IDENTITY);
+
+    List<DdgNode> nodes = List.of(defNode, callSite, paramIdentity);
+    List<DdgEdge> localEdges = List.of(new DdgEdge(defNode.id(), callSite.id(), new LocalEdge()));
+    List<Map<String, Object>> calls = List.of(Map.of("from", caller, "to", concreteCallee));
+
+    List<DdgEdge> result = builder.buildParamEdges(nodes, localEdges, calls);
+
+    assertEquals(1, result.size(), "Should produce PARAM edge via sub-signature match");
+    assertEquals(defNode.id(), result.get(0).from());
+    assertEquals(paramIdentity.id(), result.get(0).to());
+    assertInstanceOf(ParamEdge.class, result.get(0).edgeInfo());
   }
 
   // --- Top-level build ---

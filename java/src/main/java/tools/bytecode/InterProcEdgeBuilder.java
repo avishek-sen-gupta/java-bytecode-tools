@@ -25,7 +25,7 @@ public class InterProcEdgeBuilder {
   /**
    * Build all inter-procedural edges (PARAM + RETURN) from DDG nodes, LOCAL edges, and call list.
    */
-  public static List<DdgEdge> build(
+  public List<DdgEdge> build(
       List<DdgNode> nodes, List<DdgEdge> localEdges, List<Map<String, Object>> calls) {
     List<DdgEdge> result = new ArrayList<>();
     result.addAll(buildParamEdges(nodes, localEdges, calls));
@@ -44,8 +44,7 @@ public class InterProcEdgeBuilder {
    * @param calls List of call maps with "from" (caller) and "to" (callee) signatures
    * @return List of DdgEdge objects representing RETURN edges
    */
-  public static List<DdgEdge> buildReturnEdges(
-      List<DdgNode> nodes, List<Map<String, Object>> calls) {
+  public List<DdgEdge> buildReturnEdges(List<DdgNode> nodes, List<Map<String, Object>> calls) {
     return calls.stream()
         .flatMap(
             call -> {
@@ -87,7 +86,7 @@ public class InterProcEdgeBuilder {
    * Extract the argument name at position {@code paramIndex} from a Jimple call-site statement.
    * Returns empty string if index is out of bounds or the arg list is empty.
    */
-  public static String extractArgLocal(String stmt, int paramIndex) {
+  public String extractArgLocal(String stmt, int paramIndex) {
     int open = stmt.lastIndexOf('(');
     int close = stmt.lastIndexOf(')');
     if (open < 0 || close < 0 || close <= open) return "";
@@ -103,7 +102,7 @@ public class InterProcEdgeBuilder {
    * {@code callSiteNodeId}, checks if the source node defines {@code argLocal} (via {@code x = ...}
    * or {@code x := ...}). Returns empty string if no reaching-def found.
    */
-  public static String findReachingDefId(
+  public String findReachingDefId(
       String callSiteNodeId, String argLocal, List<DdgEdge> edges, Map<String, DdgNode> nodeIndex) {
     return edges.stream()
         .filter(e -> callSiteNodeId.equals(e.to()))
@@ -124,7 +123,7 @@ public class InterProcEdgeBuilder {
    * Returns true if the argument string is a Jimple constant (no reaching-def to track). Constants:
    * null, true, false, numeric literals, string literals, empty string.
    */
-  public static boolean isConstantArg(String arg) {
+  public boolean isConstantArg(String arg) {
     if (arg.isEmpty()) return true;
     if ("null".equals(arg) || "true".equals(arg) || "false".equals(arg)) return true;
     if (arg.startsWith("\"")) return true;
@@ -137,7 +136,7 @@ public class InterProcEdgeBuilder {
    * @parameterN IDENTITY node in the callee.
    *     <p>Skips: @this identity, constant arguments, arguments with no reaching-def.
    */
-  public static List<DdgEdge> buildParamEdges(
+  public List<DdgEdge> buildParamEdges(
       List<DdgNode> nodes, List<DdgEdge> localEdges, List<Map<String, Object>> calls) {
 
     Map<String, DdgNode> nodeIndex = new HashMap<>();

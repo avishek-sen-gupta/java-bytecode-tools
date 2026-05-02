@@ -79,7 +79,8 @@ public class DdgInterCfgArtifactBuilder {
     }
 
     // Inter-procedural edges: PARAM + RETURN
-    List<DdgEdge> interProcEdges = InterProcEdgeBuilder.build(ddgNodes, ddgEdges, calls);
+    InterProcEdgeBuilder interProcBuilder = new InterProcEdgeBuilder();
+    List<DdgEdge> interProcEdges = interProcBuilder.build(ddgNodes, ddgEdges, calls);
     ddgEdges.addAll(interProcEdges);
 
     Set<String> inScopeMethodSigs = new HashSet<>(nodes.keySet());

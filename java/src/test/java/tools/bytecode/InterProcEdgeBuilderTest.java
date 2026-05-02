@@ -15,6 +15,8 @@ import tools.bytecode.artifact.StmtKind;
 
 class InterProcEdgeBuilderTest {
 
+  private final InterProcEdgeBuilder builder = new InterProcEdgeBuilder();
+
   private static DdgNode node(String method, String localId, String stmt, StmtKind kind) {
     return new DdgNode(method + "#" + localId, method, localId, stmt, -1, kind, Map.of());
   }
@@ -43,7 +45,7 @@ class InterProcEdgeBuilderTest {
     List<DdgNode> nodes = List.of(returnNode, assignInvokeNode);
     List<Map<String, Object>> calls = List.of(Map.of("from", caller, "to", callee));
 
-    List<DdgEdge> edges = InterProcEdgeBuilder.buildReturnEdges(nodes, calls);
+    List<DdgEdge> edges = builder.buildReturnEdges(nodes, calls);
 
     assertEquals(1, edges.size(), "Should produce 1 RETURN edge");
     DdgEdge edge = edges.get(0);
@@ -64,7 +66,7 @@ class InterProcEdgeBuilderTest {
     List<DdgNode> nodes = List.of(returnNode, invokeNode);
     List<Map<String, Object>> calls = List.of(Map.of("from", caller, "to", callee));
 
-    List<DdgEdge> edges = InterProcEdgeBuilder.buildReturnEdges(nodes, calls);
+    List<DdgEdge> edges = builder.buildReturnEdges(nodes, calls);
 
     assertEquals(0, edges.size(), "Should not produce RETURN edge for INVOKE (void) call site");
   }
@@ -81,7 +83,7 @@ class InterProcEdgeBuilderTest {
     List<DdgNode> nodes = List.of(assignInvokeNode);
     List<Map<String, Object>> calls = List.of(Map.of("from", caller, "to", callee));
 
-    List<DdgEdge> edges = InterProcEdgeBuilder.buildReturnEdges(nodes, calls);
+    List<DdgEdge> edges = builder.buildReturnEdges(nodes, calls);
 
     assertEquals(0, edges.size(), "Should not produce RETURN edge when callee has no RETURN nodes");
   }
@@ -99,7 +101,7 @@ class InterProcEdgeBuilderTest {
     List<DdgNode> nodes = List.of(returnNode1, returnNode2, assignInvokeNode);
     List<Map<String, Object>> calls = List.of(Map.of("from", caller, "to", callee));
 
-    List<DdgEdge> edges = InterProcEdgeBuilder.buildReturnEdges(nodes, calls);
+    List<DdgEdge> edges = builder.buildReturnEdges(nodes, calls);
 
     assertEquals(2, edges.size(), "Should produce 2 RETURN edges for 2 return points");
     assertTrue(
@@ -117,31 +119,27 @@ class InterProcEdgeBuilderTest {
   void extractArgLocal_singleArg() {
     assertEquals(
         "a",
-        InterProcEdgeBuilder.extractArgLocal(
-            "r2 = virtualinvoke r0.<com.example.Bar: void bar(int)>(a)", 0));
+        builder.extractArgLocal("r2 = virtualinvoke r0.<com.example.Bar: void bar(int)>(a)", 0));
   }
 
   @Test
   void extractArgLocal_multipleArgs() {
     String stmt = "r2 = virtualinvoke r0.<com.example.Bar: void bar(int,int)>(a, b)";
-    assertEquals("a", InterProcEdgeBuilder.extractArgLocal(stmt, 0));
-    assertEquals("b", InterProcEdgeBuilder.extractArgLocal(stmt, 1));
+    assertEquals("a", builder.extractArgLocal(stmt, 0));
+    assertEquals("b", builder.extractArgLocal(stmt, 1));
   }
 
   @Test
   void extractArgLocal_outOfBounds() {
     assertEquals(
         "",
-        InterProcEdgeBuilder.extractArgLocal(
-            "r2 = virtualinvoke r0.<com.example.Bar: void bar(int)>(a)", 5));
+        builder.extractArgLocal("r2 = virtualinvoke r0.<com.example.Bar: void bar(int)>(a)", 5));
   }
 
   @Test
   void extractArgLocal_noArgs() {
     assertEquals(
-        "",
-        InterProcEdgeBuilder.extractArgLocal(
-            "r2 = staticinvoke <com.example.Foo: int compute()>()", 0));
+        "", builder.extractArgLocal("r2 = staticinvoke <com.example.Foo: int compute()>()", 0));
   }
 
   @Test
@@ -149,7 +147,7 @@ class InterProcEdgeBuilderTest {
     // "null" and numeric literals should still be returned — caller decides whether to skip
     assertEquals(
         "null",
-        InterProcEdgeBuilder.extractArgLocal(
+        builder.extractArgLocal(
             "virtualinvoke r0.<com.example.Bar: void bar(java.lang.Object)>(null)", 0));
   }
 
@@ -171,8 +169,7 @@ class InterProcEdgeBuilderTest {
     List<DdgEdge> localEdges = List.of(new DdgEdge(defNode.id(), callSite.id(), new LocalEdge()));
     Map<String, DdgNode> nodeIndex = Map.of(defNode.id(), defNode, callSite.id(), callSite);
 
-    String result =
-        InterProcEdgeBuilder.findReachingDefId(callSite.id(), "a", localEdges, nodeIndex);
+    String result = builder.findReachingDefId(callSite.id(), "a", localEdges, nodeIndex);
 
     assertEquals(defNode.id(), result);
   }
@@ -190,8 +187,7 @@ class InterProcEdgeBuilderTest {
     List<DdgEdge> localEdges = List.of(new DdgEdge(identity.id(), callSite.id(), new LocalEdge()));
     Map<String, DdgNode> nodeIndex = Map.of(identity.id(), identity, callSite.id(), callSite);
 
-    String result =
-        InterProcEdgeBuilder.findReachingDefId(callSite.id(), "a", localEdges, nodeIndex);
+    String result = builder.findReachingDefId(callSite.id(), "a", localEdges, nodeIndex);
 
     assertEquals(identity.id(), result);
   }
@@ -209,8 +205,7 @@ class InterProcEdgeBuilderTest {
     List<DdgEdge> localEdges = List.of(new DdgEdge(defNode.id(), callSite.id(), new LocalEdge()));
     Map<String, DdgNode> nodeIndex = Map.of(defNode.id(), defNode, callSite.id(), callSite);
 
-    String result =
-        InterProcEdgeBuilder.findReachingDefId(callSite.id(), "a", localEdges, nodeIndex);
+    String result = builder.findReachingDefId(callSite.id(), "a", localEdges, nodeIndex);
 
     assertEquals("", result);
   }
@@ -229,8 +224,7 @@ class InterProcEdgeBuilderTest {
         List.of(new DdgEdge(defNode.id(), callSite.id(), new HeapEdge("<F: int x>")));
     Map<String, DdgNode> nodeIndex = Map.of(defNode.id(), defNode, callSite.id(), callSite);
 
-    String result =
-        InterProcEdgeBuilder.findReachingDefId(callSite.id(), "a", localEdges, nodeIndex);
+    String result = builder.findReachingDefId(callSite.id(), "a", localEdges, nodeIndex);
 
     assertEquals("", result);
   }
@@ -239,42 +233,42 @@ class InterProcEdgeBuilderTest {
 
   @Test
   void isConstantArg_nullIsConstant() {
-    assertTrue(InterProcEdgeBuilder.isConstantArg("null"));
+    assertTrue(builder.isConstantArg("null"));
   }
 
   @Test
   void isConstantArg_numericConstants() {
-    assertTrue(InterProcEdgeBuilder.isConstantArg("0"));
-    assertTrue(InterProcEdgeBuilder.isConstantArg("42"));
-    assertTrue(InterProcEdgeBuilder.isConstantArg("-1"));
-    assertTrue(InterProcEdgeBuilder.isConstantArg("3L"));
-    assertTrue(InterProcEdgeBuilder.isConstantArg("1.5"));
-    assertTrue(InterProcEdgeBuilder.isConstantArg("1.5F"));
+    assertTrue(builder.isConstantArg("0"));
+    assertTrue(builder.isConstantArg("42"));
+    assertTrue(builder.isConstantArg("-1"));
+    assertTrue(builder.isConstantArg("3L"));
+    assertTrue(builder.isConstantArg("1.5"));
+    assertTrue(builder.isConstantArg("1.5F"));
   }
 
   @Test
   void isConstantArg_stringLiterals() {
-    assertTrue(InterProcEdgeBuilder.isConstantArg("\"hello\""));
-    assertTrue(InterProcEdgeBuilder.isConstantArg("\"\""));
+    assertTrue(builder.isConstantArg("\"hello\""));
+    assertTrue(builder.isConstantArg("\"\""));
   }
 
   @Test
   void isConstantArg_booleans() {
-    assertTrue(InterProcEdgeBuilder.isConstantArg("true"));
-    assertTrue(InterProcEdgeBuilder.isConstantArg("false"));
+    assertTrue(builder.isConstantArg("true"));
+    assertTrue(builder.isConstantArg("false"));
   }
 
   @Test
   void isConstantArg_localVarsAreNotConstants() {
-    assertFalse(InterProcEdgeBuilder.isConstantArg("r0"));
-    assertFalse(InterProcEdgeBuilder.isConstantArg("$i0"));
-    assertFalse(InterProcEdgeBuilder.isConstantArg("value"));
-    assertFalse(InterProcEdgeBuilder.isConstantArg("value#1"));
+    assertFalse(builder.isConstantArg("r0"));
+    assertFalse(builder.isConstantArg("$i0"));
+    assertFalse(builder.isConstantArg("value"));
+    assertFalse(builder.isConstantArg("value#1"));
   }
 
   @Test
   void isConstantArg_emptyIsConstant() {
-    assertTrue(InterProcEdgeBuilder.isConstantArg(""));
+    assertTrue(builder.isConstantArg(""));
   }
 
   // --- PARAM edges ---
@@ -297,7 +291,7 @@ class InterProcEdgeBuilderTest {
     List<DdgEdge> localEdges = List.of(new DdgEdge(defNode.id(), callSite.id(), new LocalEdge()));
     List<Map<String, Object>> calls = List.of(Map.of("from", CALLER2, "to", CALLEE2));
 
-    List<DdgEdge> result = InterProcEdgeBuilder.buildParamEdges(nodes, localEdges, calls);
+    List<DdgEdge> result = builder.buildParamEdges(nodes, localEdges, calls);
 
     assertEquals(1, result.size());
     DdgEdge edge = result.get(0);
@@ -319,7 +313,7 @@ class InterProcEdgeBuilderTest {
     List<DdgNode> nodes = List.of(callSite, identity);
     List<Map<String, Object>> calls = List.of(Map.of("from", CALLER2, "to", CALLEE2));
 
-    List<DdgEdge> result = InterProcEdgeBuilder.buildParamEdges(nodes, List.of(), calls);
+    List<DdgEdge> result = builder.buildParamEdges(nodes, List.of(), calls);
 
     assertTrue(result.isEmpty(), "constant arg should not produce PARAM edge");
   }
@@ -342,7 +336,7 @@ class InterProcEdgeBuilderTest {
     List<DdgEdge> localEdges = List.of(new DdgEdge(defA.id(), callSite.id(), new LocalEdge()));
     List<Map<String, Object>> calls = List.of(Map.of("from", CALLER2, "to", CALLEE2));
 
-    List<DdgEdge> result = InterProcEdgeBuilder.buildParamEdges(nodes, localEdges, calls);
+    List<DdgEdge> result = builder.buildParamEdges(nodes, localEdges, calls);
 
     // Should produce edge to paramIdentity, NOT to thisIdentity
     assertEquals(1, result.size());
@@ -371,7 +365,7 @@ class InterProcEdgeBuilderTest {
             new DdgEdge(defB.id(), callSite.id(), new LocalEdge()));
     List<Map<String, Object>> calls = List.of(Map.of("from", CALLER2, "to", callee3));
 
-    List<DdgEdge> result = InterProcEdgeBuilder.buildParamEdges(nodes, localEdges, calls);
+    List<DdgEdge> result = builder.buildParamEdges(nodes, localEdges, calls);
 
     assertEquals(2, result.size());
 
@@ -396,7 +390,7 @@ class InterProcEdgeBuilderTest {
     List<DdgNode> nodes = List.of(callSite, identity);
     List<Map<String, Object>> calls = List.of(Map.of("from", CALLER2, "to", CALLEE2));
 
-    List<DdgEdge> result = InterProcEdgeBuilder.buildParamEdges(nodes, List.of(), calls);
+    List<DdgEdge> result = builder.buildParamEdges(nodes, List.of(), calls);
 
     assertTrue(result.isEmpty(), "no PARAM edge when reaching-def not found");
   }
@@ -423,7 +417,7 @@ class InterProcEdgeBuilderTest {
     List<DdgEdge> localEdges = List.of(new DdgEdge(defA.id(), callSite.id(), new LocalEdge()));
     List<Map<String, Object>> calls = List.of(Map.of("from", caller, "to", callee));
 
-    List<DdgEdge> result = InterProcEdgeBuilder.build(nodes, localEdges, calls);
+    List<DdgEdge> result = builder.build(nodes, localEdges, calls);
 
     long paramCount = result.stream().filter(e -> e.edgeInfo() instanceof ParamEdge).count();
     long returnCount = result.stream().filter(e -> e.edgeInfo() instanceof ReturnEdge).count();
@@ -435,7 +429,7 @@ class InterProcEdgeBuilderTest {
   @Test
   void build_noCalls_noEdges() {
     List<DdgNode> nodes = List.of(node(CALLER, "s0", "a = 1", StmtKind.ASSIGN));
-    List<DdgEdge> result = InterProcEdgeBuilder.build(nodes, List.of(), List.of());
+    List<DdgEdge> result = builder.build(nodes, List.of(), List.of());
     assertTrue(result.isEmpty());
   }
 }

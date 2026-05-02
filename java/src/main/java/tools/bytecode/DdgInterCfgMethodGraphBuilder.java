@@ -17,9 +17,9 @@ public class DdgInterCfgMethodGraphBuilder {
 
   public record MethodDdgPayload(List<DdgNode> nodes, List<DdgEdge> edges) {}
 
-  private static final Pattern ASSIGN_LOCAL = Pattern.compile("^(\\w[\\w$]*) = (.+)$");
-  private static final Pattern IDENTITY_LOCAL = Pattern.compile("^(\\w[\\w$]*) := .+$");
-  private static final Pattern RETURN_VAL = Pattern.compile("^return (\\w[\\w$]*)$");
+  private static final Pattern ASSIGN_LOCAL = Pattern.compile("^(\\w[\\w$#]*) = (.+)$");
+  private static final Pattern IDENTITY_LOCAL = Pattern.compile("^(\\w[\\w$#]*) := .+$");
+  private static final Pattern RETURN_VAL = Pattern.compile("^return (\\w[\\w$#]*)$");
 
   public MethodDdgPayload build(SootMethod method, String methodSig) {
     List<Stmt> stmts = new ArrayList<>(method.getBody().getStmtGraph().getNodes());
@@ -63,6 +63,7 @@ public class DdgInterCfgMethodGraphBuilder {
 
   private List<DdgEdge> buildDdgEdges(
       List<Stmt> stmts, Map<Stmt, String> stmtToLocalId, String methodSig) {
+    // First pass: collect all definitions
     Map<String, Stmt> localToDef = new HashMap<>();
     for (Stmt stmt : stmts) {
       String text = stmt.toString();
@@ -72,6 +73,7 @@ public class DdgInterCfgMethodGraphBuilder {
       else if (identity.matches()) localToDef.put(identity.group(1), stmt);
     }
 
+    // Second pass: create edges from definitions to uses
     List<DdgEdge> edges = new ArrayList<>();
     for (Stmt stmt : stmts) {
       String toId = methodSig + "#" + stmtToLocalId.get(stmt);
@@ -106,7 +108,8 @@ public class DdgInterCfgMethodGraphBuilder {
   }
 
   private void extractLocalsFromExpr(String expr, List<String> out) {
-    Pattern localRef = Pattern.compile("\\b([a-z$][\\w$]*)\\b");
+    // Match SSA variables: lowercase/$ start, followed by word chars and optional #<number>
+    Pattern localRef = Pattern.compile("\\b([a-z$][\\w$#]*)\\b");
     Matcher m = localRef.matcher(expr);
     while (m.find()) {
       String candidate = m.group(1);

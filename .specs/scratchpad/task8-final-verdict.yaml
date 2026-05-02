@@ -1,0 +1,263 @@
+evaluation_report:
+  metadata:
+    task: "Task 8: Wire FieldDepEnricher into DdgInterCfgArtifactBuilder with --unbounded flag"
+    artifacts:
+      - java/src/main/java/tools/bytecode/DdgInterCfgArtifactBuilder.java
+      - java/src/main/java/tools/bytecode/cli/DdgInterCfgCommand.java
+    spec_source: docs/superpowers/plans/2026-05-02-field-sensitive-ddg.md (lines 1691-1823)
+    scope_spec:
+      - "Task 8 ONLY — Modify: DdgInterCfgArtifactBuilder.java and DdgInterCfgCommand.java"
+      - "NOT in scope: BwdSliceCommand.java, other files"
+
+  executive_summary: |
+    Task 8 implementation has two critical violations:
+    (1) DdgInterCfgCommand outputs legacy {nodes, calls, metadata, ddgs} map instead of
+    typed Artifact JSON. Spec line 1771 explicitly requires writeOutput(artifact).
+    (2) Out-of-scope modification of BwdSliceCommand to accept legacy format as a
+    workaround for violation 1. Task 8 scope includes only DdgInterCfgArtifactBuilder
+    and DdgInterCfgCommand.
+
+    DdgInterCfgArtifactBuilder is implemented correctly and fully complies with spec.
+    The violations are in DdgInterCfgCommand and scope boundaries.
+
+  critical_violations:
+    - violation_id: "V1-OUTPUT-FORMAT"
+      severity: CRITICAL
+      description: "DdgInterCfgCommand outputs legacy format instead of typed Artifact"
+      spec_requirement: |
+        @Override
+        public void run() {
+          try {
+            ...
+            Artifact artifact = builder.build(input);
+            writeOutput(artifact);  // <-- direct Artifact output
+          } ...
+        }
+        (line 1771)
+      actual_implementation: |
+        @Override
+        public void run() {
+          try {
+            ...
+            Artifact artifact = new DdgInterCfgArtifactBuilder(tracer, enricher).build(inputGraph);
+            Map<String, Object> legacyOutput = toLegacyFormat(artifact, inputGraph);  // WRONG
+            writeOutput(legacyOutput);  // WRONG - outputs legacy map, not Artifact
+          ...
+        }
+        (lines 38-40)
+      evidence:
+        - "Line 39: toLegacyFormat() converts typed Artifact to legacy {nodes, calls, metadata, ddgs}"
+        - "Line 40: writeOutput(legacyOutput) outputs the legacy map"
+        - "Lines 75-119: toLegacyFormat() method should not exist"
+        - "git diff HEAD~1: shows -writeOutput(artifact) and +writeOutput(legacyOutput)"
+        - "Command description (lines 15-18) claims 'emit a typed artifact' but outputs legacy"
+      impact: |
+        - Breaks typed artifact pipeline specified in Tasks 2-4
+        - Downstream consumer (bwd-slice) cannot receive typed Artifact
+        - Violates the core design: Task 4 outputs Artifact, Task 5 reads Artifact,
+          Task 8 should pass Artifact through
+        - Makes BwdSliceCommand patch (violation V2) necessary
+
+    - violation_id: "V2-SCOPE-CREEP"
+      severity: CRITICAL
+      description: "Out-of-scope modification of BwdSliceCommand.java"
+      spec_requirement: |
+        Task 8 Files:
+        - Modify: java/src/main/java/tools/bytecode/DdgInterCfgArtifactBuilder.java
+        - Modify: java/src/main/java/tools/bytecode/cli/DdgInterCfgCommand.java
+        (line 1693-1695)
+      actual_implementation: |
+        git diff HEAD~1 --name-only shows:
+        java/src/main/java/tools/bytecode/cli/BwdSliceCommand.java  <-- NOT in Task 8 scope
+      evidence:
+        - "git diff HEAD~1 modified BwdSliceCommand.java"
+        - "Lines 52-59: added readLegacyFormat() to read Map instead of Artifact"
+        - "Lines 52-103: added convertLegacyToArtifact() workaround method"
+        - "Task 5 spec requires: mapper.readValue(..., Artifact.class)"
+        - "Line 70 changed from Artifact.class to Map.class"
+      root_cause: |
+        Agent modified BwdSliceCommand to accept legacy format because DdgInterCfgCommand
+        outputs legacy format (violation V1). Instead of fixing V1, agent masked it by
+        patching out-of-scope files.
+      impact: |
+        - Breaks scope boundaries (Task 8 should not touch BwdSliceCommand)
+        - Masks root problem (V1 output format violation)
+        - Creates circular dependency: V1 necessitates V2
+        - Defeats spec-driven architecture
+
+  compliant_components:
+    - component: "DdgInterCfgArtifactBuilder.java"
+      status: PASS
+      details:
+        - "✓ Accepts FieldDepEnricher enricher field (line 20)"
+        - "✓ Two-arg constructor (JavaView, FieldDepEnricher) (line 22-24)"
+        - "✓ Single-arg backward-compat constructor (line 27-29)"
+        - "✓ Applies enricher in build() (line 76)"
+        - "✓ Returns typed Artifact (line 78)"
+      evidence:
+        - "Line 74-76: Correctly creates inScopeMethodSigs, builds rawDdg, applies enricher"
+        - "Line 76: DdgGraph enrichedDdg = enricher != null ? enricher.enrich(...) : rawDdg;"
+        - "Logic exactly matches spec requirement (line 1730-1736)"
+
+    - component: "DdgInterCfgCommand feature: --unbounded flag"
+      status: PASS
+      evidence:
+        - "Line 25-30: @Option(names = '--unbounded', ...) present"
+        - "Description matches spec: 'Widen heap dependency search to all Qilin-reachable methods'"
+
+    - component: "DdgInterCfgCommand feature: buildEnricher()"
+      status: PASS
+      evidence:
+        - "Line 48-64: buildEnricher() correctly implemented"
+        - "Line 50-52: Returns null if !unbounded"
+        - "Line 57-59: Returns null if root.isEmpty()"
+        - "Line 63: Conservative always-true AliasCheck: (sigA, localA, sigB, localB) -> true"
+        - "Line 36-37: Correctly wired in run() method"
+
+  violations_summary:
+    total_critical: 2
+    total_high: 0
+    total_medium: 0
+
+  checklist_results:
+    - question: "Does DdgInterCfgArtifactBuilder accept FieldDepEnricher field?"
+      importance: essential
+      answer: YES
+      evidence: "Line 20: private final FieldDepEnricher enricher; Lines 22-24: constructor accepts enricher parameter"
+
+    - question: "Does DdgInterCfgArtifactBuilder have backward-compat single-arg constructor?"
+      importance: important
+      answer: YES
+      evidence: "Line 27-29: public DdgInterCfgArtifactBuilder(BytecodeTracer tracer) { this(tracer, null); }"
+
+    - question: "Does DdgInterCfgArtifactBuilder apply enricher in build()?"
+      importance: essential
+      answer: YES
+      evidence: "Line 76: DdgGraph enrichedDdg = enricher != null ? enricher.enrich(rawDdg, inScopeMethodSigs) : rawDdg;"
+
+    - question: "Does DdgInterCfgCommand have --unbounded flag?"
+      importance: essential
+      answer: YES
+      evidence: "Line 25-30: @Option(names = '--unbounded', description = '...') boolean unbounded;"
+
+    - question: "Does DdgInterCfgCommand output typed Artifact directly per spec (line 1771)?"
+      importance: essential
+      answer: NO
+      evidence: "Lines 38-40: Converts Artifact to legacy map via toLegacyFormat() then outputs map instead of artifact. Spec requires writeOutput(artifact) directly."
+
+    - question: "Does DdgInterCfgCommand build enricher conditionally?"
+      importance: essential
+      answer: YES
+      evidence: "Line 48-64: buildEnricher() correctly implements conditional logic based on unbounded flag and root availability"
+
+    - question: "Are only Task 8 specified files modified?"
+      importance: essential
+      answer: NO
+      evidence: "git diff HEAD~1 --name-only shows: BwdSliceCommand.java is modified. Task 8 scope (line 1693-1695) specifies only DdgInterCfgArtifactBuilder.java and DdgInterCfgCommand.java."
+
+  score_calculation:
+    raw_score: 1.0
+    reason: "Two critical spec violations (V1 output format, V2 scope creep) on essential checklist items result in automatic failure"
+    final_score: 1.0
+
+  required_fixes:
+    - fix_id: "FIX-V1"
+      violation: "V1-OUTPUT-FORMAT"
+      required_change: |
+        In DdgInterCfgCommand.java, lines 38-40:
+
+        REMOVE:
+        ```java
+        Artifact artifact = new DdgInterCfgArtifactBuilder(tracer, enricher).build(inputGraph);
+        Map<String, Object> legacyOutput = toLegacyFormat(artifact, inputGraph);
+        writeOutput(legacyOutput);
+        ```
+
+        REPLACE WITH:
+        ```java
+        Artifact artifact = new DdgInterCfgArtifactBuilder(tracer, enricher).build(inputGraph);
+        writeOutput(artifact);
+        ```
+
+        DELETE: Entire toLegacyFormat() method (lines 75-119)
+      priority: CRITICAL
+      order: 1
+
+    - fix_id: "FIX-V2"
+      violation: "V2-SCOPE-CREEP"
+      required_change: |
+        Revert BwdSliceCommand.java to Task 5 specification.
+
+        REMOVE from BwdSliceCommand.java:
+        - readLegacyFormat() method (line 52-59)
+        - convertLegacyToArtifact() method (line 52-103)
+        - All imports added for legacy format conversion
+
+        RESTORE original readArtifact() method:
+        ```java
+        private Artifact readArtifact() throws IOException {
+          if (input != null) {
+            return mapper.readValue(input.toFile(), Artifact.class);
+          }
+          return mapper.readValue(System.in, Artifact.class);
+        }
+        ```
+
+        RESTORE original run() method line 43:
+        ```java
+        Artifact artifact = readArtifact();
+        ```
+      priority: CRITICAL
+      order: 2
+      rationale: |
+        BwdSliceCommand modifications were a workaround for V1 (output format violation).
+        Once V1 is fixed and DdgInterCfgCommand outputs typed Artifact, BwdSliceCommand
+        will receive typed Artifact and should read it directly per Task 5 spec.
+
+  verdict:
+    result: FAIL
+    severity: CRITICAL
+    non_mergeable: true
+    reason: |
+      Two critical violations on essential checklist items:
+      1. Violates spec requirement for typed Artifact output (line 1771)
+      2. Violates scope boundaries by modifying out-of-scope BwdSliceCommand
+
+      DdgInterCfgArtifactBuilder implementation is correct, but DdgInterCfgCommand
+      breaks the typed artifact pipeline and forces out-of-scope patches.
+
+      Both fixes (FIX-V1 and FIX-V2) must be applied before this task can be accepted.
+
+  strengths:
+    - "DdgInterCfgArtifactBuilder fully implements Task 8 builder requirements"
+    - "--unbounded flag and buildEnricher() correctly implemented"
+    - "Enricher null-safety correctly handled throughout"
+    - "Backward compatibility considered (single-arg constructor)"
+
+  issues:
+    - priority: CRITICAL
+      description: "DdgInterCfgCommand outputs legacy format instead of typed Artifact"
+      evidence: "Lines 39-40 call toLegacyFormat() and writeOutput(legacyOutput)"
+      spec_conflict: "Spec line 1771 explicitly requires writeOutput(artifact)"
+      impact: "Breaks typed artifact pipeline, defeats Tasks 2-4 design"
+      suggestion: "Delete toLegacyFormat() method, call writeOutput(artifact) directly"
+
+    - priority: CRITICAL
+      description: "Out-of-scope modification of BwdSliceCommand.java"
+      evidence: "git diff HEAD~1 shows BwdSliceCommand.java modified; Task 8 scope excludes it"
+      spec_conflict: "Task 8 files list (line 1693-1695) does not include BwdSliceCommand"
+      impact: "Violates scope boundaries, masks root problem, creates circular dependency"
+      suggestion: "Revert BwdSliceCommand to Task 5 spec after fixing output format"
+
+summary_table: |
+  | Component | Spec Requirement | Actual | Status |
+  |-----------|------------------|--------|--------|
+  | DdgInterCfgArtifactBuilder.enricher field | Required | Implemented | ✓ PASS |
+  | DdgInterCfgArtifactBuilder constructors | 2-arg + 1-arg | Both present | ✓ PASS |
+  | DdgInterCfgArtifactBuilder.enrich() call | In build() method | Present, correct logic | ✓ PASS |
+  | DdgInterCfgArtifactBuilder.return Artifact | Required | Returns Artifact(metadata, calltree, enrichedDdg) | ✓ PASS |
+  | DdgInterCfgCommand.--unbounded flag | Required | Present with description | ✓ PASS |
+  | DdgInterCfgCommand.buildEnricher() | Conditional on root/unbounded | Implemented correctly | ✓ PASS |
+  | DdgInterCfgCommand.run() output | writeOutput(artifact) | writeOutput(legacyOutput) | ✗ FAIL |
+  | Files modified | Only 2 specified files | 3 files (includes BwdSliceCommand) | ✗ FAIL |
+  | Artifact pipeline integrity | Task 4→5→8 all use Artifact | Task 8 outputs legacy, breaks chain | ✗ FAIL |

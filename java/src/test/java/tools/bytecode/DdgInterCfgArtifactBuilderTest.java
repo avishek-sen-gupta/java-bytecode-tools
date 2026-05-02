@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import tools.bytecode.artifact.Artifact;
 import tools.bytecode.artifact.DdgGraph;
@@ -85,7 +84,6 @@ class DdgInterCfgArtifactBuilderTest {
   }
 
   @Test
-  @Disabled("Task 1: Intentional failing test. Task 2 will fix buildDdgEdges() bug.")
   void ddgEdgeFromParamDefToReassignment() {
     // Reproduces the last-writer-wins bug in buildDdgEdges:
     // `value = value.replace(...)` must produce edge (identity_node → replace_node),

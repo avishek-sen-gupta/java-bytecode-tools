@@ -15,3 +15,5 @@ fileignoreconfig:
     checksum: b7acf4439ad6d395ae8a48482e5d5f06b687689b1ad8d3ccf4adb1c4a309b1bf
   - filename: docs/superpowers/plans/2026-05-02-ddg-reassign-edge-fix.md
     checksum: 6454cf4f1929d845cdf3485ff84d30dab4665dac8451d092874665328b37f898
+  - filename: java/src/main/java/tools/bytecode/DdgInterCfgMethodGraphBuilder.java
+    checksum: 0b24119a445729300450c69fec9d9f1b9b807f99963b2ceea55bde141a520a8a

@@ -7,9 +7,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import tools.bytecode.artifact.Artifact;
 import tools.bytecode.artifact.DdgGraph;
+import tools.bytecode.artifact.DdgNode;
 
 class DdgInterCfgArtifactBuilderTest {
 
@@ -18,6 +20,8 @@ class DdgInterCfgArtifactBuilderTest {
   private static final String REPO_FIND_BY_ID_SIG =
       "<com.example.app.OrderRepository: java.lang.String findById(int)>";
   private static final String MISSING_SIG = "<com.example.app.MissingService: void nope()>";
+  private static final String SANITIZE_SIG =
+      "<com.example.app.VarReassignService: java.lang.String sanitize(java.lang.String)>";
 
   private static BytecodeTracer tracer;
 
@@ -78,6 +82,92 @@ class DdgInterCfgArtifactBuilderTest {
             IllegalArgumentException.class,
             () -> new DdgInterCfgArtifactBuilder(tracer).build(Map.of("nodes", Map.of())));
     assertTrue(ex.getMessage().contains("nodes"), ex.getMessage());
+  }
+
+  @Test
+  @Disabled("Task 1: Intentional failing test. Task 2 will fix buildDdgEdges() bug.")
+  void ddgEdgeFromParamDefToReassignment() {
+    // Reproduces the last-writer-wins bug in buildDdgEdges:
+    // `value = value.replace(...)` must produce edge (identity_node → replace_node),
+    // NOT a self-edge (replace_node → replace_node).
+    Map<String, Object> input =
+        Map.of(
+            "nodes",
+            Map.of(
+                SANITIZE_SIG,
+                Map.of(
+                    "node_type", "java_method",
+                    "class", "com.example.app.VarReassignService",
+                    "method", "sanitize",
+                    "methodSignature", SANITIZE_SIG)),
+            "calls",
+            List.of(),
+            "metadata",
+            Map.of("root", SANITIZE_SIG));
+
+    DdgGraph ddg = new DdgInterCfgArtifactBuilder(tracer).build(input).ddg();
+
+    // Find the IDENTITY node: "value#0 := @parameter0: java.lang.String"
+    var identityNode =
+        ddg.nodes().stream()
+            .filter(n -> n.method().equals(SANITIZE_SIG))
+            .filter(n -> n.stmt().startsWith("value#0 :="))
+            .findFirst();
+
+    if (identityNode.isEmpty()) {
+      System.out.println("\n!!! Identity node not found. Available nodes:");
+      ddg.nodes().stream()
+          .filter(n -> n.method().equals(SANITIZE_SIG))
+          .forEach(n -> System.out.println("  " + n.stmt()));
+      throw new AssertionError("IDENTITY node for 'value' not found in DDG");
+    }
+
+    DdgNode identity = identityNode.get();
+
+    // Find the replace() reassignment node: "value#1 = virtualinvoke value#0.<...replace...>(...)"
+    var replaceNodeOpt =
+        ddg.nodes().stream()
+            .filter(n -> n.method().equals(SANITIZE_SIG))
+            .filter(
+                n ->
+                    n.stmt().startsWith("value#")
+                        && n.stmt().contains("=")
+                        && n.stmt().contains("replace"))
+            .findFirst();
+
+    if (replaceNodeOpt.isEmpty()) {
+      System.out.println("\n!!! Replace node not found. Available assignment nodes:");
+      ddg.nodes().stream()
+          .filter(n -> n.method().equals(SANITIZE_SIG))
+          .filter(n -> n.stmt().contains("="))
+          .forEach(n -> System.out.println("  " + n.stmt()));
+      throw new AssertionError("replace() reassignment node not found in DDG");
+    }
+
+    DdgNode replaceNode = replaceNodeOpt.get();
+
+    // Assert: edge from IDENTITY → replace (the correct reaching-def edge)
+    boolean hasCorrectEdge =
+        ddg.edges().stream()
+            .anyMatch(e -> e.from().equals(identity.id()) && e.to().equals(replaceNode.id()));
+
+    assertTrue(
+        hasCorrectEdge,
+        "Expected LOCAL edge from IDENTITY node to replace() node: "
+            + identity.id()
+            + " -> "
+            + replaceNode.id()
+            + "\nActual edges from identity: "
+            + ddg.edges().stream()
+                .filter(e -> e.from().equals(identity.id()))
+                .map(e -> e.to())
+                .toList());
+
+    // Assert: no self-edge on replace node
+    boolean hasSelfEdge =
+        ddg.edges().stream()
+            .anyMatch(e -> e.from().equals(replaceNode.id()) && e.to().equals(replaceNode.id()));
+    assertFalse(hasSelfEdge, "Unexpected self-edge on replace() node: " + replaceNode.id());
   }
 
   @Test

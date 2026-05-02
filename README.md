@@ -366,8 +366,8 @@ scripts/bytecode.sh --prefix com.example. "$CP" \
 ### 2. Emit The Call Tree
 
 ```bash
-cd python && uv run fw-calltree \
-  --callgraph ../callgraph.json \
+uv --directory python run fw-calltree \
+  --callgraph callgraph.json \
   --class com.example.app.OrderService \
   --method processOrder \
   --pattern 'com\.example' \
@@ -382,21 +382,21 @@ The `fw-calltree` artifact now includes `metadata.root` — the entry method sig
 
 ```bash
 # ASCII tree (stdout)
-cd python && uv run calltree-print --input calltree.json
+uv --directory python run calltree-print --input calltree.json
 
 # To SVG
-cd python && uv run calltree-to-dot --input calltree.json --svg -o calltree.svg
+uv --directory python run calltree-to-dot --input calltree.json --svg -o calltree.svg
 
 # To DOT
-cd python && uv run calltree-to-dot --input calltree.json > calltree.dot
+uv --directory python run calltree-to-dot --input calltree.json > calltree.dot
 
 # Piped end-to-end
-cd python && uv run fw-calltree \
-  --callgraph ../callgraph.json \
+uv --directory python run fw-calltree \
+  --callgraph callgraph.json \
   --class com.example.app.OrderService \
   --method processOrder \
   --pattern 'com\.example' \
-  | uv run calltree-to-dot --svg -o calltree.svg
+  | uv --directory python run calltree-to-dot --svg -o calltree.svg
 ```
 
 > **Note:** Do not pipe `fw-calltree` output through `ftrace-semantic`. That pipeline is for CFG-level (`xtrace`) output; `fw-calltree` nodes have no `blocks` or `sourceTrace`, so `ftrace-semantic` produces empty graphs.
@@ -751,7 +751,7 @@ Or run suites individually:
 
 ```bash
 cd java && mvn test -q
-cd python && python3 -m pytest tests/ -q
+uv --directory python run pytest tests/ -q
 bash test-fixtures/run-e2e.sh
 ```
 

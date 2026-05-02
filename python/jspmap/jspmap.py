@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from fw_calltree import build_graph as _calltree_build_graph
+from node_types import NodeType
 from jspmap.jsf_bean_map import JsfBeanResolver
 from jspmap.jsp_parser import ELAction, parse_jsps
 from jspmap.protocols import BeanInfo, BeanResolver
@@ -121,7 +122,7 @@ def _el_node_key(jsp: str, el: str) -> str:
 def _make_jsp_node(jsp: str) -> dict:
     key = _jsp_node_key(jsp)
     return {
-        "node_type": "jsp",
+        "node_type": NodeType.JSP,
         "class": f"/{jsp}",
         "method": "",
         "methodSignature": key,
@@ -131,7 +132,7 @@ def _make_jsp_node(jsp: str) -> dict:
 def _make_el_node(jsp: str, el: str) -> dict:
     key = _el_node_key(jsp, el)
     return {
-        "node_type": "el_expression",
+        "node_type": NodeType.EL_EXPRESSION,
         "class": f"/{jsp}",
         "method": el,
         "methodSignature": key,

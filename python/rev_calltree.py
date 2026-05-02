@@ -15,6 +15,8 @@ import re
 import sys
 from pathlib import Path
 
+from node_types import NodeType
+
 
 def extract_class(sig: str) -> str:
     m = re.match(r"<([^:]+):", sig)
@@ -128,7 +130,7 @@ def _node_entry(sig: str, method_lines: dict[str, dict]) -> dict:
     cls = extract_class(sig)
     method = extract_method(sig)
     base: dict = {
-        "node_type": "java_method",
+        "node_type": NodeType.JAVA_METHOD,
         "class": cls,
         "method": method,
         "methodSignature": sig,

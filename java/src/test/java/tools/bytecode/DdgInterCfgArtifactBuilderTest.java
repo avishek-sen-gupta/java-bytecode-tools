@@ -21,6 +21,8 @@ class DdgInterCfgArtifactBuilderTest {
       "<com.example.app.OrderService: java.lang.String processOrder(int)>";
   private static final String REPO_FIND_BY_ID_SIG =
       "<com.example.app.OrderRepository: java.lang.String findById(int)>";
+  private static final String JDBC_FIND_BY_ID_SIG =
+      "<com.example.app.JdbcOrderRepository: java.lang.String findById(int)>";
   private static final String MISSING_SIG = "<com.example.app.MissingService: void nope()>";
   private static final String SANITIZE_SIG =
       "<com.example.app.VarReassignService: java.lang.String sanitize(java.lang.String)>";
@@ -288,6 +290,42 @@ class DdgInterCfgArtifactBuilderTest {
     assertTrue(
         ddg.edges().stream().anyMatch(e -> e.edgeInfo() instanceof LocalEdge),
         "should still have LOCAL edges");
+  }
+
+  @Test
+  void classifiesAssignInvokeWithSsaVersionedLocal() {
+    Map<String, Object> input =
+        Map.of(
+            "nodes",
+            Map.of(
+                PROCESS_ORDER_SIG,
+                Map.of(
+                    "node_type", "java_method",
+                    "class", "com.example.app.OrderService",
+                    "method", "processOrder",
+                    "methodSignature", PROCESS_ORDER_SIG)),
+            "calls",
+            List.of(),
+            "metadata",
+            Map.of("root", PROCESS_ORDER_SIG));
+
+    DdgGraph ddg = new DdgInterCfgArtifactBuilder(tracer, null).build(input).ddg();
+
+    var findByIdCallSites =
+        ddg.nodes().stream()
+            .filter(n -> n.method().equals(PROCESS_ORDER_SIG))
+            .filter(n -> n.stmt().contains("findById"))
+            .filter(n -> n.stmt().contains(" = "))
+            .toList();
+
+    assertFalse(findByIdCallSites.isEmpty(), "Should have at least one findById call site");
+
+    for (DdgNode callSite : findByIdCallSites) {
+      assertEquals(
+          tools.bytecode.artifact.StmtKind.ASSIGN_INVOKE,
+          callSite.kind(),
+          "Call site should be ASSIGN_INVOKE, not INVOKE: " + callSite.stmt());
+    }
   }
 
   // Test helper: records the inScopeMethodSigs passed to enrich()

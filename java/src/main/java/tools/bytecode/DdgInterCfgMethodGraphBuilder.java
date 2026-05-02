@@ -51,7 +51,7 @@ public class DdgInterCfgMethodGraphBuilder {
     String text = stmt.toString();
     if (text.contains(":= @parameter") || text.contains(":= @this")) return StmtKind.IDENTITY;
     if (text.startsWith("return ")) return StmtKind.RETURN;
-    if ((text.startsWith("$") || text.matches("^\\w[\\w$]* = .+")) && text.contains("invoke "))
+    if ((text.startsWith("$") || text.matches("^\\w[\\w$#]* = .+")) && text.contains("invoke "))
       return StmtKind.ASSIGN_INVOKE;
     if (text.contains("invoke ")) return StmtKind.INVOKE;
     return StmtKind.ASSIGN;

@@ -60,6 +60,7 @@ repos:
         pass_filenames: false
         stages: [pre-commit]
 
+  # Terminology guard — blocks forbidden project/client terms
   - repo: local
     hooks:
       - id: terminology-guard

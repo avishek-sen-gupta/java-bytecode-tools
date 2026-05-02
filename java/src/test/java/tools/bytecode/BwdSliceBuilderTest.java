@@ -218,7 +218,8 @@ class BwdSliceBuilderTest {
             edges);
 
     Map<String, Object> result = new BwdSliceBuilder().build(art, M, "r1");
-    assertNotNull(result);
+    assertTrue(result.containsKey("nodes"), "result should contain 'nodes' key");
+    assertTrue(result.containsKey("edges"), "result should contain 'edges' key");
   }
 
   @Test

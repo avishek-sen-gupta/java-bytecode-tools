@@ -21,7 +21,7 @@ class SpoonMethodCfgCacheTest {
     // processOrder is at line 16
     ControlFlowGraph cfg = cache.cfgFor("com.example.app.OrderService", 16);
     assertNotNull(cfg);
-    assertTrue(cfg.vertexSet().size() > 0);
+    assertFalse(cfg.vertexSet().isEmpty(), "CFG should contain at least one node");
   }
 
   @Test

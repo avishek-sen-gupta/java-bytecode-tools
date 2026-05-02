@@ -78,6 +78,10 @@ public class DdgInterCfgArtifactBuilder {
       ddgEdges.addAll(payload.edges());
     }
 
+    // Inter-procedural edges: PARAM + RETURN
+    List<DdgEdge> interProcEdges = InterProcEdgeBuilder.build(ddgNodes, ddgEdges, calls);
+    ddgEdges.addAll(interProcEdges);
+
     Set<String> inScopeMethodSigs = new HashSet<>(nodes.keySet());
     DdgGraph rawDdg = new DdgGraph(ddgNodes, ddgEdges);
     DdgGraph enrichedDdg = enricher != null ? enricher.enrich(rawDdg, inScopeMethodSigs) : rawDdg;

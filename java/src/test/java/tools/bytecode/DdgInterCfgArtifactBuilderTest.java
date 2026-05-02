@@ -11,6 +11,9 @@ import org.junit.jupiter.api.Test;
 import tools.bytecode.artifact.Artifact;
 import tools.bytecode.artifact.DdgGraph;
 import tools.bytecode.artifact.DdgNode;
+import tools.bytecode.artifact.LocalEdge;
+import tools.bytecode.artifact.ParamEdge;
+import tools.bytecode.artifact.ReturnEdge;
 
 class DdgInterCfgArtifactBuilderTest {
 
@@ -255,6 +258,36 @@ class DdgInterCfgArtifactBuilderTest {
     assertNotNull(artifact.ddg(), "DDG should not be null");
     // With null enricher and single method with simple body, DDG should have some nodes
     assertTrue(!artifact.ddg().nodes().isEmpty(), "DDG should have nodes from raw build");
+  }
+
+  @Test
+  void ddgContainsParamAndReturnEdges() {
+    Map<String, Object> input =
+        Map.of(
+            "nodes",
+            Map.of(
+                PROCESS_ORDER_SIG,
+                Map.of(
+                    "node_type", "java_method",
+                    "class", "com.example.app.OrderService",
+                    "method", "processOrder",
+                    "methodSignature", PROCESS_ORDER_SIG)),
+            "calls",
+            List.of(),
+            "metadata",
+            Map.of("root", PROCESS_ORDER_SIG));
+
+    // Single method — no inter-proc edges expected, but verify no crash
+    DdgGraph ddg = new DdgInterCfgArtifactBuilder(tracer, null).build(input).ddg();
+
+    // No calls → no PARAM/RETURN edges (but LOCAL edges should exist)
+    long paramCount = ddg.edges().stream().filter(e -> e.edgeInfo() instanceof ParamEdge).count();
+    long returnCount = ddg.edges().stream().filter(e -> e.edgeInfo() instanceof ReturnEdge).count();
+    assertEquals(0, paramCount, "no calls → no PARAM edges");
+    assertEquals(0, returnCount, "no calls → no RETURN edges");
+    assertTrue(
+        ddg.edges().stream().anyMatch(e -> e.edgeInfo() instanceof LocalEdge),
+        "should still have LOCAL edges");
   }
 
   // Test helper: records the inScopeMethodSigs passed to enrich()
